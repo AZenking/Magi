@@ -1,3 +1,5 @@
+import pino, { type Logger as PinoInstance, type LoggerOptions as PinoOpts } from "pino";
+
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
 interface LoggerOptions {
@@ -5,36 +7,66 @@ interface LoggerOptions {
   level?: LogLevel;
 }
 
+let rootLogger: PinoInstance | null = null;
+
+function getRootLogger(): PinoInstance {
+  if (rootLogger) return rootLogger;
+
+  const isDev = process.env.NODE_ENV !== "production";
+  const level = (process.env.LOG_LEVEL as LogLevel) ?? "info";
+
+  const options: PinoOpts = {
+    level,
+    formatters: {
+      bindings(bindings) {
+        return { pid: bindings.pid, hostname: bindings.hostname };
+      },
+      level(label) {
+        return { level: label };
+      },
+    },
+    timestamp: pino.stdTimeFunctions.isoTime,
+  };
+
+  const transport = isDev
+    ? { target: "pino-pretty", options: { colorize: true, translateTime: "SYS:standard" } }
+    : undefined;
+
+  rootLogger = pino(transport ? { ...options, transport } : options);
+  return rootLogger;
+}
+
 export class Logger {
+  private pino: PinoInstance;
   private context: string;
 
   constructor(options: LoggerOptions = {}) {
     this.context = options.context ?? "app";
+    this.pino = getRootLogger().child({ context: this.context });
   }
 
-  private log(level: LogLevel, message: string, meta?: unknown): void {
-    const timestamp = new Date().toISOString();
-    const payload = { timestamp, level, context: this.context, message, meta };
-    const output = JSON.stringify(payload);
-    switch (level) {
-      case "error":
-        console.error(output);
-        break;
-      case "warn":
-        console.warn(output);
-        break;
-      default:
-        console.log(output);
-    }
+  debug(message: string, meta?: unknown): void {
+    this.pino.debug({ meta }, message);
   }
 
-  debug(message: string, meta?: unknown) { this.log("debug", message, meta); }
-  info(message: string, meta?: unknown) { this.log("info", message, meta); }
-  warn(message: string, meta?: unknown) { this.log("warn", message, meta); }
-  error(message: string, meta?: unknown) { this.log("error", message, meta); }
+  info(message: string, meta?: unknown): void {
+    this.pino.info({ meta }, message);
+  }
+
+  warn(message: string, meta?: unknown): void {
+    this.pino.warn({ meta }, message);
+  }
+
+  error(message: string, meta?: unknown): void {
+    this.pino.error({ meta }, message);
+  }
 
   child(context: string): Logger {
     return new Logger({ context: `${this.context}:${context}` });
+  }
+
+  get pinoInstance(): PinoInstance {
+    return this.pino;
   }
 }
 

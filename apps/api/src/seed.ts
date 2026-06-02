@@ -4,8 +4,11 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { hashPassword } from "better-auth/crypto";
 import { username } from "better-auth/plugins";
 import { and, eq } from "drizzle-orm";
+import { createLogger } from "@magi/utils";
 import { db } from "./infrastructure/database/connection";
 import * as schema from "./infrastructure/database/schema";
+
+const logger = createLogger({ context: "seed" });
 
 // Separate auth instance for seeding — no disableSignUp so admin can be created.
 const seedAuth = betterAuth({
@@ -29,7 +32,7 @@ async function seed() {
   const adminName = process.env.MAGI_ADMIN_NAME;
 
   if (!adminUsername || !adminPassword || !adminEmail || !adminName) {
-    console.error(
+    logger.error(
       "Missing required env vars: MAGI_ADMIN_USERNAME, MAGI_ADMIN_PASSWORD, MAGI_ADMIN_EMAIL, MAGI_ADMIN_NAME",
     );
     process.exit(1);
@@ -70,7 +73,7 @@ async function seed() {
         ),
       );
 
-    console.log(`Admin user "${adminUsername}" synchronized successfully.`);
+    logger.info(`Admin user "${adminUsername}" synchronized successfully.`);
     process.exit(0);
   }
 
@@ -83,11 +86,11 @@ async function seed() {
     },
   });
 
-  console.log(`Admin user "${adminUsername}" created successfully.`);
+  logger.info(`Admin user "${adminUsername}" created successfully.`);
   process.exit(0);
 }
 
 seed().catch((err) => {
-  console.error("Seed failed:", err);
+  logger.error("Seed failed:", { error: (err as Error).message });
   process.exit(1);
 });

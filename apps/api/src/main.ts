@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { json, type NextFunction, type Request, type Response } from "express";
+import { Logger } from "nestjs-pino";
 import { AppModule } from "./app.module";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./infrastructure/auth/auth.config";
@@ -36,7 +37,6 @@ function authCors(req: Request, res: Response, next: NextFunction) {
 }
 
 async function bootstrap() {
-  // Disable default body parser so auth handler receives raw requests.
   const app = await NestFactory.create(AppModule, {
     bodyParser: false,
     cors: {
@@ -44,6 +44,8 @@ async function bootstrap() {
       credentials: true,
     },
   });
+
+  app.useLogger(app.get(Logger));
 
   // Better Auth handler — must run before JSON body parser.
   app.use("/api/auth", authCors, toNodeHandler(auth));
