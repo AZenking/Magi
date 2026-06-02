@@ -6,6 +6,7 @@ export enum TaskStatus {
 }
 
 export enum EpgSourceType {
+  M3U = "m3u",
   XMLTV = "xmltv",
   API = "api",
   SCRAPER = "scraper",
