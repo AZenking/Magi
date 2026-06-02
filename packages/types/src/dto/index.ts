@@ -33,3 +33,25 @@ export type PaginatedResponse<T> = {
   pageSize: number;
   totalPages: number;
 };
+
+export const SourceQuerySchema = PaginationQuerySchema.extend({
+  type: z.enum(["m3u", "xmltv"]).optional(),
+  search: z.string().optional(),
+  sortBy: z.string().optional(),
+  sortDir: z.enum(["asc", "desc"]).optional(),
+});
+export type SourceQuery = z.infer<typeof SourceQuerySchema>;
+
+export const CreateSourceSchema = z.object({
+  name: z.string().min(1).max(255),
+  type: z.enum(["m3u", "xmltv"]),
+  url: z
+    .string()
+    .url()
+    .refine((u) => u.startsWith("http://") || u.startsWith("https://")),
+  enabled: z.boolean().default(true),
+});
+export type CreateSource = z.infer<typeof CreateSourceSchema>;
+
+export const UpdateSourceSchema = CreateSourceSchema.partial();
+export type UpdateSource = z.infer<typeof UpdateSourceSchema>;

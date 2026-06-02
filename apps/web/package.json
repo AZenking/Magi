@@ -13,6 +13,7 @@
     "@magi/types": "workspace:*",
     "@magi/ui": "workspace:*",
     "@magi/utils": "workspace:*",
+    "@tanstack/react-form": "^1.33.0",
     "@tanstack/react-query": "^5.80.6",
     "@tanstack/react-table": "^8.21.3",
     "better-auth": "^1.6.13",
