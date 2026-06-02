@@ -1,0 +1,41 @@
+{
+  "name": "@magi/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "nest build",
+    "dev": "bash ../../scripts/with-env.sh nest start --watch",
+    "start": "bash ../../scripts/with-env.sh nest start",
+    "start:prod": "node dist/main",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist",
+    "db:generate": "bash ../../scripts/with-env.sh drizzle-kit generate --config=src/infrastructure/database/drizzle.config.ts",
+    "db:migrate": "bash ../../scripts/with-env.sh drizzle-kit migrate --config=src/infrastructure/database/drizzle.config.ts",
+    "seed": "bash ../../scripts/with-env.sh npx tsx src/seed.ts"
+  },
+  "dependencies": {
+    "@magi/types": "workspace:*",
+    "@magi/utils": "workspace:*",
+    "@nestjs/common": "^11.1.3",
+    "@nestjs/core": "^11.1.3",
+    "@nestjs/platform-express": "^11.1.3",
+    "better-auth": "^1.6.13",
+    "bullmq": "^5.56.0",
+    "drizzle-orm": "^0.45.2",
+    "ioredis": "^5.6.1",
+    "postgres": "^3.4.7",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@magi/tsconfig": "workspace:*",
+    "@nestjs/cli": "^11.0.7",
+    "@nestjs/schematics": "^11.0.5",
+    "@types/express": "^5.0.2",
+    "@types/node": "^22.15.29",
+    "drizzle-kit": "^0.31.1",
+    "tsx": "^4.22.4",
+    "typescript": "^5.8.3"
+  }
+}

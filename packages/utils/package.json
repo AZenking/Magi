@@ -1,0 +1,16 @@
+{
+  "name": "@magi/utils",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "lint": "eslint src/"
+  },
+  "devDependencies": {
+    "@magi/tsconfig": "workspace:*",
+    "typescript": "^5.8.3"
+  }
+}

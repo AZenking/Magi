@@ -1,0 +1,16 @@
+{
+  "extends": "@magi/tsconfig/base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "baseUrl": ".",
+    "paths": {
+      "src/lib/*": ["./src/lib/*"],
+      "src/components/*": ["./src/components/*"],
+      "src/hooks/*": ["./src/hooks/*"]
+    }
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}

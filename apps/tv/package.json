@@ -1,0 +1,11 @@
+{
+  "name": "@magi/tv",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Android TV client (Phase 2)",
+  "scripts": {
+    "build": "echo 'TV app not yet implemented'",
+    "dev": "echo 'TV app not yet implemented'",
+    "lint": "echo 'TV app not yet implemented'"
+  }
+}
