@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 import {
   LayoutDashboard,
   Tv,
@@ -8,8 +8,11 @@ import {
   CalendarDays,
   ListTodo,
   LogOut,
+  LinkIcon,
+  SunIcon,
+  MoonIcon,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useTheme } from "@/lib/theme";
 import { signOut } from "@/lib/auth-client";
 import {
   Sidebar,
@@ -25,11 +28,12 @@ import {
 } from "@magi/ui/components/sidebar";
 
 const navItems = [
-  { title: "仪表盘", url: "/dashboard", icon: LayoutDashboard },
-  { title: "频道", url: "/dashboard/channels", icon: Tv },
-  { title: "EPG 源", url: "/dashboard/epg", icon: Radio },
-  { title: "节目单", url: "/dashboard/programmes", icon: CalendarDays },
-  { title: "任务", url: "/dashboard/tasks", icon: ListTodo },
+  { title: "仪表盘", to: "/dashboard" as const, icon: LayoutDashboard },
+  { title: "频道", to: "/dashboard/channels" as const, icon: Tv },
+  { title: "EPG 源", to: "/dashboard/epg" as const, icon: Radio },
+  { title: "EPG 匹配", to: "/dashboard/epg-matching" as const, icon: LinkIcon },
+  { title: "节目单", to: "/dashboard/programmes" as const, icon: CalendarDays },
+  { title: "任务", to: "/dashboard/tasks" as const, icon: ListTodo },
 ];
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
@@ -37,9 +41,16 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
 }
 
 export function AppSidebar({ userName, ...props }: AppSidebarProps) {
-  const router = useRouter();
+  const { resolvedTheme, setTheme } = useTheme();
   const displayName = userName ?? "用户";
   const initial = displayName.charAt(0).toUpperCase();
+
+  const isDark = resolvedTheme === "dark";
+
+  async function handleLogout() {
+    await signOut();
+    window.location.href = "/login";
+  }
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -65,7 +76,7 @@ export function AppSidebar({ userName, ...props }: AppSidebarProps) {
             {navItems.map((item) => (
               <SidebarMenuItem key={item.title}>
                 <SidebarMenuButton asChild tooltip={item.title}>
-                  <Link href={item.url}>
+                  <Link to={item.to}>
                     <item.icon />
                     <span>{item.title}</span>
                   </Link>
@@ -87,11 +98,17 @@ export function AppSidebar({ userName, ...props }: AppSidebarProps) {
           </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
+              tooltip={isDark ? "切换亮色" : "切换暗色"}
+              onClick={() => setTheme(isDark ? "light" : "dark")}
+            >
+              {isDark ? <SunIcon /> : <MoonIcon />}
+              <span>{isDark ? "切换亮色" : "切换暗色"}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
               tooltip="退出登录"
-              onClick={async () => {
-                await signOut();
-                router.replace("/login");
-              }}
+              onClick={handleLogout}
             >
               <LogOut />
               <span>退出登录</span>

@@ -10,3 +10,15 @@ export function makeQueryClient() {
     },
   });
 }
+
+export const queryClient = makeQueryClient();
+
+if (typeof window !== "undefined") {
+  window.__TANSTACK_QUERY_CLIENT__ = queryClient;
+}
+
+declare global {
+  interface Window {
+    __TANSTACK_QUERY_CLIENT__: import("@tanstack/query-core").QueryClient;
+  }
+}

@@ -50,8 +50,24 @@ export const CreateSourceSchema = z.object({
     .url()
     .refine((u) => u.startsWith("http://") || u.startsWith("https://")),
   enabled: z.boolean().default(true),
+  role: z.enum(["primary", "backup", "supplement", "test"]).default("primary"),
+  priority: z.number().int().min(0).max(9999).default(100),
+  participateInOutput: z.boolean().default(true),
+  allowFallback: z.boolean().default(true),
 });
 export type CreateSource = z.infer<typeof CreateSourceSchema>;
 
-export const UpdateSourceSchema = CreateSourceSchema.partial();
+export const UpdateSourceSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  url: z
+    .string()
+    .url()
+    .refine((u) => u.startsWith("http://") || u.startsWith("https://"))
+    .optional(),
+  enabled: z.boolean().optional(),
+  role: z.enum(["primary", "backup", "supplement", "test"]).optional(),
+  priority: z.number().int().min(0).max(9999).optional(),
+  participateInOutput: z.boolean().optional(),
+  allowFallback: z.boolean().optional(),
+});
 export type UpdateSource = z.infer<typeof UpdateSourceSchema>;
