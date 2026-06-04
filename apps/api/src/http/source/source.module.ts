@@ -1,24 +1,47 @@
 import { Module } from "@nestjs/common";
 import { SourceController } from "./source.controller";
-import { EpgSourceRepository } from "../../infrastructure/database/epg-source.repository";
-import { FindSourcesUseCase } from "../../application/source/find-sources.use-case";
-import { FindSourceUseCase } from "../../application/source/find-source.use-case";
-import { CreateSourceUseCase } from "../../application/source/create-source.use-case";
-import { UpdateSourceUseCase } from "../../application/source/update-source.use-case";
-import { DeleteSourceUseCase } from "../../application/source/delete-source.use-case";
+import { M3uSourceRepository } from "../../infrastructure/database/m3u-source.repository";
+import { XmltvSourceRepository } from "../../infrastructure/database/xmltv-source.repository";
+import { RawM3uChannelRepository } from "../../infrastructure/database/raw-m3u-channel.repository";
+import { RawXmltvChannelRepository } from "../../infrastructure/database/raw-xmltv-channel.repository";
+import { ChannelRepository } from "../../infrastructure/database/channel.repository";
+import { ProgrammeRepository } from "../../infrastructure/database/programme.repository";
+import { SyncLogRepository } from "../../infrastructure/database/sync-log.repository";
+import { HttpSourceDownloader } from "../../infrastructure/parsers/http-downloader.adapter";
+import { M3uParserAdapter } from "../../infrastructure/parsers/m3u-parser.adapter";
+import { XmltvParserAdapter } from "../../infrastructure/parsers/xmltv-parser.adapter";
+import { FindSourcesUseCase } from "../../application/source-management/find-sources.use-case";
+import { FindSourceUseCase } from "../../application/source-management/find-source.use-case";
+import { CreateSourceUseCase } from "../../application/source-management/create-source.use-case";
+import { UpdateSourceUseCase } from "../../application/source-management/update-source.use-case";
+import { DeleteSourceUseCase } from "../../application/source-management/delete-source.use-case";
+import { SyncM3uSourceUseCase } from "../../application/channel-catalog/sync-m3u-source.use-case";
+import { SyncXmltvSourceUseCase } from "../../application/channel-catalog/sync-xmltv-source.use-case";
+import { FindChannelsUseCase } from "../../application/channel-catalog/find-channels.use-case";
+import { FindProgrammesUseCase } from "../../application/channel-catalog/find-programmes.use-case";
 
 @Module({
   controllers: [SourceController],
   providers: [
-    {
-      provide: "EPG_SOURCE_REPOSITORY",
-      useClass: EpgSourceRepository,
-    },
+    { provide: "M3U_SOURCE_REPOSITORY", useClass: M3uSourceRepository },
+    { provide: "XMLTV_SOURCE_REPOSITORY", useClass: XmltvSourceRepository },
+    { provide: "RAW_M3U_CHANNEL_REPOSITORY", useClass: RawM3uChannelRepository },
+    { provide: "RAW_XMLTV_CHANNEL_REPOSITORY", useClass: RawXmltvChannelRepository },
+    { provide: "CHANNEL_REPOSITORY", useClass: ChannelRepository },
+    { provide: "PROGRAMME_REPOSITORY", useClass: ProgrammeRepository },
+    { provide: "TASK_REPOSITORY", useClass: SyncLogRepository },
+    { provide: "SOURCE_DOWNLOADER", useClass: HttpSourceDownloader },
+    { provide: "M3U_PARSER", useClass: M3uParserAdapter },
+    { provide: "XMLTV_PARSER", useClass: XmltvParserAdapter },
     FindSourcesUseCase,
     FindSourceUseCase,
     CreateSourceUseCase,
     UpdateSourceUseCase,
     DeleteSourceUseCase,
+    SyncM3uSourceUseCase,
+    SyncXmltvSourceUseCase,
+    FindChannelsUseCase,
+    FindProgrammesUseCase,
   ],
 })
 export class SourceModule {}
