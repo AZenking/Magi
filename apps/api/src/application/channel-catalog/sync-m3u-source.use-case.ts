@@ -157,7 +157,7 @@ export class SyncM3uSourceUseCase {
         removedCount: 0,
       };
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Unknown error";
+      const errorMsg = (err instanceof Error ? err.message : "Unknown error").slice(0, 500);
       await this.sourceRepo.updateSyncStatus(sourceId, {
         lastSyncAt: new Date(),
         lastSyncStatus: "failed",
