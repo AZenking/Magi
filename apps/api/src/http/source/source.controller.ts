@@ -11,15 +11,50 @@ import {
   Inject,
   UseGuards,
 } from "@nestjs/common";
-import type { EpgSourceVo, ApiResponse, PaginatedResponse, SourceQuery } from "@magi/types";
+import type { ApiResponse, PaginatedResponse, SourceVo, CreateSource, UpdateSource } from "@magi/types";
 import { CreateSourceSchema, UpdateSourceSchema, SourceQuerySchema } from "@magi/types";
-import type { EpgSource } from "../../domain/epg/epg.model";
-import { FindSourcesUseCase } from "../../application/source/find-sources.use-case";
-import { FindSourceUseCase } from "../../application/source/find-source.use-case";
-import { CreateSourceUseCase } from "../../application/source/create-source.use-case";
-import { UpdateSourceUseCase } from "../../application/source/update-source.use-case";
-import { DeleteSourceUseCase } from "../../application/source/delete-source.use-case";
+import type { M3uSource, XmltvSource } from "../../domain/source-management";
+import {
+  FindSourcesUseCase,
+} from "../../application/source-management/find-sources.use-case";
+import {
+  FindSourceUseCase,
+  type AnySource,
+} from "../../application/source-management/find-source.use-case";
+import {
+  CreateSourceUseCase,
+  type CreatedSource,
+} from "../../application/source-management/create-source.use-case";
+import {
+  UpdateSourceUseCase,
+  type UpdatedSource,
+} from "../../application/source-management/update-source.use-case";
+import { DeleteSourceUseCase } from "../../application/source-management/delete-source.use-case";
+import { SyncM3uSourceUseCase } from "../../application/channel-catalog/sync-m3u-source.use-case";
+import { SyncXmltvSourceUseCase } from "../../application/channel-catalog/sync-xmltv-source.use-case";
 import { AuthGuard } from "../../shared/guards/auth.guard";
+
+function toVo(source: AnySource | CreatedSource | UpdatedSource): SourceVo {
+  return {
+    id: source.id,
+    name: source.name,
+    type: source.type,
+    url: source.url,
+    enabled: source.enabled,
+    role: source.role,
+    priority: source.priority,
+    participateInOutput: source.participateInOutput,
+    allowFallback: source.type === "m3u" ? (source as M3uSource).allowFallback : true,
+    failureCount: source.failureCount,
+    lastSyncAt: source.lastSyncAt?.toISOString() ?? undefined,
+    lastSyncStatus: source.lastSyncStatus,
+    lastCheckAt: source.lastCheckAt?.toISOString() ?? undefined,
+    checkStatus: source.checkStatus,
+    qualityScore: source.qualityScore,
+    createdAt: source.createdAt.toISOString(),
+    updatedAt: source.updatedAt.toISOString(),
+  };
+}
 
 @Controller("sources")
 @UseGuards(AuthGuard)
@@ -30,18 +65,19 @@ export class SourceController {
     @Inject(CreateSourceUseCase) private readonly createSource: CreateSourceUseCase,
     @Inject(UpdateSourceUseCase) private readonly updateSource: UpdateSourceUseCase,
     @Inject(DeleteSourceUseCase) private readonly deleteSource: DeleteSourceUseCase,
+    @Inject(SyncM3uSourceUseCase) private readonly syncM3u: SyncM3uSourceUseCase,
+    @Inject(SyncXmltvSourceUseCase) private readonly syncXmltv: SyncXmltvSourceUseCase,
   ) {}
 
   @Get()
-  async findAll(@Query() query: SourceQuery): Promise<ApiResponse<PaginatedResponse<EpgSourceVo>>> {
+  async findAll(@Query() query: unknown): Promise<ApiResponse<PaginatedResponse<SourceVo>>> {
     const parsed = SourceQuerySchema.safeParse(query);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.flatten());
     }
     const { type, search, page = 1, pageSize = 20, sortBy, sortDir } = parsed.data;
 
-    const { items, total } = await this.findSources.execute({
-      type,
+    const { items, total } = await this.findSources.execute(type, {
       search,
       page,
       pageSize,
@@ -61,48 +97,58 @@ export class SourceController {
     };
   }
 
-  @Get(":id")
-  async findOne(@Param("id") id: string): Promise<ApiResponse<EpgSourceVo>> {
-    const row = await this.findSource.execute(id);
-    return { success: true, data: toVo(row) };
+  @Get(":type/:id")
+  async findOne(
+    @Param("type") type: "m3u" | "xmltv",
+    @Param("id") id: string,
+  ): Promise<ApiResponse<SourceVo>> {
+    const source = await this.findSource.execute(id, type);
+    return { success: true, data: toVo(source) };
   }
 
   @Post()
-  async create(@Body() body: unknown): Promise<ApiResponse<EpgSourceVo>> {
+  async create(@Body() body: unknown): Promise<ApiResponse<SourceVo>> {
     const parsed = CreateSourceSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.flatten());
     }
-    const row = await this.createSource.execute(parsed.data);
-    return { success: true, data: toVo(row) };
+    const source = await this.createSource.execute(parsed.data as CreateSource);
+    return { success: true, data: toVo(source) };
   }
 
-  @Put(":id")
-  async update(@Param("id") id: string, @Body() body: unknown): Promise<ApiResponse<EpgSourceVo>> {
+  @Put(":type/:id")
+  async update(
+    @Param("type") type: "m3u" | "xmltv",
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ): Promise<ApiResponse<SourceVo>> {
     const parsed = UpdateSourceSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.flatten());
     }
-    const row = await this.updateSource.execute(id, parsed.data);
-    return { success: true, data: toVo(row) };
+    const source = await this.updateSource.execute(id, type, parsed.data as UpdateSource);
+    return { success: true, data: toVo(source) };
   }
 
-  @Delete(":id")
-  async remove(@Param("id") id: string): Promise<ApiResponse<void>> {
-    await this.deleteSource.execute(id);
+  @Delete(":type/:id")
+  async remove(
+    @Param("type") type: "m3u" | "xmltv",
+    @Param("id") id: string,
+  ): Promise<ApiResponse<void>> {
+    await this.deleteSource.execute(id, type);
     return { success: true };
   }
-}
 
-function toVo(row: EpgSource): EpgSourceVo {
-  return {
-    id: row.id,
-    name: row.name,
-    type: row.type,
-    url: row.url,
-    enabled: row.enabled,
-    lastSyncedAt: row.lastSyncedAt?.toISOString() ?? undefined,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  };
+  @Post(":type/:id/sync")
+  async sync(
+    @Param("type") type: "m3u" | "xmltv",
+    @Param("id") id: string,
+  ): Promise<ApiResponse<unknown>> {
+    if (type === "m3u") {
+      const result = await this.syncM3u.execute(id);
+      return { success: result.status === "success", data: result };
+    }
+    const result = await this.syncXmltv.execute(id);
+    return { success: result.status === "success", data: result };
+  }
 }

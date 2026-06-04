@@ -1,25 +1,19 @@
-import { Controller, Get, Param, Post } from "@nestjs/common";
-import type { EpgSourceVo, ApiResponse } from "@magi/types";
+import { Controller, Get, Post, Param, Inject, UseGuards } from "@nestjs/common";
+import type { ApiResponse } from "@magi/types";
+import { AuthGuard } from "../../shared/guards/auth.guard";
+import { MatchEpgUseCase } from "../../application/output-composition/match-epg.use-case";
 
 @Controller("epg")
+@UseGuards(AuthGuard)
 export class EpgController {
-  @Get("sources")
-  async listSources(): Promise<ApiResponse<EpgSourceVo[]>> {
-    return { success: true };
-  }
+  constructor(
+    @Inject(MatchEpgUseCase)
+    private readonly matchEpg: MatchEpgUseCase,
+  ) {}
 
-  @Get("sources/:id")
-  async getSource(@Param("id") id: string): Promise<ApiResponse<EpgSourceVo>> {
-    return { success: true };
-  }
-
-  @Post("sources/:id/import")
-  async importSource(@Param("id") id: string): Promise<ApiResponse<void>> {
-    return { success: true };
-  }
-
-  @Post("sources/:id/refresh")
-  async refreshSource(@Param("id") id: string): Promise<ApiResponse<void>> {
-    return { success: true };
+  @Post("match/:sourceId")
+  async match(@Param("sourceId") sourceId: string): Promise<ApiResponse<{ matched: number; unmatched: number; conflicts: number }>> {
+    const result = await this.matchEpg.execute(sourceId);
+    return { success: true, data: result };
   }
 }
