@@ -6,6 +6,7 @@ import type {
   IM3uParser,
   RawM3uChannel,
 } from "@/domain/channel-catalog";
+import type { ITaskRepository } from "@/domain/task-execution";
 
 export interface SyncM3uResult {
   status: "success" | "failed";
@@ -29,6 +30,8 @@ export class SyncM3uSourceUseCase {
     private readonly downloader: ISourceDownloader,
     @Inject("M3U_PARSER")
     private readonly parser: IM3uParser,
+    @Inject("TASK_REPOSITORY")
+    private readonly taskRepo: ITaskRepository,
   ) {}
 
   async execute(sourceId: string): Promise<SyncM3uResult> {
@@ -43,6 +46,24 @@ export class SyncM3uSourceUseCase {
         error: "Source not found or disabled",
       };
     }
+
+    const startedAt = new Date();
+    const task = await this.taskRepo.create({
+      sourceType: "m3u",
+      taskType: "m3u-sync",
+      sourceId,
+      status: "running",
+      startedAt,
+      finishedAt: null,
+      error: null,
+      progress: 0,
+      currentStep: "download",
+      executionLog: null,
+      importedCount: 0,
+      addedCount: 0,
+      updatedCount: 0,
+      removedCount: 0,
+    });
 
     try {
       const { content, statusCode } = await this.downloader.download(source.url, {
@@ -121,6 +142,13 @@ export class SyncM3uSourceUseCase {
         lastSyncStatus: "success",
       });
 
+      await this.taskRepo.update(task.id, {
+        status: "success",
+        finishedAt: new Date(),
+        importedCount: entries.length,
+        addedCount: entries.length,
+      });
+
       return {
         status: "success",
         importedCount: entries.length,
@@ -129,9 +157,15 @@ export class SyncM3uSourceUseCase {
         removedCount: 0,
       };
     } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Unknown error";
       await this.sourceRepo.updateSyncStatus(sourceId, {
         lastSyncAt: new Date(),
         lastSyncStatus: "failed",
+      });
+      await this.taskRepo.update(task.id, {
+        status: "failed",
+        finishedAt: new Date(),
+        error: errorMsg,
       });
       return {
         status: "failed",
@@ -139,7 +173,7 @@ export class SyncM3uSourceUseCase {
         addedCount: 0,
         updatedCount: 0,
         removedCount: 0,
-        error: err instanceof Error ? err.message : "Unknown error",
+        error: errorMsg,
       };
     }
   }
