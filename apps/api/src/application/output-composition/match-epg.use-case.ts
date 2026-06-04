@@ -19,7 +19,7 @@ export class MatchEpgUseCase {
     const xmltvChannels = await this.xmltvChannelRepo.findBySourceId(sourceId);
     const xmltvList = xmltvChannels.map((c) => ({ id: c.xmltvId, displayName: c.displayName }));
 
-    const channels = await this.channelRepo.findByM3uSourceId(sourceId);
+    const { items: channels } = await this.channelRepo.findAll({ page: 1, pageSize: 50000 });
     const matcher = new EpgMatcher();
     let matched = 0;
     let unmatched = 0;
