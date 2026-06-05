@@ -24,9 +24,10 @@ type SourceSyncJob = {
   sourceType: string;
 };
 
-type EpgMatchJob = {
+type EpgJob = {
   taskId: string;
   sourceId: string;
+  sourceType?: string;
 };
 
 function createProgress(jobId: string | undefined, taskId: string) {
@@ -145,7 +146,7 @@ async function bootstrap() {
   const epgWorker = new Worker(
     "epg",
     async (job) => {
-      const { taskId, sourceId } = job.data as EpgMatchJob;
+      const { taskId, sourceId } = job.data as EpgJob;
 
       logger.info(`Processing epg job ${job.id}`, { name: job.name, taskId, sourceId });
 
@@ -162,18 +163,44 @@ async function bootstrap() {
         },
       };
 
-      const result = await processEpgMatch(sourceId, progress);
+      if (job.name === "epg-match") {
+        const result = await processEpgMatch(sourceId, progress);
+        return {
+          taskId,
+          importedCount: result.importedCount,
+          addedCount: result.addedCount,
+          updatedCount: result.updatedCount,
+          removedCount: result.removedCount,
+          matched: result.matched,
+          unmatched: result.unmatched,
+          conflicts: result.conflicts,
+        };
+      }
 
-      return {
-        taskId,
-        importedCount: result.importedCount,
-        addedCount: result.addedCount,
-        updatedCount: result.updatedCount,
-        removedCount: result.removedCount,
-        matched: result.matched,
-        unmatched: result.unmatched,
-        conflicts: result.conflicts,
-      };
+      if (job.name === "import-epg") {
+        const result = await processXmltvSync(sourceId, progress);
+        return {
+          taskId,
+          importedCount: result.importedCount,
+          addedCount: result.addedCount,
+          updatedCount: result.updatedCount,
+          removedCount: result.removedCount,
+        };
+      }
+
+      if (job.name === "refresh-epg") {
+        const syncResult = await processXmltvSync(sourceId, progress);
+        const matchResult = await processEpgMatch(sourceId, progress);
+        return {
+          taskId,
+          importedCount: syncResult.importedCount,
+          addedCount: syncResult.addedCount,
+          updatedCount: matchResult.matched,
+          removedCount: syncResult.removedCount,
+        };
+      }
+
+      throw new Error(`Unknown epg job name: ${job.name}`);
     },
     { connection: redis as never, concurrency: 1 },
   );

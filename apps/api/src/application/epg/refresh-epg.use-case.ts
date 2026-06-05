@@ -1,8 +1,15 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
+import type { TaskQueuePort } from "@/domain/task-execution";
 
 @Injectable()
 export class RefreshEpgUseCase {
-  async execute(sourceId: string): Promise<void> {
-    // TODO: enqueue EPG refresh task to BullMQ
+  constructor(
+    @Inject("TASK_QUEUE_PORT")
+    private readonly queue: TaskQueuePort,
+  ) {}
+
+  async execute(sourceId: string): Promise<{ taskId: string }> {
+    const { taskId } = await this.queue.enqueue("refresh-epg", { sourceId, sourceType: "xmltv" });
+    return { taskId };
   }
 }
