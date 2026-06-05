@@ -27,7 +27,7 @@ import { randomUUID } from "crypto";
             return { method: req.method, url: req.url, id: req.id };
           },
           res(res) {
-            return { statusCode: res.statusCode };
+            return { statusCode: res.statusCode, responseTime: res.responseTime };
           },
         },
       },

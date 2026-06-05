@@ -7,6 +7,7 @@ import {
   Put,
   Delete,
   Query,
+  HttpCode,
   BadRequestException,
   Inject,
   UseGuards,
@@ -30,8 +31,7 @@ import {
   type UpdatedSource,
 } from "../../application/source-management/update-source.use-case";
 import { DeleteSourceUseCase } from "../../application/source-management/delete-source.use-case";
-import { SyncM3uSourceUseCase } from "../../application/channel-catalog/sync-m3u-source.use-case";
-import { SyncXmltvSourceUseCase } from "../../application/channel-catalog/sync-xmltv-source.use-case";
+import { EnqueueSyncUseCase } from "../../application/task-execution/enqueue-sync.use-case";
 import { AuthGuard } from "../../shared/guards/auth.guard";
 
 function toVo(source: AnySource | CreatedSource | UpdatedSource): SourceVo {
@@ -65,8 +65,7 @@ export class SourceController {
     @Inject(CreateSourceUseCase) private readonly createSource: CreateSourceUseCase,
     @Inject(UpdateSourceUseCase) private readonly updateSource: UpdateSourceUseCase,
     @Inject(DeleteSourceUseCase) private readonly deleteSource: DeleteSourceUseCase,
-    @Inject(SyncM3uSourceUseCase) private readonly syncM3u: SyncM3uSourceUseCase,
-    @Inject(SyncXmltvSourceUseCase) private readonly syncXmltv: SyncXmltvSourceUseCase,
+    @Inject(EnqueueSyncUseCase) private readonly enqueueSync: EnqueueSyncUseCase,
   ) {}
 
   @Get()
@@ -140,15 +139,12 @@ export class SourceController {
   }
 
   @Post(":type/:id/sync")
+  @HttpCode(202)
   async sync(
     @Param("type") type: "m3u" | "xmltv",
     @Param("id") id: string,
-  ): Promise<ApiResponse<unknown>> {
-    if (type === "m3u") {
-      const result = await this.syncM3u.execute(id);
-      return { success: result.status === "success", data: result };
-    }
-    const result = await this.syncXmltv.execute(id);
-    return { success: result.status === "success", data: result };
+  ): Promise<ApiResponse<{ taskId: string }>> {
+    const result = await this.enqueueSync.execute(type, id);
+    return { success: true, data: result };
   }
 }
