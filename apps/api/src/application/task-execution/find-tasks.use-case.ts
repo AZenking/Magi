@@ -7,6 +7,7 @@ export interface FindTasksQuery {
   status?: TaskStatus;
   sourceType?: string;
   taskType?: string;
+  queueName?: string;
 }
 
 @Injectable()

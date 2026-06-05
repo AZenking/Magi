@@ -10,6 +10,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@magi/backend-core": "workspace:*",
     "@magi/types": "workspace:*",
     "@magi/utils": "workspace:*",
     "bullmq": "^5.56.0",

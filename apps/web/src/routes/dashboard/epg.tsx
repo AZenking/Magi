@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SourceVo, PaginatedResponse } from "@magi/types";
@@ -32,6 +32,7 @@ export const Route = createFileRoute("/dashboard/epg")({
 });
 
 function EpgPage() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [activeType, setActiveType] = useState<SourceType>("m3u");
   const [search, setSearch] = useState("");
@@ -137,29 +138,27 @@ function EpgPage() {
     async (source: SourceVo) => {
       setSyncingId(source.id);
       try {
-        const result = await apiClient<{ success: boolean; data: { status: string; importedCount?: number; channelCount?: number; programmeCount?: number } }>(
+        const result = await apiClient<{ success: boolean; data: { taskId: string } }>(
           `/sources/${source.type}/${source.id}/sync`,
           { method: "POST" },
         );
-        if (result.data?.status === "success") {
-          toast.success("同步成功", {
-            description: `导入: ${result.data.importedCount ?? result.data.channelCount ?? 0} 条`,
-          });
-        } else {
-          toast.warning("同步完成但未成功", {
-            description: "请检查源 URL 是否正确",
-          });
-        }
+        toast.success("同步任务已提交", {
+          description: "任务已加入队列",
+          action: {
+            label: "查看详情",
+            onClick: () => navigate({ to: "/dashboard/tasks/$taskId", params: { taskId: result.data.taskId } }),
+          },
+        });
         refresh();
       } catch (err) {
-        toast.error("同步失败", {
+        toast.error("提交同步失败", {
           description: err instanceof Error ? err.message : "请稍后重试",
         });
       } finally {
         setSyncingId(null);
       }
     },
-    [refresh],
+    [refresh, navigate],
   );
 
   const columns = useMemo(

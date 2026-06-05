@@ -19,6 +19,11 @@ function createTask(overrides: Partial<Task> = {}): Task {
     addedCount: 30,
     updatedCount: 10,
     removedCount: 5,
+    queueName: "source-sync",
+    jobId: "task-1",
+    jobName: "m3u-sync",
+    attemptsMade: 0,
+    processedOn: null,
     createdAt: new Date("2025-01-01T10:00:00Z"),
     ...overrides,
   };
@@ -50,6 +55,10 @@ describe("TaskModel", () => {
 
     it("returns true for failed", () => {
       expect(new TaskModel(createTask({ status: "failed" })).isFinished()).toBe(true);
+    });
+
+    it("returns true for cancelled", () => {
+      expect(new TaskModel(createTask({ status: "cancelled" })).isFinished()).toBe(true);
     });
 
     it("returns false for running", () => {

@@ -1,5 +1,5 @@
-export type TaskType = "m3u-sync" | "xmltv-sync" | "source-check" | "stream-check";
-export type TaskStatus = "pending" | "running" | "success" | "failed";
+export type TaskType = "m3u-sync" | "xmltv-sync" | "epg-match" | "source-check" | "stream-check" | "import-epg" | "refresh-epg";
+export type TaskStatus = "pending" | "running" | "success" | "failed" | "cancelled";
 
 export interface Task {
   id: string;
@@ -17,6 +17,11 @@ export interface Task {
   addedCount: number;
   updatedCount: number;
   removedCount: number;
+  queueName: string | null;
+  jobId: string | null;
+  jobName: string | null;
+  attemptsMade: number;
+  processedOn: Date | null;
   createdAt: Date;
 }
 
@@ -28,7 +33,7 @@ export class TaskModel {
   }
 
   isFinished(): boolean {
-    return this.task.status === "success" || this.task.status === "failed";
+    return this.task.status === "success" || this.task.status === "failed" || this.task.status === "cancelled";
   }
 
   durationMs(): number | null {

@@ -6,7 +6,6 @@ import { RawM3uChannelRepository } from "../../infrastructure/database/raw-m3u-c
 import { RawXmltvChannelRepository } from "../../infrastructure/database/raw-xmltv-channel.repository";
 import { ChannelRepository } from "../../infrastructure/database/channel.repository";
 import { ProgrammeRepository } from "../../infrastructure/database/programme.repository";
-import { SyncLogRepository } from "../../infrastructure/database/sync-log.repository";
 import { HttpSourceDownloader } from "../../infrastructure/parsers/http-downloader.adapter";
 import { M3uParserAdapter } from "../../infrastructure/parsers/m3u-parser.adapter";
 import { XmltvParserAdapter } from "../../infrastructure/parsers/xmltv-parser.adapter";
@@ -19,8 +18,12 @@ import { SyncM3uSourceUseCase } from "../../application/channel-catalog/sync-m3u
 import { SyncXmltvSourceUseCase } from "../../application/channel-catalog/sync-xmltv-source.use-case";
 import { FindChannelsUseCase } from "../../application/channel-catalog/find-channels.use-case";
 import { FindProgrammesUseCase } from "../../application/channel-catalog/find-programmes.use-case";
+import { EnqueueSyncUseCase } from "../../application/task-execution/enqueue-sync.use-case";
+import { BullmqModule } from "../../infrastructure/bullmq/bullmq.module";
+import { TaskModule } from "../task/task.module";
 
 @Module({
+  imports: [BullmqModule, TaskModule],
   controllers: [SourceController],
   providers: [
     { provide: "M3U_SOURCE_REPOSITORY", useClass: M3uSourceRepository },
@@ -29,7 +32,6 @@ import { FindProgrammesUseCase } from "../../application/channel-catalog/find-pr
     { provide: "RAW_XMLTV_CHANNEL_REPOSITORY", useClass: RawXmltvChannelRepository },
     { provide: "CHANNEL_REPOSITORY", useClass: ChannelRepository },
     { provide: "PROGRAMME_REPOSITORY", useClass: ProgrammeRepository },
-    { provide: "TASK_REPOSITORY", useClass: SyncLogRepository },
     { provide: "SOURCE_DOWNLOADER", useClass: HttpSourceDownloader },
     { provide: "M3U_PARSER", useClass: M3uParserAdapter },
     { provide: "XMLTV_PARSER", useClass: XmltvParserAdapter },
@@ -42,6 +44,7 @@ import { FindProgrammesUseCase } from "../../application/channel-catalog/find-pr
     SyncXmltvSourceUseCase,
     FindChannelsUseCase,
     FindProgrammesUseCase,
+    EnqueueSyncUseCase,
   ],
 })
 export class SourceModule {}
