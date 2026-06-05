@@ -6,7 +6,7 @@ import type {
   IXmltvParser,
   RawXmltvChannel,
 } from "@/domain/channel-catalog";
-import type { ITaskRepository } from "@/domain/task-execution";
+import type { SyncProgress } from "./sync-m3u-source.use-case";
 
 export interface SyncXmltvResult {
   status: "success" | "failed";
@@ -28,11 +28,9 @@ export class SyncXmltvSourceUseCase {
     private readonly downloader: ISourceDownloader,
     @Inject("XMLTV_PARSER")
     private readonly parser: IXmltvParser,
-    @Inject("TASK_REPOSITORY")
-    private readonly taskRepo: ITaskRepository,
   ) {}
 
-  async execute(sourceId: string): Promise<SyncXmltvResult> {
+  async execute(sourceId: string, progress?: SyncProgress): Promise<SyncXmltvResult> {
     const source = await this.sourceRepo.findById(sourceId);
     if (!source || !source.enabled) {
       return {
@@ -43,25 +41,9 @@ export class SyncXmltvSourceUseCase {
       };
     }
 
-    const startedAt = new Date();
-    const task = await this.taskRepo.create({
-      sourceType: "xmltv",
-      taskType: "xmltv-sync",
-      sourceId,
-      status: "running",
-      startedAt,
-      finishedAt: null,
-      error: null,
-      progress: 0,
-      currentStep: "download",
-      executionLog: null,
-      importedCount: 0,
-      addedCount: 0,
-      updatedCount: 0,
-      removedCount: 0,
-    });
-
     try {
+      await progress?.updateProgress(10, "download");
+
       const { content, statusCode } = await this.downloader.download(source.url, {
         headers: source.headers ?? undefined,
       });
@@ -71,11 +53,6 @@ export class SyncXmltvSourceUseCase {
           lastSyncAt: new Date(),
           lastSyncStatus: "failed",
         });
-        await this.taskRepo.update(task.id, {
-          status: "failed",
-          finishedAt: new Date(),
-          error: `Download failed: HTTP ${statusCode}`,
-        });
         return {
           status: "failed",
           channelCount: 0,
@@ -84,8 +61,12 @@ export class SyncXmltvSourceUseCase {
         };
       }
 
+      await progress?.updateProgress(40, "parse");
+
       const data = this.parser.parse(content);
       const now = new Date();
+
+      await progress?.updateProgress(60, "write");
 
       await this.rawChannelRepo.deleteBySourceId(sourceId);
       await this.programmeRepo.deleteBySourceId(sourceId);
@@ -122,16 +103,11 @@ export class SyncXmltvSourceUseCase {
         );
       }
 
+      await progress?.updateProgress(90, "finalize");
+
       await this.sourceRepo.updateSyncStatus(sourceId, {
         lastSyncAt: now,
         lastSyncStatus: "success",
-      });
-
-      await this.taskRepo.update(task.id, {
-        status: "success",
-        finishedAt: new Date(),
-        importedCount: data.channels.length + filteredProgrammes.length,
-        addedCount: data.channels.length,
       });
 
       return {
@@ -144,11 +120,6 @@ export class SyncXmltvSourceUseCase {
       await this.sourceRepo.updateSyncStatus(sourceId, {
         lastSyncAt: new Date(),
         lastSyncStatus: "failed",
-      });
-      await this.taskRepo.update(task.id, {
-        status: "failed",
-        finishedAt: new Date(),
-        error: errorMsg,
       });
       return {
         status: "failed",

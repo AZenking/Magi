@@ -20,10 +20,23 @@ function createTask(overrides: Partial<Task> = {}): Task {
     addedCount: 30,
     updatedCount: 10,
     removedCount: 5,
+    queueName: "source-sync",
+    jobId: "task-1",
+    jobName: "m3u-sync",
+    attemptsMade: 0,
+    processedOn: null,
     createdAt: new Date("2025-01-01T10:00:00Z"),
     ...overrides,
   };
 }
+
+const mockQueueAdapter = {
+  enqueue: async () => ({ jobId: "j1", taskId: "t1" }),
+  cancel: async () => true,
+  retry: async () => true,
+  getJobState: async () => null,
+  getJobDetail: async () => null,
+};
 
 describe("FindTasksUseCase", () => {
   it("returns paginated tasks", async () => {
@@ -62,18 +75,20 @@ describe("FindTasksUseCase", () => {
 describe("FindTaskUseCase", () => {
   it("returns task by id", async () => {
     const task = createTask();
-    const useCase = new FindTaskUseCase({
-      findById: async () => task,
-    } as unknown as ITaskRepository);
+    const useCase = new FindTaskUseCase(
+      { findById: async () => task } as unknown as ITaskRepository,
+      mockQueueAdapter as never,
+    );
 
     const result = await useCase.execute("task-1");
     expect(result.id).toBe("task-1");
   });
 
   it("throws NotFoundException when task not found", async () => {
-    const useCase = new FindTaskUseCase({
-      findById: async () => null,
-    } as unknown as ITaskRepository);
+    const useCase = new FindTaskUseCase(
+      { findById: async () => null } as unknown as ITaskRepository,
+      mockQueueAdapter as never,
+    );
 
     await expect(useCase.execute("missing")).rejects.toThrow("Task not found");
   });

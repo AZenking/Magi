@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import type { IChannelRepository, Channel, IRawXmltvChannelRepository, RawXmltvChannel } from "@/domain/channel-catalog";
+import type { ICanonicalChannelRepository } from "@/domain/output-composition";
 
-// Mock EpgMatcher before importing the use case
 vi.mock("@/domain/epg-matching/epg-matcher", () => {
   class EpgMatcher {
     match(input: { channelTvgId: string | null; channelTvgName: string | null; channelDisplayName: string; manualEpgChannelId: string | null; xmltvChannels: Array<{ id: string; displayName: string }> }) {
@@ -59,23 +59,31 @@ function createXmltvChannel(overrides: Partial<RawXmltvChannel> = {}): RawXmltvC
   };
 }
 
+function makeRepos(channels: Channel[], xmltvChannels: RawXmltvChannel[]) {
+  const channelRepo: Partial<IChannelRepository> = {
+    findAll: vi.fn(async () => ({ items: channels, total: channels.length })),
+    update: vi.fn(async () => null),
+  };
+  const xmltvRepo: Partial<IRawXmltvChannelRepository> = {
+    findBySourceId: vi.fn(async () => xmltvChannels),
+  };
+  const canonicalRepo: Partial<ICanonicalChannelRepository> = {
+    deleteAll: vi.fn(async () => 0),
+    createBatch: vi.fn(async () => []),
+  };
+  return { channelRepo, xmltvRepo, canonicalRepo };
+}
+
 describe("MatchEpgUseCase", () => {
   it("matches channels by tvg-id", async () => {
     const channels = [createChannel()];
     const xmltvChannels = [createXmltvChannel()];
-
-    const updated: [string, Partial<Channel>][] = [];
-    const channelRepo: Partial<IChannelRepository> = {
-      findByM3uSourceId: async () => channels,
-      update: vi.fn(async (id, data) => { updated.push([id, data]); return createChannel({ ...data as Partial<Channel> } as Channel); }),
-    };
-    const xmltvRepo: Partial<IRawXmltvChannelRepository> = {
-      findBySourceId: async () => xmltvChannels,
-    };
+    const { channelRepo, xmltvRepo, canonicalRepo } = makeRepos(channels, xmltvChannels);
 
     const useCase = new MatchEpgUseCase(
       channelRepo as IChannelRepository,
       xmltvRepo as IRawXmltvChannelRepository,
+      canonicalRepo as ICanonicalChannelRepository,
     );
 
     const result = await useCase.execute("src-1");
@@ -86,18 +94,12 @@ describe("MatchEpgUseCase", () => {
   it("reports unmatched when no match found", async () => {
     const channels = [createChannel({ tvgId: "unknown", displayName: "Unknown" })];
     const xmltvChannels = [createXmltvChannel({ xmltvId: "cctv1", displayName: "CCTV-1" })];
-
-    const channelRepo: Partial<IChannelRepository> = {
-      findByM3uSourceId: async () => channels,
-      update: vi.fn(async () => null),
-    };
-    const xmltvRepo: Partial<IRawXmltvChannelRepository> = {
-      findBySourceId: async () => xmltvChannels,
-    };
+    const { channelRepo, xmltvRepo, canonicalRepo } = makeRepos(channels, xmltvChannels);
 
     const useCase = new MatchEpgUseCase(
       channelRepo as IChannelRepository,
       xmltvRepo as IRawXmltvChannelRepository,
+      canonicalRepo as ICanonicalChannelRepository,
     );
 
     const result = await useCase.execute("src-1");
@@ -111,22 +113,15 @@ describe("MatchEpgUseCase", () => {
       createXmltvChannel({ xmltvId: "cctv1a", displayName: "CCTV-1" }),
       createXmltvChannel({ id: "xc-2", xmltvId: "cctv1b", displayName: "CCTV-1" }),
     ];
-
-    const channelRepo: Partial<IChannelRepository> = {
-      findByM3uSourceId: async () => channels,
-      update: vi.fn(async () => null),
-    };
-    const xmltvRepo: Partial<IRawXmltvChannelRepository> = {
-      findBySourceId: async () => xmltvChannels,
-    };
+    const { channelRepo, xmltvRepo, canonicalRepo } = makeRepos(channels, xmltvChannels);
 
     const useCase = new MatchEpgUseCase(
       channelRepo as unknown as IChannelRepository,
       xmltvRepo as unknown as IRawXmltvChannelRepository,
+      canonicalRepo as unknown as ICanonicalChannelRepository,
     );
 
     const result = await useCase.execute("src-1");
-    // Two channels with identical displayName → conflict
     expect(result.conflicts).toBeGreaterThanOrEqual(1);
   });
 });

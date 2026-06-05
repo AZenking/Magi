@@ -5,8 +5,9 @@ import { TaskModule } from "./task/task.module";
 import { SourceModule } from "./source/source.module";
 import { OutputModule } from "./output/output.module";
 import { EpgModule } from "./epg/epg.module";
+import { DashboardModule } from "./dashboard/dashboard.module";
 
 @Module({
-  imports: [ChannelModule, ProgrammeModule, TaskModule, SourceModule, OutputModule, EpgModule],
+  imports: [DashboardModule, ChannelModule, ProgrammeModule, TaskModule, SourceModule, OutputModule, EpgModule],
 })
 export class HttpModule {}

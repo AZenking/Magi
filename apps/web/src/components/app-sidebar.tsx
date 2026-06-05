@@ -1,6 +1,6 @@
 "use client";
 
-import { Link } from "@tanstack/react-router";
+import { Link, useLocation } from "@tanstack/react-router";
 import {
   LayoutDashboard,
   Tv,
@@ -28,10 +28,10 @@ import {
 } from "@magi/ui/components/sidebar";
 
 const navItems = [
-  { title: "仪表盘", to: "/dashboard" as const, icon: LayoutDashboard },
-  { title: "频道", to: "/dashboard/channels" as const, icon: Tv },
+  { title: "仪表盘", to: "/dashboard" as const, icon: LayoutDashboard, exact: true },
   { title: "EPG 源", to: "/dashboard/epg" as const, icon: Radio },
   { title: "EPG 匹配", to: "/dashboard/epg-matching" as const, icon: LinkIcon },
+  { title: "频道", to: "/dashboard/channels" as const, icon: Tv },
   { title: "节目单", to: "/dashboard/programmes" as const, icon: CalendarDays },
   { title: "任务", to: "/dashboard/tasks" as const, icon: ListTodo },
 ];
@@ -44,8 +44,14 @@ export function AppSidebar({ userName, ...props }: AppSidebarProps) {
   const { resolvedTheme, setTheme } = useTheme();
   const displayName = userName ?? "用户";
   const initial = displayName.charAt(0).toUpperCase();
+  const { pathname } = useLocation();
 
   const isDark = resolvedTheme === "dark";
+
+  function isItemActive(item: (typeof navItems)[number]) {
+    if (item.exact) return pathname === item.to || pathname === item.to + "/";
+    return pathname === item.to || pathname.startsWith(item.to + "/");
+  }
 
   async function handleLogout() {
     await signOut();
@@ -75,7 +81,7 @@ export function AppSidebar({ userName, ...props }: AppSidebarProps) {
           <SidebarMenu>
             {navItems.map((item) => (
               <SidebarMenuItem key={item.title}>
-                <SidebarMenuButton asChild tooltip={item.title}>
+                <SidebarMenuButton asChild tooltip={item.title} isActive={isItemActive(item)}>
                   <Link to={item.to}>
                     <item.icon />
                     <span>{item.title}</span>

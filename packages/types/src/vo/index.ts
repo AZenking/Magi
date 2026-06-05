@@ -68,12 +68,24 @@ export interface ProgrammeVo {
   createdAt: string;
 }
 
+export interface TaskJobDetailVo {
+  state: string;
+  attemptsMade: number;
+  progress: number;
+  failedReason: string | null;
+  stacktrace: string[] | null;
+  returnValue: unknown;
+  processedOn: string | null;
+  finishedOn: string | null;
+  jobAvailable: boolean;
+}
+
 export interface TaskVo {
   id: string;
   sourceType: string;
   taskType: string;
   sourceId: string;
-  status: "pending" | "running" | "success" | "failed";
+  status: "pending" | "running" | "success" | "failed" | "cancelled";
   startedAt: string;
   finishedAt: string | null;
   error: string | null;
@@ -83,5 +95,10 @@ export interface TaskVo {
   addedCount: number;
   updatedCount: number;
   removedCount: number;
+  queueName: string | null;
+  jobId: string | null;
+  attemptsMade: number;
+  processedOn: string | null;
+  jobDetail?: TaskJobDetailVo;
   createdAt: string;
 }

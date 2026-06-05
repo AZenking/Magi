@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { SourceVo } from "@magi/types";
@@ -8,13 +8,7 @@ import { Button } from "@magi/ui/components/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@magi/ui/components/card";
 import { Badge } from "@magi/ui/components/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@magi/ui/components/select";
-import { ZapIcon, CheckCircleIcon, XCircleIcon, AlertTriangleIcon } from "lucide-react";
-
-interface MatchResult {
-  matched: number;
-  unmatched: number;
-  conflicts: number;
-}
+import { ZapIcon } from "lucide-react";
 
 export const Route = createFileRoute("/dashboard/epg-matching")({
   component: EpgMatchingPage,
@@ -22,6 +16,7 @@ export const Route = createFileRoute("/dashboard/epg-matching")({
 
 function EpgMatchingPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [selectedSourceId, setSelectedSourceId] = useState<string>("");
 
   const { data: sourcesData, isLoading } = useQuery({
@@ -36,13 +31,19 @@ function EpgMatchingPage() {
 
   const matchMutation = useMutation({
     mutationFn: (sourceId: string) =>
-      apiClient<{ success: boolean; data: MatchResult }>(`/epg/match/${sourceId}`, {
+      apiClient<{ success: boolean; data: { taskId: string } }>(`/epg/match/${sourceId}`, {
         method: "POST",
       }),
     onSuccess: (data) => {
-      const result = data.data;
-      toast.success("EPG 匹配完成", {
-        description: `匹配: ${result.matched} | 未匹配: ${result.unmatched} | 冲突: ${result.conflicts}`,
+      const taskId = data.data?.taskId;
+      toast.success("EPG 匹配任务已创建", {
+        description: taskId ? `任务 ${taskId.slice(0, 8)}... 已提交，正在后台处理` : "任务已提交",
+        action: taskId
+          ? {
+              label: "查看任务",
+              onClick: () => navigate({ to: "/dashboard/tasks/$taskId", params: { taskId } }),
+            }
+          : undefined,
       });
       queryClient.invalidateQueries({ queryKey: ["xmltv-sources"] });
     },
@@ -96,47 +97,9 @@ function EpgMatchingPage() {
               disabled={!selectedSourceId || matchMutation.isPending}
             >
               <ZapIcon className="mr-2 h-4 w-4" aria-hidden="true" />
-              {matchMutation.isPending ? "匹配中..." : "开始匹配"}
+              {matchMutation.isPending ? "提交中..." : "开始匹配"}
             </Button>
           </div>
-
-          {matchMutation.data && (
-            <div className="grid grid-cols-3 gap-4 mt-6">
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-2">
-                    <CheckCircleIcon className="h-5 w-5 text-green-500" aria-hidden="true" />
-                    <div>
-                      <p className="text-2xl font-bold">{matchMutation.data.data.matched}</p>
-                      <p className="text-sm text-muted-foreground">已匹配</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-2">
-                    <XCircleIcon className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-                    <div>
-                      <p className="text-2xl font-bold">{matchMutation.data.data.unmatched}</p>
-                      <p className="text-sm text-muted-foreground">未匹配</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangleIcon className="h-5 w-5 text-yellow-500" aria-hidden="true" />
-                    <div>
-                      <p className="text-2xl font-bold">{matchMutation.data.data.conflicts}</p>
-                      <p className="text-sm text-muted-foreground">冲突</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
         </CardContent>
       </Card>
 
