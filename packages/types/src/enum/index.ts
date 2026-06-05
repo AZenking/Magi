@@ -1,8 +1,9 @@
 export enum TaskStatus {
   PENDING = "pending",
   RUNNING = "running",
-  COMPLETED = "completed",
+  SUCCESS = "success",
   FAILED = "failed",
+  CANCELLED = "cancelled",
 }
 
 export enum EpgSourceType {
