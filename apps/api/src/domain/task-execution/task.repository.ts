@@ -1,4 +1,4 @@
-import type { Task, TaskStatus } from "./task.model";
+import type { Task, TaskStatus, TaskType } from "./task.model";
 
 export interface ITaskRepository {
   findAll(params: {
@@ -7,10 +7,12 @@ export interface ITaskRepository {
     status?: TaskStatus;
     sourceType?: string;
     taskType?: string;
+    queueName?: string;
   }): Promise<{ items: Task[]; total: number }>;
   findById(id: string): Promise<Task | null>;
+  findActiveBySource(taskType: TaskType, sourceId: string): Promise<Task | null>;
   create(data: Omit<Task, "id" | "createdAt">): Promise<Task>;
-  update(id: string, data: Partial<Pick<Task, "status" | "finishedAt" | "error" | "progress" | "currentStep" | "executionLog" | "importedCount" | "addedCount" | "updatedCount" | "removedCount">>): Promise<Task | null>;
+  update(id: string, data: Partial<Pick<Task, "status" | "finishedAt" | "error" | "progress" | "currentStep" | "executionLog" | "importedCount" | "addedCount" | "updatedCount" | "removedCount" | "queueName" | "jobId" | "jobName" | "attemptsMade" | "processedOn">>): Promise<Task | null>;
 }
 
 export * from "./task.model";

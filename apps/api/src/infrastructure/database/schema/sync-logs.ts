@@ -25,6 +25,11 @@ export const syncLogs = pgTable(
     addedCount: integer("added_count").notNull().default(0),
     updatedCount: integer("updated_count").notNull().default(0),
     removedCount: integer("removed_count").notNull().default(0),
+    queueName: varchar("queue_name", { length: 50 }),
+    jobId: varchar("job_id", { length: 50 }),
+    jobName: varchar("job_name", { length: 50 }),
+    attemptsMade: integer("attempts_made").notNull().default(0),
+    processedOn: timestamp("processed_on", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -32,5 +37,6 @@ export const syncLogs = pgTable(
   (t) => [
     index("sync_logs_source_idx").on(t.sourceId, t.sourceType),
     index("sync_logs_status_idx").on(t.status),
+    index("sync_logs_queue_name_idx").on(t.queueName),
   ],
 );
