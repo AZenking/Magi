@@ -6,7 +6,10 @@ import type {
   IM3uParser,
   RawM3uChannel,
 } from "@/domain/channel-catalog";
-import type { ITaskRepository } from "@/domain/task-execution";
+
+export interface SyncProgress {
+  updateProgress(progress: number, currentStep: string): Promise<void>;
+}
 
 export interface SyncM3uResult {
   status: "success" | "failed";
@@ -30,11 +33,9 @@ export class SyncM3uSourceUseCase {
     private readonly downloader: ISourceDownloader,
     @Inject("M3U_PARSER")
     private readonly parser: IM3uParser,
-    @Inject("TASK_REPOSITORY")
-    private readonly taskRepo: ITaskRepository,
   ) {}
 
-  async execute(sourceId: string): Promise<SyncM3uResult> {
+  async execute(sourceId: string, progress?: SyncProgress): Promise<SyncM3uResult> {
     const source = await this.sourceRepo.findById(sourceId);
     if (!source || !source.enabled) {
       return {
@@ -47,25 +48,9 @@ export class SyncM3uSourceUseCase {
       };
     }
 
-    const startedAt = new Date();
-    const task = await this.taskRepo.create({
-      sourceType: "m3u",
-      taskType: "m3u-sync",
-      sourceId,
-      status: "running",
-      startedAt,
-      finishedAt: null,
-      error: null,
-      progress: 0,
-      currentStep: "download",
-      executionLog: null,
-      importedCount: 0,
-      addedCount: 0,
-      updatedCount: 0,
-      removedCount: 0,
-    });
-
     try {
+      await progress?.updateProgress(10, "download");
+
       const { content, statusCode } = await this.downloader.download(source.url, {
         headers: source.headers ?? undefined,
       });
@@ -85,15 +70,15 @@ export class SyncM3uSourceUseCase {
         };
       }
 
+      await progress?.updateProgress(40, "parse");
+
       const entries = this.parser.parse(content);
       const now = new Date();
 
-      const activeIdentities: string[] = [];
       const rawChannels: Omit<RawM3uChannel, "id" | "createdAt" | "updatedAt">[] = [];
 
       for (const entry of entries) {
         const channelIdentity = this.parser.generateChannelIdentity(sourceId, entry);
-        activeIdentities.push(channelIdentity);
         rawChannels.push({
           sourceId,
           tvgId: entry.tvgId,
@@ -108,13 +93,14 @@ export class SyncM3uSourceUseCase {
         });
       }
 
+      await progress?.updateProgress(60, "write");
+
       await this.rawChannelRepo.deleteBySourceId(sourceId);
 
       const rawResults = rawChannels.length > 0
         ? await this.rawChannelRepo.createBatch(rawChannels)
         : [];
 
-      // Populate channels table from raw results
       await this.channelRepo.deleteByM3uSourceId(sourceId);
 
       if (rawResults.length > 0) {
@@ -127,26 +113,22 @@ export class SyncM3uSourceUseCase {
           tvgId: rc.tvgId,
           tvgLogo: rc.tvgLogo,
           streamUrl: rc.streamUrl,
-          active: true,
-          epgMatchType: null as string | null,
-          streamStatus: null as string | null,
+          epgChannelId: null as string | null,
+          epgMatchType: null as import("@/domain/channel-catalog").EpgMatchType,
+          streamStatus: null as import("@/domain/channel-catalog").StreamStatus | null,
           streamResponseTime: null as number | null,
           streamCheckedAt: null as Date | null,
           streamError: null as string | null,
+          active: true,
         }));
         await this.channelRepo.createBatch(channelData);
       }
 
+      await progress?.updateProgress(90, "finalize");
+
       await this.sourceRepo.updateSyncStatus(sourceId, {
         lastSyncAt: now,
         lastSyncStatus: "success",
-      });
-
-      await this.taskRepo.update(task.id, {
-        status: "success",
-        finishedAt: new Date(),
-        importedCount: entries.length,
-        addedCount: entries.length,
       });
 
       return {
@@ -161,11 +143,6 @@ export class SyncM3uSourceUseCase {
       await this.sourceRepo.updateSyncStatus(sourceId, {
         lastSyncAt: new Date(),
         lastSyncStatus: "failed",
-      });
-      await this.taskRepo.update(task.id, {
-        status: "failed",
-        finishedAt: new Date(),
-        error: errorMsg,
       });
       return {
         status: "failed",
