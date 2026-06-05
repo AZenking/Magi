@@ -55,6 +55,16 @@ export interface CanonicalChannelVo {
   updatedAt: string;
 }
 
+export interface UpdateOutputChannel {
+  standardName?: string | null;
+  standardGroup?: string | null;
+  standardLogo?: string | null;
+  channelNumber?: number | null;
+  hidden?: boolean;
+  starred?: boolean;
+  epgChannelId?: string | null;
+}
+
 export interface ProgrammeVo {
   id: string;
   sourceId: string;

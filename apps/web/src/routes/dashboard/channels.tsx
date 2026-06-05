@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CanonicalChannelVo, PaginatedResponse } from "@magi/types";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import type { CanonicalChannelVo, PaginatedResponse, UpdateOutputChannel } from "@magi/types";
 import { apiClient } from "@/services/api";
 import { Button } from "@magi/ui/components/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@magi/ui/components/select";
@@ -11,6 +11,7 @@ import { DataTableViewOptions } from "@magi/ui/components/data-table-view-option
 import { RefreshCwIcon, DownloadIcon } from "lucide-react";
 import { useReactTable, getCoreRowModel, type VisibilityState } from "@tanstack/react-table";
 import { getChannelColumns } from "@/features/dashboard/channels/columns";
+import { OutputChannelFormDialog } from "@/features/dashboard/channels/channel-form-dialog";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 
@@ -24,6 +25,7 @@ function ChannelsPage() {
   const [pageSize, setPageSize] = useState(20);
   const [epgStatus, setEpgStatus] = useState<string>("");
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [editingChannel, setEditingChannel] = useState<CanonicalChannelVo | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["output-channels", page, pageSize, epgStatus],
@@ -44,7 +46,21 @@ function ChannelsPage() {
     queryClient.invalidateQueries({ queryKey: ["output-channels"] });
   }, [queryClient]);
 
-  const columns = useMemo(() => getChannelColumns(), []);
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, body }: { id: string; body: UpdateOutputChannel }) => {
+      return apiClient<{ success: boolean; data: CanonicalChannelVo }>(`/output/channels/${id}`, {
+        method: "PUT",
+        body,
+      });
+    },
+    onSuccess: () => {
+      refresh();
+    },
+  });
+
+  const columns = useMemo(() => getChannelColumns({
+    onEdit: (ch) => setEditingChannel(ch),
+  }), []);
 
   const table = useReactTable({
     data: channels,
@@ -103,7 +119,8 @@ function ChannelsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">全部</SelectItem>
-            <SelectItem value="matched">已匹配</SelectItem>
+            <SelectItem value="matched_auto">自动匹配</SelectItem>
+            <SelectItem value="matched_manual">手动匹配</SelectItem>
             <SelectItem value="unmatched">未匹配</SelectItem>
             <SelectItem value="conflict">冲突</SelectItem>
           </SelectContent>
@@ -114,6 +131,15 @@ function ChannelsPage() {
       <DataTable table={table} columns={columns} loading={isLoading} />
 
       <DataTablePagination table={table} />
+
+      {editingChannel && (
+        <OutputChannelFormDialog
+          open={!!editingChannel}
+          onOpenChange={(open) => { if (!open) setEditingChannel(null); }}
+          channel={editingChannel}
+          onSubmit={async (body) => { await updateMutation.mutateAsync({ id: editingChannel.id, body }); }}
+        />
+      )}
     </>
   );
 }

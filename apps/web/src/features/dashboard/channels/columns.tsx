@@ -1,10 +1,13 @@
 import { type ColumnDef } from "@tanstack/react-table";
 import type { CanonicalChannelVo } from "@magi/types";
 import { Badge } from "@magi/ui/components/badge";
+import { Button } from "@magi/ui/components/button";
 import { DataTableColumnHeader } from "@magi/ui/components/data-table-column-header";
+import { PencilIcon } from "lucide-react";
 
 const epgStatusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  matched: { label: "已匹配", variant: "default" },
+  matched_auto: { label: "自动匹配", variant: "default" },
+  matched_manual: { label: "手动匹配", variant: "secondary" },
   unmatched: { label: "未匹配", variant: "outline" },
   conflict: { label: "冲突", variant: "destructive" },
 };
@@ -15,7 +18,11 @@ const outputStatusMap: Record<string, { label: string; variant: "default" | "sec
   error: { label: "异常", variant: "destructive" },
 };
 
-export function getChannelColumns(): ColumnDef<CanonicalChannelVo>[] {
+interface ColumnContext {
+  onEdit?: (channel: CanonicalChannelVo) => void;
+}
+
+export function getChannelColumns(ctx?: ColumnContext): ColumnDef<CanonicalChannelVo>[] {
   return [
     {
       accessorKey: "standardName",
@@ -59,14 +66,33 @@ export function getChannelColumns(): ColumnDef<CanonicalChannelVo>[] {
       },
     },
     {
-      accessorKey: "epgMatchType",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="匹配方式" />,
-      cell: ({ row }) => row.original.epgMatchType ?? "-",
+      accessorKey: "epgChannelId",
+      header: ({ column }) => <DataTableColumnHeader column={column} title="tvg-id" />,
+      cell: ({ row }) => (
+        <span className="font-mono text-xs">{row.original.epgChannelId ?? "-"}</span>
+      ),
     },
     {
       accessorKey: "channelNumber",
       header: ({ column }) => <DataTableColumnHeader column={column} title="频道号" />,
       cell: ({ row }) => row.original.channelNumber ?? "-",
+    },
+    {
+      id: "actions",
+      header: () => null,
+      cell: ({ row }) => {
+        if (!ctx?.onEdit) return null;
+        return (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={(e) => { e.stopPropagation(); ctx.onEdit!(row.original); }}
+            aria-label="编辑"
+          >
+            <PencilIcon className="h-4 w-4" />
+          </Button>
+        );
+      },
     },
   ];
 }

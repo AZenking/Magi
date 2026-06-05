@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db";
-import { channels, rawXmltvChannels, canonicalChannels } from "../schema";
+import { channels, rawXmltvChannels, canonicalChannels, channelOverrides } from "../schema";
 import { EpgMatcher } from "@magi/backend-core";
 import type { SyncProgress } from "@magi/backend-core";
 
@@ -63,26 +63,52 @@ export async function processEpgMatch(sourceId: string, progress?: SyncProgress)
     await tx.delete(canonicalChannels);
 
     const allChannelsAfter = await tx.select().from(channels).limit(10000);
+
+    // Load overrides indexed by channelId
+    const overrideRows = await tx.select().from(channelOverrides);
+    const overrideMap = new Map(overrideRows.map((o) => [o.channelId, o]));
+
     if (allChannelsAfter.length > 0) {
-      const canonicalData = allChannelsAfter.map((ch) => ({
-        standardName: ch.displayName,
-        standardGroup: ch.groupTitle,
-        standardLogo: ch.tvgLogo,
-        channelNumber: null,
-        hidden: false,
-        starred: false,
-        disabled: false,
-        epgChannelId: ch.epgChannelId,
-        epgMatchType: ch.epgMatchType,
-        epgStatus: ch.epgChannelId ? "matched_auto" : null,
-        outputStatus: "active",
-        qualityScore: null,
-        primaryStreamId: null,
-        mergedFromIds: ch.id,
-        mergeMethod: null,
-        conflictNote: null,
-        lastMergedAt: new Date(),
-      }));
+      const canonicalData = allChannelsAfter.map((ch) => {
+        const ov = overrideMap.get(ch.id);
+
+        const standardName = ov?.customName ?? ch.displayName;
+        const standardGroup = ov?.customGroup ?? ch.groupTitle;
+        const standardLogo = ov?.customLogo ?? ch.tvgLogo;
+        const channelNumber = ov?.channelNumber ?? null;
+        const hidden = ov?.hidden ?? false;
+        const starred = ov?.starred ?? false;
+
+        let epgChannelId = ch.epgChannelId;
+        let epgMatchType = ch.epgMatchType;
+        let epgStatus: string | null = ch.epgChannelId ? "matched_auto" : null;
+
+        if (ov?.manualEpgChannelId !== undefined && ov.manualEpgChannelId !== null) {
+          epgChannelId = ov.manualEpgChannelId;
+          epgMatchType = "manual";
+          epgStatus = "matched_manual";
+        }
+
+        return {
+          standardName,
+          standardGroup,
+          standardLogo,
+          channelNumber,
+          hidden,
+          starred,
+          disabled: false,
+          epgChannelId,
+          epgMatchType,
+          epgStatus,
+          outputStatus: "active",
+          qualityScore: null,
+          primaryStreamId: null,
+          mergedFromIds: ch.id,
+          mergeMethod: null,
+          conflictNote: null,
+          lastMergedAt: new Date(),
+        };
+      });
       await tx.insert(canonicalChannels).values(canonicalData);
     }
   });

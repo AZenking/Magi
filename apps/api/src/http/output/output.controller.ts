@@ -1,16 +1,20 @@
 import {
   Controller,
   Get,
+  Put,
+  Body,
+  Param,
   Query,
   Inject,
   UseGuards,
   Header,
 } from "@nestjs/common";
-import type { ApiResponse, PaginatedResponse } from "@magi/types";
+import type { ApiResponse, PaginatedResponse, UpdateOutputChannel, CanonicalChannelVo } from "@magi/types";
 import { AuthGuard } from "../../shared/guards/auth.guard";
 import { FindCanonicalChannelsUseCase } from "../../application/output-composition/find-canonical-channels.use-case";
 import { GenerateM3uOutputUseCase } from "../../application/output-composition/generate-m3u-output.use-case";
 import { GenerateXmltvOutputUseCase } from "../../application/output-composition/generate-xmltv-output.use-case";
+import { UpdateOutputChannelUseCase } from "../../application/output-composition/update-output-channel.use-case";
 
 @Controller("output")
 @UseGuards(AuthGuard)
@@ -22,6 +26,8 @@ export class OutputController {
     private readonly generateM3u: GenerateM3uOutputUseCase,
     @Inject(GenerateXmltvOutputUseCase)
     private readonly generateXmltv: GenerateXmltvOutputUseCase,
+    @Inject(UpdateOutputChannelUseCase)
+    private readonly updateChannel: UpdateOutputChannelUseCase,
   ) {}
 
   @Get("channels")
@@ -75,5 +81,32 @@ export class OutputController {
   @Header("Content-Disposition", "attachment; filename=magi.xml")
   async xmltv(): Promise<string> {
     return this.generateXmltv.execute();
+  }
+
+  @Put("channels/:id")
+  async update(
+    @Param("id") id: string,
+    @Body() body: UpdateOutputChannel,
+  ): Promise<ApiResponse<CanonicalChannelVo>> {
+    const ch = await this.updateChannel.execute(id, body);
+    return {
+      success: true,
+      data: {
+        id: ch.id,
+        standardName: ch.standardName,
+        standardGroup: ch.standardGroup,
+        standardLogo: ch.standardLogo,
+        channelNumber: ch.channelNumber,
+        hidden: ch.hidden,
+        starred: ch.starred,
+        epgChannelId: ch.epgChannelId,
+        epgMatchType: ch.epgMatchType,
+        epgStatus: ch.epgStatus ?? "",
+        outputStatus: ch.outputStatus,
+        primaryStreamId: ch.primaryStreamId,
+        createdAt: ch.createdAt.toISOString(),
+        updatedAt: ch.updatedAt.toISOString(),
+      },
+    };
   }
 }

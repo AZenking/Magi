@@ -7,6 +7,7 @@ import { ProgrammeRepository } from "../../infrastructure/database/programme.rep
 import { FindCanonicalChannelsUseCase } from "../../application/output-composition/find-canonical-channels.use-case";
 import { GenerateM3uOutputUseCase } from "../../application/output-composition/generate-m3u-output.use-case";
 import { GenerateXmltvOutputUseCase } from "../../application/output-composition/generate-xmltv-output.use-case";
+import { UpdateOutputChannelUseCase } from "../../application/output-composition/update-output-channel.use-case";
 
 @Module({
   controllers: [OutputController],
@@ -18,6 +19,7 @@ import { GenerateXmltvOutputUseCase } from "../../application/output-composition
     FindCanonicalChannelsUseCase,
     GenerateM3uOutputUseCase,
     GenerateXmltvOutputUseCase,
+    UpdateOutputChannelUseCase,
   ],
 })
 export class OutputModule {}
