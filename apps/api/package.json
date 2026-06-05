@@ -16,6 +16,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@magi/backend-core": "workspace:*",
     "@magi/types": "workspace:*",
     "@magi/utils": "workspace:*",
     "@nestjs/common": "^11.1.3",
