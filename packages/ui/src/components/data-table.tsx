@@ -20,12 +20,14 @@ interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   loading?: boolean;
   className?: string;
+  onRowClick?: (row: TData) => void;
 }
 
 export function DataTable<TData, TValue>({
   table,
   loading,
   className,
+  onRowClick,
 }: DataTableProps<TData, TValue>) {
   return (
     <div className={cn("space-y-4", className)}>
@@ -62,6 +64,8 @@ export function DataTable<TData, TValue>({
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
+                  className={onRowClick ? "cursor-pointer" : undefined}
+                  onClick={onRowClick ? () => onRowClick(row.original) : undefined}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>

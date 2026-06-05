@@ -13,11 +13,12 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
-import { Route as DashboardTasksRouteImport } from './routes/dashboard/tasks'
 import { Route as DashboardProgrammesRouteImport } from './routes/dashboard/programmes'
 import { Route as DashboardEpgMatchingRouteImport } from './routes/dashboard/epg-matching'
 import { Route as DashboardEpgRouteImport } from './routes/dashboard/epg'
 import { Route as DashboardChannelsRouteImport } from './routes/dashboard/channels'
+import { Route as DashboardTasksIndexRouteImport } from './routes/dashboard/tasks/index'
+import { Route as DashboardTasksTaskIdRouteImport } from './routes/dashboard/tasks/$taskId'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -37,11 +38,6 @@ const IndexRoute = IndexRouteImport.update({
 const DashboardIndexRoute = DashboardIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => DashboardRoute,
-} as any)
-const DashboardTasksRoute = DashboardTasksRouteImport.update({
-  id: '/tasks',
-  path: '/tasks',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardProgrammesRoute = DashboardProgrammesRouteImport.update({
@@ -64,6 +60,16 @@ const DashboardChannelsRoute = DashboardChannelsRouteImport.update({
   path: '/channels',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardTasksIndexRoute = DashboardTasksIndexRouteImport.update({
+  id: '/tasks/',
+  path: '/tasks/',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardTasksTaskIdRoute = DashboardTasksTaskIdRouteImport.update({
+  id: '/tasks/$taskId',
+  path: '/tasks/$taskId',
+  getParentRoute: () => DashboardRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -73,8 +79,9 @@ export interface FileRoutesByFullPath {
   '/dashboard/epg': typeof DashboardEpgRoute
   '/dashboard/epg-matching': typeof DashboardEpgMatchingRoute
   '/dashboard/programmes': typeof DashboardProgrammesRoute
-  '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard/': typeof DashboardIndexRoute
+  '/dashboard/tasks/$taskId': typeof DashboardTasksTaskIdRoute
+  '/dashboard/tasks/': typeof DashboardTasksIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -83,8 +90,9 @@ export interface FileRoutesByTo {
   '/dashboard/epg': typeof DashboardEpgRoute
   '/dashboard/epg-matching': typeof DashboardEpgMatchingRoute
   '/dashboard/programmes': typeof DashboardProgrammesRoute
-  '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard': typeof DashboardIndexRoute
+  '/dashboard/tasks/$taskId': typeof DashboardTasksTaskIdRoute
+  '/dashboard/tasks': typeof DashboardTasksIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -95,8 +103,9 @@ export interface FileRoutesById {
   '/dashboard/epg': typeof DashboardEpgRoute
   '/dashboard/epg-matching': typeof DashboardEpgMatchingRoute
   '/dashboard/programmes': typeof DashboardProgrammesRoute
-  '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard/': typeof DashboardIndexRoute
+  '/dashboard/tasks/$taskId': typeof DashboardTasksTaskIdRoute
+  '/dashboard/tasks/': typeof DashboardTasksIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -108,8 +117,9 @@ export interface FileRouteTypes {
     | '/dashboard/epg'
     | '/dashboard/epg-matching'
     | '/dashboard/programmes'
-    | '/dashboard/tasks'
     | '/dashboard/'
+    | '/dashboard/tasks/$taskId'
+    | '/dashboard/tasks/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -118,8 +128,9 @@ export interface FileRouteTypes {
     | '/dashboard/epg'
     | '/dashboard/epg-matching'
     | '/dashboard/programmes'
-    | '/dashboard/tasks'
     | '/dashboard'
+    | '/dashboard/tasks/$taskId'
+    | '/dashboard/tasks'
   id:
     | '__root__'
     | '/'
@@ -129,8 +140,9 @@ export interface FileRouteTypes {
     | '/dashboard/epg'
     | '/dashboard/epg-matching'
     | '/dashboard/programmes'
-    | '/dashboard/tasks'
     | '/dashboard/'
+    | '/dashboard/tasks/$taskId'
+    | '/dashboard/tasks/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -169,13 +181,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardIndexRouteImport
       parentRoute: typeof DashboardRoute
     }
-    '/dashboard/tasks': {
-      id: '/dashboard/tasks'
-      path: '/tasks'
-      fullPath: '/dashboard/tasks'
-      preLoaderRoute: typeof DashboardTasksRouteImport
-      parentRoute: typeof DashboardRoute
-    }
     '/dashboard/programmes': {
       id: '/dashboard/programmes'
       path: '/programmes'
@@ -204,6 +209,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardChannelsRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/tasks/': {
+      id: '/dashboard/tasks/'
+      path: '/tasks'
+      fullPath: '/dashboard/tasks/'
+      preLoaderRoute: typeof DashboardTasksIndexRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/tasks/$taskId': {
+      id: '/dashboard/tasks/$taskId'
+      path: '/tasks/$taskId'
+      fullPath: '/dashboard/tasks/$taskId'
+      preLoaderRoute: typeof DashboardTasksTaskIdRouteImport
+      parentRoute: typeof DashboardRoute
+    }
   }
 }
 
@@ -212,8 +231,9 @@ interface DashboardRouteChildren {
   DashboardEpgRoute: typeof DashboardEpgRoute
   DashboardEpgMatchingRoute: typeof DashboardEpgMatchingRoute
   DashboardProgrammesRoute: typeof DashboardProgrammesRoute
-  DashboardTasksRoute: typeof DashboardTasksRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
+  DashboardTasksTaskIdRoute: typeof DashboardTasksTaskIdRoute
+  DashboardTasksIndexRoute: typeof DashboardTasksIndexRoute
 }
 
 const DashboardRouteChildren: DashboardRouteChildren = {
@@ -221,8 +241,9 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardEpgRoute: DashboardEpgRoute,
   DashboardEpgMatchingRoute: DashboardEpgMatchingRoute,
   DashboardProgrammesRoute: DashboardProgrammesRoute,
-  DashboardTasksRoute: DashboardTasksRoute,
   DashboardIndexRoute: DashboardIndexRoute,
+  DashboardTasksTaskIdRoute: DashboardTasksTaskIdRoute,
+  DashboardTasksIndexRoute: DashboardTasksIndexRoute,
 }
 
 const DashboardRouteWithChildren = DashboardRoute._addFileChildren(
