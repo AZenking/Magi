@@ -47,6 +47,11 @@ export class CanonicalChannelRepository implements ICanonicalChannelRepository {
     return row ? toDomain(row) : null;
   }
 
+  async findByMergedFromId(mergedFromId: string): Promise<CanonicalChannel | null> {
+    const [row] = await db.select().from(canonicalChannels).where(eq(canonicalChannels.mergedFromIds, mergedFromId)).limit(1);
+    return row ? toDomain(row) : null;
+  }
+
   async createBatch(channels: Omit<CanonicalChannel, "id" | "createdAt" | "updatedAt">[]): Promise<CanonicalChannel[]> {
     if (channels.length === 0) return [];
     const rows = await db.insert(canonicalChannels).values(channels).returning();

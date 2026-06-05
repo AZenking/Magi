@@ -34,6 +34,9 @@ export interface ChannelVo {
   epgMatchType: string | null;
   active: boolean;
   streamStatus: string | null;
+  streamResponseTime: number | null;
+  streamCheckedAt: string | null;
+  streamError: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -63,6 +66,45 @@ export interface UpdateOutputChannel {
   hidden?: boolean;
   starred?: boolean;
   epgChannelId?: string | null;
+}
+
+export interface RawXmltvChannelVo {
+  id: string;
+  sourceId: string;
+  xmltvId: string;
+  displayName: string;
+  icon: string | null;
+}
+
+export interface ChannelStreamVo {
+  id: string;
+  canonicalChannelId: string;
+  m3uSourceId: string | null;
+  rawChannelId: string | null;
+  sourceChannelId: string | null;
+  streamUrl: string;
+  isPrimary: boolean;
+  healthStatus: string;
+  responseTime: number | null;
+  lastCheckedAt: string | null;
+  consecutiveFailures: number;
+  streamError: string | null;
+  createdAt: string;
+}
+
+export interface CreateChannelStream {
+  streamUrl: string;
+  m3uSourceId?: string | null;
+  sourceChannelId?: string | null;
+}
+
+export interface UpdateChannelStream {
+  streamUrl?: string;
+}
+
+export interface OutputChannelDetailVo {
+  channel: CanonicalChannelVo & { mergedFromIds: string | null };
+  streams: ChannelStreamVo[];
 }
 
 export interface ProgrammeVo {

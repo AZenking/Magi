@@ -1,9 +1,10 @@
 import { type ColumnDef } from "@tanstack/react-table";
+import { Link } from "@tanstack/react-router";
 import type { CanonicalChannelVo } from "@magi/types";
 import { Badge } from "@magi/ui/components/badge";
 import { Button } from "@magi/ui/components/button";
 import { DataTableColumnHeader } from "@magi/ui/components/data-table-column-header";
-import { PencilIcon } from "lucide-react";
+import { PencilIcon, ExternalLinkIcon } from "lucide-react";
 
 const epgStatusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   matched_auto: { label: "自动匹配", variant: "default" },
@@ -40,7 +41,13 @@ export function getChannelColumns(ctx?: ColumnContext): ColumnDef<CanonicalChann
           ) : (
             <div className="h-5 w-5 rounded bg-muted" />
           )}
-          <span className="font-medium">{row.original.standardName}</span>
+          <Link
+            to="/dashboard/channels/$channelId"
+            params={{ channelId: row.original.id }}
+            className="font-medium hover:underline"
+          >
+            {row.original.standardName}
+          </Link>
         </div>
       ),
     },
@@ -80,19 +87,25 @@ export function getChannelColumns(ctx?: ColumnContext): ColumnDef<CanonicalChann
     {
       id: "actions",
       header: () => null,
-      cell: ({ row }) => {
-        if (!ctx?.onEdit) return null;
-        return (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={(e) => { e.stopPropagation(); ctx.onEdit!(row.original); }}
-            aria-label="编辑"
-          >
-            <PencilIcon className="h-4 w-4" />
+      cell: ({ row }) => (
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" asChild>
+            <Link to="/dashboard/channels/$channelId" params={{ channelId: row.original.id }} aria-label="详情">
+              <ExternalLinkIcon className="h-4 w-4" />
+            </Link>
           </Button>
-        );
-      },
+          {ctx?.onEdit && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={(e) => { e.stopPropagation(); ctx.onEdit!(row.original); }}
+              aria-label="编辑"
+            >
+              <PencilIcon className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      ),
     },
   ];
 }

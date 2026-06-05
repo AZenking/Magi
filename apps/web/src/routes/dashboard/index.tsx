@@ -33,7 +33,7 @@ function DashboardPage() {
       icon: Radio,
       title: "添加 & 同步源",
       desc: "添加 M3U 和 XMLTV 源，同步频道与节目数据",
-      to: "/dashboard/epg" as const,
+      to: "/dashboard/sources/m3u" as const,
       done: (stats?.m3u ?? 0) > 0 && (stats?.xmltv ?? 0) > 0,
     },
     {
@@ -54,7 +54,7 @@ function DashboardPage() {
       icon: CalendarDays,
       title: "节目单",
       desc: "浏览各频道的节目时间表",
-      to: "/dashboard/programmes" as const,
+      to: "/dashboard/sources/programmes" as const,
       done: false,
     },
   ];

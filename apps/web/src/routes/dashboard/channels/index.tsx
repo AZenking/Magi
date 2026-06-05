@@ -15,7 +15,7 @@ import { OutputChannelFormDialog } from "@/features/dashboard/channels/channel-f
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 
-export const Route = createFileRoute("/dashboard/channels")({
+export const Route = createFileRoute("/dashboard/channels/")({
   component: ChannelsPage,
 });
 

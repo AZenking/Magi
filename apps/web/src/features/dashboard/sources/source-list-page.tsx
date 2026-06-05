@@ -1,12 +1,11 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import type { SourceVo, PaginatedResponse } from "@magi/types";
 import { apiClient } from "@/services/api";
 import { toast } from "sonner";
 import { Button } from "@magi/ui/components/button";
 import { Input } from "@magi/ui/components/input";
-import { Tabs, TabsList, TabsTrigger } from "@magi/ui/components/tabs";
 import { DataTable } from "@magi/ui/components/data-table";
 import { DataTablePagination } from "@magi/ui/components/data-table-pagination";
 import { DataTableViewOptions } from "@magi/ui/components/data-table-view-options";
@@ -25,16 +24,14 @@ import { useReactTable, getCoreRowModel, type SortingState, type VisibilityState
 import { getSourceColumns } from "@/features/dashboard/epg/columns";
 import { SourceFormDialog } from "@/features/dashboard/epg/source-form-dialog";
 
-type SourceType = "m3u" | "xmltv";
+interface SourceListPageProps {
+  type: "m3u" | "xmltv";
+  title: string;
+}
 
-export const Route = createFileRoute("/dashboard/epg")({
-  component: EpgPage,
-});
-
-function EpgPage() {
+export function SourceListPage({ type, title }: SourceListPageProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [activeType, setActiveType] = useState<SourceType>("m3u");
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [page, setPage] = useState(1);
@@ -52,13 +49,13 @@ function EpgPage() {
   const sortDir = sorting[0] ? (sorting[0].desc ? "desc" : "asc") : undefined;
 
   const { data, isLoading } = useQuery({
-    queryKey: ["sources", activeType, search, page, pageSize, sortBy, sortDir],
+    queryKey: ["sources", type, search, page, pageSize, sortBy, sortDir],
     queryFn: () =>
       apiClient<{ success: boolean; data: PaginatedResponse<SourceVo> }>(
         "/sources",
         {
           params: {
-            type: activeType,
+            type,
             search: search || undefined,
             page,
             pageSize,
@@ -81,7 +78,7 @@ function EpgPage() {
       try {
         await apiClient("/sources", {
           method: "POST",
-          body: { ...formData, type: activeType },
+          body: { ...formData, type },
         });
         toast.success("源添加成功");
         refresh();
@@ -92,7 +89,7 @@ function EpgPage() {
         throw err;
       }
     },
-    [activeType, refresh],
+    [type, refresh],
   );
 
   const handleUpdate = useCallback(
@@ -208,7 +205,7 @@ function EpgPage() {
   return (
     <>
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">源管理</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
         <Button
           onClick={() => {
             setEditingSource(null);
@@ -219,19 +216,6 @@ function EpgPage() {
           添加源
         </Button>
       </div>
-
-      <Tabs
-        value={activeType}
-        onValueChange={(v) => {
-          setActiveType(v as SourceType);
-          setPage(1);
-        }}
-      >
-        <TabsList>
-          <TabsTrigger value="m3u">M3U 源</TabsTrigger>
-          <TabsTrigger value="xmltv">EPG/XMLTV 源</TabsTrigger>
-        </TabsList>
-      </Tabs>
 
       <div className="flex items-center gap-2">
         <div className="relative flex-1 max-w-sm">
@@ -245,11 +229,6 @@ function EpgPage() {
                 setSearch(searchInput);
                 setPage(1);
               }
-            }}
-            onClear={() => {
-              setSearchInput("");
-              setSearch("");
-              setPage(1);
             }}
             className="pl-8"
             aria-label="搜索源"
@@ -270,7 +249,6 @@ function EpgPage() {
       </div>
 
       <DataTable table={table} columns={columns} loading={isLoading} />
-
       <DataTablePagination table={table} />
 
       <SourceFormDialog
@@ -281,7 +259,7 @@ function EpgPage() {
           if (!open) setEditingSource(null);
         }}
         source={editingSource}
-        sourceType={activeType}
+        sourceType={type}
         onSubmit={editingSource ? handleUpdate : handleCreate}
       />
 

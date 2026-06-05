@@ -13,12 +13,15 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
-import { Route as DashboardProgrammesRouteImport } from './routes/dashboard/programmes'
 import { Route as DashboardEpgMatchingRouteImport } from './routes/dashboard/epg-matching'
-import { Route as DashboardEpgRouteImport } from './routes/dashboard/epg'
-import { Route as DashboardChannelsRouteImport } from './routes/dashboard/channels'
 import { Route as DashboardTasksIndexRouteImport } from './routes/dashboard/tasks/index'
+import { Route as DashboardChannelsIndexRouteImport } from './routes/dashboard/channels/index'
 import { Route as DashboardTasksTaskIdRouteImport } from './routes/dashboard/tasks/$taskId'
+import { Route as DashboardSourcesXmltvRouteImport } from './routes/dashboard/sources/xmltv'
+import { Route as DashboardSourcesProgrammesRouteImport } from './routes/dashboard/sources/programmes'
+import { Route as DashboardSourcesM3uRouteImport } from './routes/dashboard/sources/m3u'
+import { Route as DashboardSourcesChannelsRouteImport } from './routes/dashboard/sources/channels'
+import { Route as DashboardChannelsChannelIdRouteImport } from './routes/dashboard/channels/$channelId'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -40,24 +43,9 @@ const DashboardIndexRoute = DashboardIndexRouteImport.update({
   path: '/',
   getParentRoute: () => DashboardRoute,
 } as any)
-const DashboardProgrammesRoute = DashboardProgrammesRouteImport.update({
-  id: '/programmes',
-  path: '/programmes',
-  getParentRoute: () => DashboardRoute,
-} as any)
 const DashboardEpgMatchingRoute = DashboardEpgMatchingRouteImport.update({
   id: '/epg-matching',
   path: '/epg-matching',
-  getParentRoute: () => DashboardRoute,
-} as any)
-const DashboardEpgRoute = DashboardEpgRouteImport.update({
-  id: '/epg',
-  path: '/epg',
-  getParentRoute: () => DashboardRoute,
-} as any)
-const DashboardChannelsRoute = DashboardChannelsRouteImport.update({
-  id: '/channels',
-  path: '/channels',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardTasksIndexRoute = DashboardTasksIndexRouteImport.update({
@@ -65,33 +53,72 @@ const DashboardTasksIndexRoute = DashboardTasksIndexRouteImport.update({
   path: '/tasks/',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardChannelsIndexRoute = DashboardChannelsIndexRouteImport.update({
+  id: '/channels/',
+  path: '/channels/',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardTasksTaskIdRoute = DashboardTasksTaskIdRouteImport.update({
   id: '/tasks/$taskId',
   path: '/tasks/$taskId',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardSourcesXmltvRoute = DashboardSourcesXmltvRouteImport.update({
+  id: '/sources/xmltv',
+  path: '/sources/xmltv',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardSourcesProgrammesRoute =
+  DashboardSourcesProgrammesRouteImport.update({
+    id: '/sources/programmes',
+    path: '/sources/programmes',
+    getParentRoute: () => DashboardRoute,
+  } as any)
+const DashboardSourcesM3uRoute = DashboardSourcesM3uRouteImport.update({
+  id: '/sources/m3u',
+  path: '/sources/m3u',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardSourcesChannelsRoute =
+  DashboardSourcesChannelsRouteImport.update({
+    id: '/sources/channels',
+    path: '/sources/channels',
+    getParentRoute: () => DashboardRoute,
+  } as any)
+const DashboardChannelsChannelIdRoute =
+  DashboardChannelsChannelIdRouteImport.update({
+    id: '/channels/$channelId',
+    path: '/channels/$channelId',
+    getParentRoute: () => DashboardRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/login': typeof LoginRoute
-  '/dashboard/channels': typeof DashboardChannelsRoute
-  '/dashboard/epg': typeof DashboardEpgRoute
   '/dashboard/epg-matching': typeof DashboardEpgMatchingRoute
-  '/dashboard/programmes': typeof DashboardProgrammesRoute
   '/dashboard/': typeof DashboardIndexRoute
+  '/dashboard/channels/$channelId': typeof DashboardChannelsChannelIdRoute
+  '/dashboard/sources/channels': typeof DashboardSourcesChannelsRoute
+  '/dashboard/sources/m3u': typeof DashboardSourcesM3uRoute
+  '/dashboard/sources/programmes': typeof DashboardSourcesProgrammesRoute
+  '/dashboard/sources/xmltv': typeof DashboardSourcesXmltvRoute
   '/dashboard/tasks/$taskId': typeof DashboardTasksTaskIdRoute
+  '/dashboard/channels/': typeof DashboardChannelsIndexRoute
   '/dashboard/tasks/': typeof DashboardTasksIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/dashboard/channels': typeof DashboardChannelsRoute
-  '/dashboard/epg': typeof DashboardEpgRoute
   '/dashboard/epg-matching': typeof DashboardEpgMatchingRoute
-  '/dashboard/programmes': typeof DashboardProgrammesRoute
   '/dashboard': typeof DashboardIndexRoute
+  '/dashboard/channels/$channelId': typeof DashboardChannelsChannelIdRoute
+  '/dashboard/sources/channels': typeof DashboardSourcesChannelsRoute
+  '/dashboard/sources/m3u': typeof DashboardSourcesM3uRoute
+  '/dashboard/sources/programmes': typeof DashboardSourcesProgrammesRoute
+  '/dashboard/sources/xmltv': typeof DashboardSourcesXmltvRoute
   '/dashboard/tasks/$taskId': typeof DashboardTasksTaskIdRoute
+  '/dashboard/channels': typeof DashboardChannelsIndexRoute
   '/dashboard/tasks': typeof DashboardTasksIndexRoute
 }
 export interface FileRoutesById {
@@ -99,12 +126,15 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/login': typeof LoginRoute
-  '/dashboard/channels': typeof DashboardChannelsRoute
-  '/dashboard/epg': typeof DashboardEpgRoute
   '/dashboard/epg-matching': typeof DashboardEpgMatchingRoute
-  '/dashboard/programmes': typeof DashboardProgrammesRoute
   '/dashboard/': typeof DashboardIndexRoute
+  '/dashboard/channels/$channelId': typeof DashboardChannelsChannelIdRoute
+  '/dashboard/sources/channels': typeof DashboardSourcesChannelsRoute
+  '/dashboard/sources/m3u': typeof DashboardSourcesM3uRoute
+  '/dashboard/sources/programmes': typeof DashboardSourcesProgrammesRoute
+  '/dashboard/sources/xmltv': typeof DashboardSourcesXmltvRoute
   '/dashboard/tasks/$taskId': typeof DashboardTasksTaskIdRoute
+  '/dashboard/channels/': typeof DashboardChannelsIndexRoute
   '/dashboard/tasks/': typeof DashboardTasksIndexRoute
 }
 export interface FileRouteTypes {
@@ -113,35 +143,44 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/login'
-    | '/dashboard/channels'
-    | '/dashboard/epg'
     | '/dashboard/epg-matching'
-    | '/dashboard/programmes'
     | '/dashboard/'
+    | '/dashboard/channels/$channelId'
+    | '/dashboard/sources/channels'
+    | '/dashboard/sources/m3u'
+    | '/dashboard/sources/programmes'
+    | '/dashboard/sources/xmltv'
     | '/dashboard/tasks/$taskId'
+    | '/dashboard/channels/'
     | '/dashboard/tasks/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login'
-    | '/dashboard/channels'
-    | '/dashboard/epg'
     | '/dashboard/epg-matching'
-    | '/dashboard/programmes'
     | '/dashboard'
+    | '/dashboard/channels/$channelId'
+    | '/dashboard/sources/channels'
+    | '/dashboard/sources/m3u'
+    | '/dashboard/sources/programmes'
+    | '/dashboard/sources/xmltv'
     | '/dashboard/tasks/$taskId'
+    | '/dashboard/channels'
     | '/dashboard/tasks'
   id:
     | '__root__'
     | '/'
     | '/dashboard'
     | '/login'
-    | '/dashboard/channels'
-    | '/dashboard/epg'
     | '/dashboard/epg-matching'
-    | '/dashboard/programmes'
     | '/dashboard/'
+    | '/dashboard/channels/$channelId'
+    | '/dashboard/sources/channels'
+    | '/dashboard/sources/m3u'
+    | '/dashboard/sources/programmes'
+    | '/dashboard/sources/xmltv'
     | '/dashboard/tasks/$taskId'
+    | '/dashboard/channels/'
     | '/dashboard/tasks/'
   fileRoutesById: FileRoutesById
 }
@@ -181,32 +220,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardIndexRouteImport
       parentRoute: typeof DashboardRoute
     }
-    '/dashboard/programmes': {
-      id: '/dashboard/programmes'
-      path: '/programmes'
-      fullPath: '/dashboard/programmes'
-      preLoaderRoute: typeof DashboardProgrammesRouteImport
-      parentRoute: typeof DashboardRoute
-    }
     '/dashboard/epg-matching': {
       id: '/dashboard/epg-matching'
       path: '/epg-matching'
       fullPath: '/dashboard/epg-matching'
       preLoaderRoute: typeof DashboardEpgMatchingRouteImport
-      parentRoute: typeof DashboardRoute
-    }
-    '/dashboard/epg': {
-      id: '/dashboard/epg'
-      path: '/epg'
-      fullPath: '/dashboard/epg'
-      preLoaderRoute: typeof DashboardEpgRouteImport
-      parentRoute: typeof DashboardRoute
-    }
-    '/dashboard/channels': {
-      id: '/dashboard/channels'
-      path: '/channels'
-      fullPath: '/dashboard/channels'
-      preLoaderRoute: typeof DashboardChannelsRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/tasks/': {
@@ -216,6 +234,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardTasksIndexRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/channels/': {
+      id: '/dashboard/channels/'
+      path: '/channels'
+      fullPath: '/dashboard/channels/'
+      preLoaderRoute: typeof DashboardChannelsIndexRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/tasks/$taskId': {
       id: '/dashboard/tasks/$taskId'
       path: '/tasks/$taskId'
@@ -223,26 +248,67 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardTasksTaskIdRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/sources/xmltv': {
+      id: '/dashboard/sources/xmltv'
+      path: '/sources/xmltv'
+      fullPath: '/dashboard/sources/xmltv'
+      preLoaderRoute: typeof DashboardSourcesXmltvRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/sources/programmes': {
+      id: '/dashboard/sources/programmes'
+      path: '/sources/programmes'
+      fullPath: '/dashboard/sources/programmes'
+      preLoaderRoute: typeof DashboardSourcesProgrammesRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/sources/m3u': {
+      id: '/dashboard/sources/m3u'
+      path: '/sources/m3u'
+      fullPath: '/dashboard/sources/m3u'
+      preLoaderRoute: typeof DashboardSourcesM3uRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/sources/channels': {
+      id: '/dashboard/sources/channels'
+      path: '/sources/channels'
+      fullPath: '/dashboard/sources/channels'
+      preLoaderRoute: typeof DashboardSourcesChannelsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/channels/$channelId': {
+      id: '/dashboard/channels/$channelId'
+      path: '/channels/$channelId'
+      fullPath: '/dashboard/channels/$channelId'
+      preLoaderRoute: typeof DashboardChannelsChannelIdRouteImport
+      parentRoute: typeof DashboardRoute
+    }
   }
 }
 
 interface DashboardRouteChildren {
-  DashboardChannelsRoute: typeof DashboardChannelsRoute
-  DashboardEpgRoute: typeof DashboardEpgRoute
   DashboardEpgMatchingRoute: typeof DashboardEpgMatchingRoute
-  DashboardProgrammesRoute: typeof DashboardProgrammesRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
+  DashboardChannelsChannelIdRoute: typeof DashboardChannelsChannelIdRoute
+  DashboardSourcesChannelsRoute: typeof DashboardSourcesChannelsRoute
+  DashboardSourcesM3uRoute: typeof DashboardSourcesM3uRoute
+  DashboardSourcesProgrammesRoute: typeof DashboardSourcesProgrammesRoute
+  DashboardSourcesXmltvRoute: typeof DashboardSourcesXmltvRoute
   DashboardTasksTaskIdRoute: typeof DashboardTasksTaskIdRoute
+  DashboardChannelsIndexRoute: typeof DashboardChannelsIndexRoute
   DashboardTasksIndexRoute: typeof DashboardTasksIndexRoute
 }
 
 const DashboardRouteChildren: DashboardRouteChildren = {
-  DashboardChannelsRoute: DashboardChannelsRoute,
-  DashboardEpgRoute: DashboardEpgRoute,
   DashboardEpgMatchingRoute: DashboardEpgMatchingRoute,
-  DashboardProgrammesRoute: DashboardProgrammesRoute,
   DashboardIndexRoute: DashboardIndexRoute,
+  DashboardChannelsChannelIdRoute: DashboardChannelsChannelIdRoute,
+  DashboardSourcesChannelsRoute: DashboardSourcesChannelsRoute,
+  DashboardSourcesM3uRoute: DashboardSourcesM3uRoute,
+  DashboardSourcesProgrammesRoute: DashboardSourcesProgrammesRoute,
+  DashboardSourcesXmltvRoute: DashboardSourcesXmltvRoute,
   DashboardTasksTaskIdRoute: DashboardTasksTaskIdRoute,
+  DashboardChannelsIndexRoute: DashboardChannelsIndexRoute,
   DashboardTasksIndexRoute: DashboardTasksIndexRoute,
 }
 

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import type { IChannelStreamRepository, ChannelStream, HealthStatus } from "@/domain/output-composition";
 import { db } from "./connection";
 import { channelStreams } from "./schema";
@@ -16,6 +16,16 @@ export class ChannelStreamRepository implements IChannelStreamRepository {
     return rows.map(toDomain);
   }
 
+  async findById(id: string): Promise<ChannelStream | null> {
+    const [row] = await db.select().from(channelStreams).where(eq(channelStreams.id, id)).limit(1);
+    return row ? toDomain(row) : null;
+  }
+
+  async create(data: Omit<ChannelStream, "id" | "createdAt" | "updatedAt">): Promise<ChannelStream> {
+    const [row] = await db.insert(channelStreams).values(data).returning();
+    return toDomain(row!);
+  }
+
   async createBatch(streams: Omit<ChannelStream, "id" | "createdAt" | "updatedAt">[]): Promise<ChannelStream[]> {
     if (streams.length === 0) return [];
     const rows = await db.insert(channelStreams).values(streams).returning();
@@ -29,6 +39,11 @@ export class ChannelStreamRepository implements IChannelStreamRepository {
       .where(eq(channelStreams.id, id))
       .returning();
     return row ? toDomain(row) : null;
+  }
+
+  async deleteById(id: string): Promise<boolean> {
+    const [row] = await db.delete(channelStreams).where(eq(channelStreams.id, id)).returning();
+    return !!row;
   }
 
   async deleteByCanonicalChannelId(canonicalChannelId: string): Promise<number> {
