@@ -21,12 +21,28 @@ COPY packages ./packages
 RUN pnpm --filter @magi/types --filter @magi/backend-core --filter @magi/utils build && \
     pnpm --filter @magi/worker build
 
+FROM base AS prod-deps
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY packages/tsconfig/package.json packages/tsconfig/
+COPY packages/types/package.json packages/types/
+COPY packages/utils/package.json packages/utils/
+COPY packages/backend-core/package.json packages/backend-core/
+COPY apps/worker/package.json apps/worker/
+RUN echo "shamefully-hoist=false" > .npmrc && \
+    echo "strict-peer-dependencies=false" >> .npmrc && \
+    pnpm install --frozen-lockfile --prod --filter @magi/worker...
+
 FROM base AS runner
+ENV NODE_ENV=production
 RUN apk add --no-cache ffmpeg
 COPY --from=builder /app/apps/worker/dist ./dist
-COPY --from=builder /app/apps/worker/node_modules ./node_modules
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/packages ./packages
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=builder /app/packages/types/dist ./packages/types/dist
+COPY --from=builder /app/packages/types/package.json ./packages/types/package.json
+COPY --from=builder /app/packages/backend-core/dist ./packages/backend-core/dist
+COPY --from=builder /app/packages/backend-core/package.json ./packages/backend-core/package.json
+COPY --from=builder /app/packages/utils/dist ./packages/utils/dist
+COPY --from=builder /app/packages/utils/package.json ./packages/utils/package.json
 COPY --from=builder /app/apps/worker/package.json ./
 
 CMD ["node", "dist/main.js"]

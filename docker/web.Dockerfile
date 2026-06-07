@@ -22,12 +22,23 @@ COPY packages ./packages
 RUN pnpm --filter @magi/types --filter @magi/utils build && \
     pnpm --filter @magi/web build
 
+FROM base AS prod-deps
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
+COPY packages/tsconfig/package.json packages/tsconfig/
+COPY packages/types/package.json packages/types/
+COPY packages/utils/package.json packages/utils/
+COPY packages/ui/package.json packages/ui/
+COPY apps/web/package.json apps/web/
+RUN pnpm install --frozen-lockfile --prod --filter @magi/web...
+
 FROM base AS runner
 ENV NODE_ENV=production
 COPY --from=builder /app/apps/web/dist ./dist
-COPY --from=builder /app/apps/web/node_modules ./node_modules
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/packages ./packages
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=builder /app/packages/types/dist ./packages/types/dist
+COPY --from=builder /app/packages/types/package.json ./packages/types/package.json
+COPY --from=builder /app/packages/utils/dist ./packages/utils/dist
+COPY --from=builder /app/packages/utils/package.json ./packages/utils/package.json
 COPY --from=builder /app/apps/web/package.json ./
 
 EXPOSE 3000
