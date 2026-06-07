@@ -7,6 +7,7 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
 COPY packages/tsconfig/package.json packages/tsconfig/
 COPY packages/types/package.json packages/types/
 COPY packages/utils/package.json packages/utils/
+COPY packages/backend-core/package.json packages/backend-core/
 COPY apps/worker/package.json apps/worker/
 RUN pnpm install --frozen-lockfile
 
@@ -14,15 +15,18 @@ FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/worker/node_modules ./apps/worker/node_modules
 COPY --from=deps /app/packages ./packages
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
 COPY apps/worker ./apps/worker
 COPY packages ./packages
-RUN pnpm --filter @magi/worker build
+RUN pnpm --filter @magi/types --filter @magi/backend-core --filter @magi/utils build && \
+    pnpm --filter @magi/worker build
 
 FROM base AS runner
 RUN apk add --no-cache ffmpeg
 COPY --from=builder /app/apps/worker/dist ./dist
 COPY --from=builder /app/apps/worker/node_modules ./node_modules
 COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/apps/worker/package.json ./
 
 CMD ["node", "dist/main.js"]

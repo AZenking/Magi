@@ -16,15 +16,19 @@ FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 COPY --from=deps /app/packages ./packages
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
 COPY apps/web ./apps/web
 COPY packages ./packages
-RUN pnpm --filter @magi/web build
+RUN pnpm --filter @magi/types --filter @magi/utils build && \
+    pnpm --filter @magi/web build
 
 FROM base AS runner
 ENV NODE_ENV=production
-COPY --from=builder /app/apps/web/.next/standalone ./
-COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=builder /app/apps/web/public ./apps/web/public
+COPY --from=builder /app/apps/web/dist ./dist
+COPY --from=builder /app/apps/web/node_modules ./node_modules
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages ./packages
+COPY --from=builder /app/apps/web/package.json ./
 
 EXPOSE 3000
-CMD ["node", "apps/web/server.js"]
+CMD ["node", "dist/server/server.js"]
