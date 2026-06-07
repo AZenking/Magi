@@ -11,8 +11,11 @@ import { GenerateXmltvOutputUseCase } from "../../application/output-composition
 import { UpdateOutputChannelUseCase } from "../../application/output-composition/update-output-channel.use-case";
 import { FindOutputChannelDetailUseCase } from "../../application/output-composition/find-output-channel-detail.use-case";
 import { FindChannelStreamsUseCase, CreateChannelStreamUseCase, UpdateChannelStreamUseCase, DeleteChannelStreamUseCase, SetPrimaryStreamUseCase } from "../../application/output-composition/channel-stream-crud.use-cases";
+import { EnqueueSyncUseCase } from "../../application/task-execution/enqueue-sync.use-case";
+import { TaskModule } from "../task/task.module";
 
 @Module({
+  imports: [TaskModule],
   controllers: [OutputController],
   providers: [
     { provide: "CANONICAL_CHANNEL_REPOSITORY", useClass: CanonicalChannelRepository },
@@ -30,6 +33,7 @@ import { FindChannelStreamsUseCase, CreateChannelStreamUseCase, UpdateChannelStr
     UpdateChannelStreamUseCase,
     DeleteChannelStreamUseCase,
     SetPrimaryStreamUseCase,
+    EnqueueSyncUseCase,
   ],
 })
 export class OutputModule {}

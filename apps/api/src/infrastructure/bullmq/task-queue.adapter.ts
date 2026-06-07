@@ -60,7 +60,7 @@ export class BullmqTaskQueueAdapter implements TaskQueuePort {
       });
     } catch (err: unknown) {
       const pgErr = err as { code?: string; constraint?: string };
-      if (pgErr.code === "23505" && pgErr.constraint === "sync_logs_one_active_per_source") {
+      if (pgErr.code === "23505" && pgErr.constraint === "sync_logs_one_active_per_source" && payload.sourceId) {
         const existing = await this.taskRepo.findActiveBySource(taskType, payload.sourceId);
         return { jobId: existing!.jobId ?? existing!.id, taskId: existing!.id };
       }

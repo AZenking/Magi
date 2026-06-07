@@ -18,4 +18,14 @@ export class EnqueueSyncUseCase {
     const { taskId } = await this.queue.enqueue("epg-match", { sourceId, sourceType: "xmltv" });
     return { taskId };
   }
+
+  async enqueueStreamCheck(sourceId?: string): Promise<{ taskId: string }> {
+    const { taskId } = await this.queue.enqueue("stream-check", { sourceId: sourceId ?? null, sourceType: "m3u" });
+    return { taskId };
+  }
+
+  async enqueueSourceCheck(sourceType: "m3u" | "xmltv", sourceId: string): Promise<{ taskId: string }> {
+    const { taskId } = await this.queue.enqueue("source-check", { sourceId, sourceType });
+    return { taskId };
+  }
 }

@@ -75,3 +75,16 @@ export function normalizeChannelName(name: string): string {
     .replace(/[\s\-_]+/g, " ")
     .trim();
 }
+
+export function computeMergeKey(channel: {
+  tvgId: string | null;
+  displayName: string;
+  groupTitle: string | null;
+}): string {
+  if (channel.tvgId) {
+    return `tvg:${channel.tvgId}`;
+  }
+  const name = normalizeChannelName(channel.displayName);
+  const group = (channel.groupTitle ?? "").toLowerCase().trim();
+  return `name:${name}::${group}`;
+}

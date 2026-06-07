@@ -13,7 +13,7 @@ export const syncLogs = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     sourceType: varchar("source_type", { length: 10 }).notNull(),
     taskType: varchar("task_type", { length: 20 }).notNull().default("sync"),
-    sourceId: uuid("source_id").notNull(),
+    sourceId: uuid("source_id"),
     status: varchar("status", { length: 20 }).notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),

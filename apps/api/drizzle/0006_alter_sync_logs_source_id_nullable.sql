@@ -1,0 +1,1 @@
+ALTER TABLE sync_logs ALTER COLUMN source_id DROP NOT NULL;
