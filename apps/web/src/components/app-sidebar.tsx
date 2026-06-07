@@ -11,6 +11,9 @@ import {
   LinkIcon,
   SunIcon,
   MoonIcon,
+  FolderOpen,
+  FileVideo,
+  Waves,
 } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { signOut } from "@/lib/auth-client";
@@ -24,15 +27,27 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarRail,
 } from "@magi/ui/components/sidebar";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@magi/ui/components/collapsible";
 
-const navItems = [
+const topNavItems = [
   { title: "仪表盘", to: "/dashboard" as const, icon: LayoutDashboard, exact: true },
-  { title: "EPG 源", to: "/dashboard/epg" as const, icon: Radio },
+];
+
+const sourceSubItems = [
+  { title: "M3U", to: "/dashboard/sources/m3u" as const, icon: Radio },
+  { title: "EPG/XMLTV", to: "/dashboard/sources/xmltv" as const, icon: Waves },
+  { title: "频道", to: "/dashboard/sources/channels" as const, icon: Tv },
+  { title: "节目单", to: "/dashboard/sources/programmes" as const, icon: FileVideo },
+];
+
+const bottomNavItems = [
   { title: "EPG 匹配", to: "/dashboard/epg-matching" as const, icon: LinkIcon },
-  { title: "频道", to: "/dashboard/channels" as const, icon: Tv },
-  { title: "节目单", to: "/dashboard/programmes" as const, icon: CalendarDays },
+  { title: "输出频道", to: "/dashboard/channels" as const, icon: Tv },
   { title: "任务", to: "/dashboard/tasks" as const, icon: ListTodo },
 ];
 
@@ -48,10 +63,12 @@ export function AppSidebar({ userName, ...props }: AppSidebarProps) {
 
   const isDark = resolvedTheme === "dark";
 
-  function isItemActive(item: (typeof navItems)[number]) {
+  function isItemActive(item: { to: string; exact?: boolean }) {
     if (item.exact) return pathname === item.to || pathname === item.to + "/";
     return pathname === item.to || pathname.startsWith(item.to + "/");
   }
+
+  const isSourcesOpen = pathname.startsWith("/dashboard/sources");
 
   async function handleLogout() {
     await signOut();
@@ -79,8 +96,44 @@ export function AppSidebar({ userName, ...props }: AppSidebarProps) {
         <SidebarGroup>
           <SidebarGroupLabel>管理</SidebarGroupLabel>
           <SidebarMenu>
-            {navItems.map((item) => (
-              <SidebarMenuItem key={item.title}>
+            {topNavItems.map((item) => (
+              <SidebarMenuItem key={item.to}>
+                <SidebarMenuButton asChild tooltip={item.title} isActive={isItemActive(item)}>
+                  <Link to={item.to}>
+                    <item.icon />
+                    <span>{item.title}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
+
+            <Collapsible defaultOpen={isSourcesOpen} className="group/collapsible">
+              <SidebarMenuItem>
+                <CollapsibleTrigger asChild>
+                  <SidebarMenuButton tooltip="源" isActive={isSourcesOpen}>
+                    <FolderOpen />
+                    <span>源</span>
+                  </SidebarMenuButton>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarMenuSub>
+                    {sourceSubItems.map((item) => (
+                      <SidebarMenuSubItem key={item.to}>
+                        <SidebarMenuSubButton asChild isActive={isItemActive(item)}>
+                          <Link to={item.to}>
+                            <item.icon />
+                            <span>{item.title}</span>
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    ))}
+                  </SidebarMenuSub>
+                </CollapsibleContent>
+              </SidebarMenuItem>
+            </Collapsible>
+
+            {bottomNavItems.map((item) => (
+              <SidebarMenuItem key={item.to}>
                 <SidebarMenuButton asChild tooltip={item.title} isActive={isItemActive(item)}>
                   <Link to={item.to}>
                     <item.icon />

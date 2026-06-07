@@ -1,11 +1,11 @@
 import { Controller, Get, Param, Query, Inject, UseGuards } from "@nestjs/common";
-import type { ApiResponse, PaginatedResponse } from "@magi/types";
+import type { ApiResponse, PaginatedResponse, ChannelVo } from "@magi/types";
 import type { Channel } from "../../domain/channel-catalog";
 import { FindChannelsUseCase } from "../../application/channel-catalog/find-channels.use-case";
 import { FindChannelUseCase } from "../../application/channel-catalog/find-channel.use-case";
 import { AuthGuard } from "../../shared/guards/auth.guard";
 
-function toVo(ch: Channel) {
+function toVo(ch: Channel): ChannelVo {
   return {
     id: ch.id,
     channelIdentity: ch.channelIdentity,
@@ -19,6 +19,9 @@ function toVo(ch: Channel) {
     epgMatchType: ch.epgMatchType,
     active: ch.active,
     streamStatus: ch.streamStatus,
+    streamResponseTime: ch.streamResponseTime,
+    streamCheckedAt: ch.streamCheckedAt?.toISOString() ?? null,
+    streamError: ch.streamError,
     createdAt: ch.createdAt.toISOString(),
     updatedAt: ch.updatedAt.toISOString(),
   };
@@ -36,14 +39,15 @@ export class ChannelController {
 
   @Get()
   async findAll(
-    @Query() query: { page?: string; pageSize?: string; sourceId?: string },
-  ): Promise<ApiResponse<PaginatedResponse<unknown>>> {
+    @Query() query: { page?: string; pageSize?: string; sourceId?: string; search?: string },
+  ): Promise<ApiResponse<PaginatedResponse<ChannelVo>>> {
     const page = parseInt(query.page ?? "1", 10);
     const pageSize = parseInt(query.pageSize ?? "20", 10);
     const { items, total } = await this.findChannels.execute({
       page,
       pageSize,
       sourceId: query.sourceId,
+      search: query.search,
     });
 
     return {
@@ -59,7 +63,7 @@ export class ChannelController {
   }
 
   @Get(":id")
-  async findOne(@Param("id") id: string): Promise<ApiResponse<unknown>> {
+  async findOne(@Param("id") id: string): Promise<ApiResponse<ChannelVo>> {
     const channel = await this.findChannel.execute(id);
     return { success: true, data: toVo(channel) };
   }

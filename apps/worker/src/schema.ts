@@ -7,4 +7,6 @@ export {
   rawXmltvChannels,
   programmes,
   canonicalChannels,
+  channelOverrides,
+  channelStreams,
 } from "@magi/backend-core";

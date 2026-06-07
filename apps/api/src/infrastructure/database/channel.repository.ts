@@ -12,11 +12,16 @@ function toDomain(row: typeof channels.$inferSelect): Channel {
 }
 
 export class ChannelRepository implements IChannelRepository {
-  async findAll(query: { page: number; pageSize: number }): Promise<{ items: Channel[]; total: number }> {
-    const { page, pageSize } = query;
+  async findAll(query: { page: number; pageSize: number; sourceId?: string; search?: string }): Promise<{ items: Channel[]; total: number }> {
+    const { page, pageSize, sourceId, search } = query;
+    const conditions = [];
+    if (sourceId) conditions.push(eq(channels.m3uSourceId, sourceId));
+    if (search) conditions.push(or(ilike(channels.displayName, `%${search}%`), ilike(channels.tvgId, `%${search}%`)));
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
     const [items, countResult] = await Promise.all([
-      db.select().from(channels).limit(pageSize).offset((page - 1) * pageSize),
-      db.select({ count: sql<number>`count(*)::int` }).from(channels),
+      db.select().from(channels).where(where).limit(pageSize).offset((page - 1) * pageSize),
+      db.select({ count: sql<number>`count(*)::int` }).from(channels).where(where),
     ]);
     return { items: items.map(toDomain), total: countResult[0]?.count ?? 0 };
   }

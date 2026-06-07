@@ -1,22 +1,54 @@
 import { type ColumnDef } from "@tanstack/react-table";
+import { Link } from "@tanstack/react-router";
 import type { CanonicalChannelVo } from "@magi/types";
 import { Badge } from "@magi/ui/components/badge";
+import { Button } from "@magi/ui/components/button";
+import { Checkbox } from "@magi/ui/components/checkbox";
 import { DataTableColumnHeader } from "@magi/ui/components/data-table-column-header";
+import { PencilIcon, ExternalLinkIcon, EyeIcon, EyeOffIcon } from "lucide-react";
 
 const epgStatusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  matched: { label: "已匹配", variant: "default" },
+  matched_auto: { label: "自动匹配", variant: "default" },
+  matched_manual: { label: "手动匹配", variant: "secondary" },
   unmatched: { label: "未匹配", variant: "outline" },
   conflict: { label: "冲突", variant: "destructive" },
 };
 
 const outputStatusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  active: { label: "活跃", variant: "default" },
-  inactive: { label: "停用", variant: "secondary" },
-  error: { label: "异常", variant: "destructive" },
+  active: { label: "正常", variant: "default" },
+  degraded: { label: "降级", variant: "secondary" },
+  unavailable: { label: "不可用", variant: "destructive" },
+  inactive: { label: "停用", variant: "outline" },
+  unknown: { label: "未知", variant: "outline" },
 };
 
-export function getChannelColumns(): ColumnDef<CanonicalChannelVo>[] {
+interface ColumnContext {
+  onEdit?: (channel: CanonicalChannelVo) => void;
+  onToggleHidden?: (channel: CanonicalChannelVo) => void;
+}
+
+export function getChannelColumns(ctx?: ColumnContext): ColumnDef<CanonicalChannelVo>[] {
   return [
+    {
+      id: "select",
+      header: ({ table }) => (
+        <Checkbox
+          checked={table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && "indeterminate")}
+          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+          aria-label="全选"
+        />
+      ),
+      cell: ({ row }) => (
+        <Checkbox
+          checked={row.getIsSelected()}
+          onCheckedChange={(value) => row.toggleSelected(!!value)}
+          onClick={(e) => e.stopPropagation()}
+          aria-label="选择"
+        />
+      ),
+      enableSorting: false,
+      enableHiding: false,
+    },
     {
       accessorKey: "standardName",
       header: ({ column }) => <DataTableColumnHeader column={column} title="频道名称" />,
@@ -33,7 +65,13 @@ export function getChannelColumns(): ColumnDef<CanonicalChannelVo>[] {
           ) : (
             <div className="h-5 w-5 rounded bg-muted" />
           )}
-          <span className="font-medium">{row.original.standardName}</span>
+          <Link
+            to="/dashboard/channels/$channelId"
+            params={{ channelId: row.original.id }}
+            className="font-medium hover:underline"
+          >
+            {row.original.standardName}
+          </Link>
         </div>
       ),
     },
@@ -59,14 +97,58 @@ export function getChannelColumns(): ColumnDef<CanonicalChannelVo>[] {
       },
     },
     {
-      accessorKey: "epgMatchType",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="匹配方式" />,
-      cell: ({ row }) => row.original.epgMatchType ?? "-",
+      accessorKey: "epgChannelId",
+      header: ({ column }) => <DataTableColumnHeader column={column} title="tvg-id" />,
+      cell: ({ row }) => (
+        <span className="font-mono text-xs">{row.original.epgChannelId ?? "-"}</span>
+      ),
     },
     {
       accessorKey: "channelNumber",
       header: ({ column }) => <DataTableColumnHeader column={column} title="频道号" />,
       cell: ({ row }) => row.original.channelNumber ?? "-",
+    },
+    {
+      accessorKey: "hidden",
+      header: ({ column }) => <DataTableColumnHeader column={column} title="隐藏" />,
+      cell: ({ row }) => (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={(e) => { e.stopPropagation(); ctx?.onToggleHidden?.(row.original); }}
+          aria-label={row.original.hidden ? "显示" : "隐藏"}
+        >
+          {row.original.hidden ? (
+            <EyeOffIcon className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <EyeIcon className="h-4 w-4" />
+          )}
+        </Button>
+      ),
+    },
+    {
+      id: "actions",
+      header: () => null,
+      cell: ({ row }) => (
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" asChild>
+            <Link to="/dashboard/channels/$channelId" params={{ channelId: row.original.id }} aria-label="详情">
+              <ExternalLinkIcon className="h-4 w-4" />
+            </Link>
+          </Button>
+          {ctx?.onEdit && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={(e) => { e.stopPropagation(); ctx.onEdit!(row.original); }}
+              aria-label="编辑"
+            >
+              <PencilIcon className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      ),
     },
   ];
 }

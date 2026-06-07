@@ -6,4 +6,6 @@ export { rawXmltvChannels } from "./raw-xmltv-channels";
 export { programmes } from "./programmes";
 export { syncLogs } from "./sync-logs";
 export { canonicalChannels } from "./canonical-channels";
+export { channelOverrides } from "./channel-overrides";
+export { channelStreams } from "./channel-streams";
 export { timestamps, createdAt, updatedAt } from "./helpers";

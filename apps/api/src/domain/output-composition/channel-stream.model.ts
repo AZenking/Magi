@@ -15,8 +15,20 @@ export interface ChannelStream {
   consecutiveFailures: number;
   successRate: number | null;
   streamError: string | null;
+  streamCodec: string | null;
+  streamFormat: string | null;
+  streamWidth: number | null;
+  streamHeight: number | null;
+  streamFrameRate: number | null;
+  streamBitrate: number | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface StreamWithSource extends ChannelStream {
+  sourcePriority: number | null;
+  sourceParticipateInOutput: boolean | null;
+  sourceAllowFallback: boolean | null;
 }
 
 export class ChannelStreamModel {

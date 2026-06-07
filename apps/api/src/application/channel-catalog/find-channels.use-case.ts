@@ -5,6 +5,7 @@ export interface FindChannelsQuery {
   page: number;
   pageSize: number;
   sourceId?: string;
+  search?: string;
 }
 
 export interface FindChannelsResult {

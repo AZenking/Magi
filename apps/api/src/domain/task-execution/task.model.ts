@@ -5,7 +5,7 @@ export interface Task {
   id: string;
   sourceType: string;
   taskType: TaskType;
-  sourceId: string;
+  sourceId: string | null;
   status: TaskStatus;
   startedAt: Date;
   finishedAt: Date | null;

@@ -50,6 +50,8 @@ function toVo(source: AnySource | CreatedSource | UpdatedSource): SourceVo {
     lastSyncStatus: source.lastSyncStatus,
     lastCheckAt: source.lastCheckAt?.toISOString() ?? undefined,
     checkStatus: source.checkStatus,
+    checkResponseTime: source.checkResponseTime ?? undefined,
+    checkError: source.checkError ?? undefined,
     qualityScore: source.qualityScore,
     createdAt: source.createdAt.toISOString(),
     updatedAt: source.updatedAt.toISOString(),
@@ -145,6 +147,16 @@ export class SourceController {
     @Param("id") id: string,
   ): Promise<ApiResponse<{ taskId: string }>> {
     const result = await this.enqueueSync.execute(type, id);
+    return { success: true, data: result };
+  }
+
+  @Post(":type/:id/check")
+  @HttpCode(202)
+  async check(
+    @Param("type") type: "m3u" | "xmltv",
+    @Param("id") id: string,
+  ): Promise<ApiResponse<{ taskId: string }>> {
+    const result = await this.enqueueSync.enqueueSourceCheck(type, id);
     return { success: true, data: result };
   }
 }

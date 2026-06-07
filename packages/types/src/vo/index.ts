@@ -13,6 +13,8 @@ export interface SourceVo {
   lastSyncStatus?: string | null;
   lastCheckAt?: string;
   checkStatus?: string | null;
+  checkResponseTime?: number | null;
+  checkError?: string | null;
   qualityScore?: number | null;
   createdAt: string;
   updatedAt: string;
@@ -34,6 +36,9 @@ export interface ChannelVo {
   epgMatchType: string | null;
   active: boolean;
   streamStatus: string | null;
+  streamResponseTime: number | null;
+  streamCheckedAt: string | null;
+  streamError: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -53,6 +58,65 @@ export interface CanonicalChannelVo {
   primaryStreamId: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface UpdateOutputChannel {
+  standardName?: string | null;
+  standardGroup?: string | null;
+  standardLogo?: string | null;
+  channelNumber?: number | null;
+  hidden?: boolean;
+  starred?: boolean;
+  epgChannelId?: string | null;
+}
+
+export interface RawXmltvChannelVo {
+  id: string;
+  sourceId: string;
+  xmltvId: string;
+  displayName: string;
+  icon: string | null;
+}
+
+export interface ChannelStreamVo {
+  id: string;
+  canonicalChannelId: string;
+  m3uSourceId: string | null;
+  rawChannelId: string | null;
+  sourceChannelId: string | null;
+  streamUrl: string;
+  isPrimary: boolean;
+  healthStatus: string;
+  responseTime: number | null;
+  lastCheckedAt: string | null;
+  consecutiveFailures: number;
+  streamError: string | null;
+  streamCodec: string | null;
+  streamFormat: string | null;
+  streamWidth: number | null;
+  streamHeight: number | null;
+  streamFrameRate: number | null;
+  streamBitrate: number | null;
+  createdAt: string;
+  m3uSourceName: string | null;
+  sourceChannelName: string | null;
+}
+
+export interface CreateChannelStream {
+  streamUrl: string;
+  m3uSourceId?: string | null;
+  sourceChannelId?: string | null;
+}
+
+export interface UpdateChannelStream {
+  streamUrl?: string;
+  m3uSourceId?: string | null;
+  sourceChannelId?: string | null;
+}
+
+export interface OutputChannelDetailVo {
+  channel: CanonicalChannelVo & { mergedFromIds: string | null };
+  streams: ChannelStreamVo[];
 }
 
 export interface ProgrammeVo {

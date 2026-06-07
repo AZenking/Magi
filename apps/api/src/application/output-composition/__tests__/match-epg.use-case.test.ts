@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import type { IChannelRepository, Channel, IRawXmltvChannelRepository, RawXmltvChannel } from "@/domain/channel-catalog";
-import type { ICanonicalChannelRepository } from "@/domain/output-composition";
+import type { ICanonicalChannelRepository, IChannelStreamRepository } from "@/domain/output-composition";
 
 vi.mock("@/domain/epg-matching/epg-matcher", () => {
   class EpgMatcher {
@@ -74,16 +74,24 @@ function makeRepos(channels: Channel[], xmltvChannels: RawXmltvChannel[]) {
   return { channelRepo, xmltvRepo, canonicalRepo };
 }
 
+function makeStreamRepo(): Partial<IChannelStreamRepository> {
+  return {
+    createBatch: vi.fn(async () => []),
+  };
+}
+
 describe("MatchEpgUseCase", () => {
   it("matches channels by tvg-id", async () => {
     const channels = [createChannel()];
     const xmltvChannels = [createXmltvChannel()];
     const { channelRepo, xmltvRepo, canonicalRepo } = makeRepos(channels, xmltvChannels);
+    const streamRepo = makeStreamRepo();
 
     const useCase = new MatchEpgUseCase(
       channelRepo as IChannelRepository,
       xmltvRepo as IRawXmltvChannelRepository,
       canonicalRepo as ICanonicalChannelRepository,
+      streamRepo as IChannelStreamRepository,
     );
 
     const result = await useCase.execute("src-1");
@@ -95,11 +103,13 @@ describe("MatchEpgUseCase", () => {
     const channels = [createChannel({ tvgId: "unknown", displayName: "Unknown" })];
     const xmltvChannels = [createXmltvChannel({ xmltvId: "cctv1", displayName: "CCTV-1" })];
     const { channelRepo, xmltvRepo, canonicalRepo } = makeRepos(channels, xmltvChannels);
+    const streamRepo = makeStreamRepo();
 
     const useCase = new MatchEpgUseCase(
       channelRepo as IChannelRepository,
       xmltvRepo as IRawXmltvChannelRepository,
       canonicalRepo as ICanonicalChannelRepository,
+      streamRepo as IChannelStreamRepository,
     );
 
     const result = await useCase.execute("src-1");
@@ -114,11 +124,13 @@ describe("MatchEpgUseCase", () => {
       createXmltvChannel({ id: "xc-2", xmltvId: "cctv1b", displayName: "CCTV-1" }),
     ];
     const { channelRepo, xmltvRepo, canonicalRepo } = makeRepos(channels, xmltvChannels);
+    const streamRepo = makeStreamRepo();
 
     const useCase = new MatchEpgUseCase(
       channelRepo as unknown as IChannelRepository,
       xmltvRepo as unknown as IRawXmltvChannelRepository,
       canonicalRepo as unknown as ICanonicalChannelRepository,
+      streamRepo as unknown as IChannelStreamRepository,
     );
 
     const result = await useCase.execute("src-1");

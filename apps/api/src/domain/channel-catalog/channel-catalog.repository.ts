@@ -12,12 +12,13 @@ export interface IRawM3uChannelRepository {
 
 export interface IRawXmltvChannelRepository {
   findBySourceId(sourceId: string): Promise<import("./raw-channel.model").RawXmltvChannel[]>;
+  findCandidates(params: { sourceId?: string; search?: string; page: number; pageSize: number }): Promise<{ items: import("./raw-channel.model").RawXmltvChannel[]; total: number }>;
   createBatch(channels: Omit<import("./raw-channel.model").RawXmltvChannel, "id" | "createdAt" | "updatedAt">[]): Promise<import("./raw-channel.model").RawXmltvChannel[]>;
   deleteBySourceId(sourceId: string): Promise<number>;
 }
 
 export interface IChannelRepository {
-  findAll(query: { page: number; pageSize: number }): Promise<{ items: Channel[]; total: number }>;
+  findAll(query: { page: number; pageSize: number; sourceId?: string; search?: string }): Promise<{ items: Channel[]; total: number }>;
   findById(id: string): Promise<Channel | null>;
   findByIdentity(channelIdentity: string): Promise<Channel | null>;
   findByM3uSourceId(sourceId: string): Promise<Channel[]>;

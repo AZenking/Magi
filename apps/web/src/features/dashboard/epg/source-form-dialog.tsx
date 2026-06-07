@@ -15,6 +15,9 @@ const sourceFormSchema = z.object({
     { message: "请输入有效的 URL（以 http:// 或 https:// 开头）" },
   ),
   enabled: z.boolean(),
+  priority: z.number().int().min(0).max(9999).default(100),
+  allowFallback: z.boolean().default(true),
+  participateInOutput: z.boolean().default(true),
 });
 
 function getErrorMessage(err: unknown): string {
@@ -51,7 +54,7 @@ interface SourceFormDialogProps {
   onOpenChange: (open: boolean) => void;
   source?: SourceVo | null;
   sourceType: "m3u" | "xmltv";
-  onSubmit: (data: { name: string; url: string; enabled: boolean }) => Promise<void>;
+  onSubmit: (data: { name: string; url: string; enabled: boolean; priority?: number; allowFallback?: boolean; participateInOutput?: boolean }) => Promise<void>;
 }
 
 export function SourceFormDialog({
@@ -69,14 +72,26 @@ export function SourceFormDialog({
       name: source?.name ?? "",
       url: source?.url ?? "",
       enabled: source?.enabled ?? true,
+      priority: source?.priority ?? 100,
+      allowFallback: source?.allowFallback ?? true,
+      participateInOutput: source?.participateInOutput ?? true,
     },
     validators: {
-      onChange: sourceFormSchema,
+      onChange: sourceFormSchema as never,
     },
     onSubmit: async ({ value }) => {
       setPending(true);
       try {
-        await onSubmit({ name: value.name, url: value.url, enabled: value.enabled });
+        await onSubmit({
+          name: value.name,
+          url: value.url,
+          enabled: value.enabled,
+          ...(sourceType === "m3u" ? {
+            priority: value.priority,
+            allowFallback: value.allowFallback,
+            participateInOutput: value.participateInOutput,
+          } : {}),
+        });
         onOpenChange(false);
       } catch (err) {
         toast.error(isEdit ? "源更新失败" : "源添加失败", {
@@ -191,6 +206,80 @@ export function SourceFormDialog({
                 </Field>
               )}
             </form.Field>
+
+            {sourceType === "m3u" && (
+              <>
+                <form.Field name="priority">
+                  {(field) => {
+                    const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                    return (
+                      <Field data-invalid={isInvalid || undefined}>
+                        <FieldLabel htmlFor="source-priority">优先级</FieldLabel>
+                        <Input
+                          id="source-priority"
+                          type="number"
+                          value={field.state.value}
+                          onChange={(e) => field.handleChange(Number(e.target.value))}
+                          onBlur={field.handleBlur}
+                          placeholder="100"
+                          aria-invalid={isInvalid}
+                          disabled={pending}
+                          min={0}
+                          max={9999}
+                        />
+                        {isInvalid && (
+                          <FieldError>
+                            {getErrorMessage(field.state.meta.errors[0])}
+                          </FieldError>
+                        )}
+                      </Field>
+                    );
+                  }}
+                </form.Field>
+
+                <form.Field name="participateInOutput">
+                  {(field) => (
+                    <Field>
+                      <FieldLabel>参与输出</FieldLabel>
+                      <Select
+                        value={field.state.value ? "true" : "false"}
+                        onValueChange={(v) => field.handleChange(v === "true")}
+                        disabled={pending}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">是</SelectItem>
+                          <SelectItem value="false">否</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  )}
+                </form.Field>
+
+                <form.Field name="allowFallback">
+                  {(field) => (
+                    <Field>
+                      <FieldLabel>允许作为备选源</FieldLabel>
+                      <Select
+                        value={field.state.value ? "true" : "false"}
+                        onValueChange={(v) => field.handleChange(v === "true")}
+                        disabled={pending}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">是</SelectItem>
+                          <SelectItem value="false">否</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  )}
+                </form.Field>
+              </>
+            )}
           </FieldGroup>
           <DialogFooter className="mt-6">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>

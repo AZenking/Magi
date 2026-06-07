@@ -1,7 +1,7 @@
 import type { TaskType } from "./task.model";
 
 export interface TaskPayload {
-  sourceId: string;
+  sourceId: string | null;
   sourceType: string;
   [key: string]: unknown;
 }

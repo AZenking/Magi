@@ -1,6 +1,6 @@
 export type EpgStatus = "matched_manual" | "matched_auto" | "unmatched" | "conflict" | null;
 export type OutputStatus = "active" | "degraded" | "unavailable";
-export type MergeMethod = "manual" | "tvg_id" | "exact_name" | "similar_name" | null;
+export type MergeMethod = "manual" | "tvg_id" | "exact_name" | "similar_name" | "merge_key" | null;
 
 export interface CanonicalChannel {
   id: string;

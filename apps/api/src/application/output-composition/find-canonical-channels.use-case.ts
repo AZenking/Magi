@@ -7,6 +7,8 @@ export interface FindCanonicalChannelsQuery {
   epgStatus?: string;
   outputStatus?: string;
   hidden?: boolean;
+  disabled?: boolean;
+  search?: string;
 }
 
 @Injectable()
