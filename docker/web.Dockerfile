@@ -34,6 +34,7 @@ RUN pnpm install --frozen-lockfile --prod --filter @magi/web...
 FROM base AS runner
 ENV NODE_ENV=production
 COPY --from=builder /app/apps/web/dist ./dist
+COPY --from=builder /app/apps/web/prod-server.js ./prod-server.js
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=builder /app/packages/types/dist ./packages/types/dist
 COPY --from=builder /app/packages/types/package.json ./packages/types/package.json
@@ -42,4 +43,4 @@ COPY --from=builder /app/packages/utils/package.json ./packages/utils/package.js
 COPY --from=builder /app/apps/web/package.json ./
 
 EXPOSE 3000
-CMD ["node", "dist/server/server.js"]
+CMD ["node", "prod-server.js"]
