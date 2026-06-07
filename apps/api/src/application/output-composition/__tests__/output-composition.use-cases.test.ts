@@ -46,10 +46,20 @@ function createStream(overrides: Partial<ChannelStream> = {}): ChannelStream {
     consecutiveFailures: 0,
     successRate: null,
     streamError: null,
+    streamCodec: null,
+    streamFormat: null,
+    streamWidth: null,
+    streamHeight: null,
+    streamFrameRate: null,
+    streamBitrate: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
   };
+}
+
+function withSource(s: ChannelStream) {
+  return { ...s, sourcePriority: 100, sourceParticipateInOutput: true, sourceAllowFallback: true };
 }
 
 describe("FindCanonicalChannelsUseCase", () => {
@@ -82,7 +92,7 @@ describe("GenerateM3uOutputUseCase", () => {
 
     const useCase = new GenerateM3uOutputUseCase(
       { findAll: async () => ({ items: channels, total: 1 }) } as unknown as ICanonicalChannelRepository,
-      { findByCanonicalChannelId: async () => streams } as unknown as IChannelStreamRepository,
+      { findByCanonicalChannelIdWithSource: async () => streams.map(withSource) } as unknown as IChannelStreamRepository,
     );
 
     const output = await useCase.execute();
@@ -97,7 +107,7 @@ describe("GenerateM3uOutputUseCase", () => {
     const channels = [createCanonical({ hidden: true })];
     const useCase = new GenerateM3uOutputUseCase(
       { findAll: async () => ({ items: channels, total: 1 }) } as unknown as ICanonicalChannelRepository,
-      { findByCanonicalChannelId: async () => [] } as unknown as IChannelStreamRepository,
+      { findByCanonicalChannelIdWithSource: async () => [] } as unknown as IChannelStreamRepository,
     );
 
     const output = await useCase.execute();
@@ -108,7 +118,7 @@ describe("GenerateM3uOutputUseCase", () => {
     const channels = [createCanonical()];
     const useCase = new GenerateM3uOutputUseCase(
       { findAll: async () => ({ items: channels, total: 1 }) } as unknown as ICanonicalChannelRepository,
-      { findByCanonicalChannelId: async () => [] } as unknown as IChannelStreamRepository,
+      { findByCanonicalChannelIdWithSource: async () => [] } as unknown as IChannelStreamRepository,
     );
 
     const output = await useCase.execute();
@@ -124,11 +134,45 @@ describe("GenerateM3uOutputUseCase", () => {
 
     const useCase = new GenerateM3uOutputUseCase(
       { findAll: async () => ({ items: channels, total: 1 }) } as unknown as ICanonicalChannelRepository,
-      { findByCanonicalChannelId: async () => streams } as unknown as IChannelStreamRepository,
+      { findByCanonicalChannelIdWithSource: async () => streams.map(withSource) } as unknown as IChannelStreamRepository,
     );
 
     const output = await useCase.execute();
     expect(output).toContain("http://primary/1");
     expect(output).not.toContain("http://backup/1");
+  });
+
+  it("excludes streams from non-participating sources", async () => {
+    const channels = [createCanonical()];
+    const streams = [createStream({ streamUrl: "http://excluded/1" })];
+
+    const useCase = new GenerateM3uOutputUseCase(
+      { findAll: async () => ({ items: channels, total: 1 }) } as unknown as ICanonicalChannelRepository,
+      { findByCanonicalChannelIdWithSource: async () => streams.map((s) => ({ ...withSource(s), sourceParticipateInOutput: false })) } as unknown as IChannelStreamRepository,
+    );
+
+    const output = await useCase.execute();
+    expect(output).not.toContain("http://excluded/1");
+  });
+
+  it("prefers higher source priority", async () => {
+    const channels = [createCanonical()];
+    const streams = [
+      createStream({ id: "cs-1", isPrimary: false, streamUrl: "http://low/1" }),
+      createStream({ id: "cs-2", isPrimary: false, streamUrl: "http://high/1" }),
+    ];
+    const withSources = [
+      { ...withSource(streams[0]!), sourcePriority: 50 },
+      { ...withSource(streams[1]!), sourcePriority: 200 },
+    ];
+
+    const useCase = new GenerateM3uOutputUseCase(
+      { findAll: async () => ({ items: channels, total: 1 }) } as unknown as ICanonicalChannelRepository,
+      { findByCanonicalChannelIdWithSource: async () => withSources } as unknown as IChannelStreamRepository,
+    );
+
+    const output = await useCase.execute();
+    expect(output).toContain("http://high/1");
+    expect(output).not.toContain("http://low/1");
   });
 });

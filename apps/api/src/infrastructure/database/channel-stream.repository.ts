@@ -1,7 +1,7 @@
 import { eq, and } from "drizzle-orm";
-import type { IChannelStreamRepository, ChannelStream, HealthStatus } from "@/domain/output-composition";
+import type { IChannelStreamRepository, ChannelStream, StreamWithSource, HealthStatus } from "@/domain/output-composition";
 import { db } from "./connection";
-import { channelStreams } from "./schema";
+import { channelStreams, m3uSources } from "./schema";
 
 function toDomain(row: typeof channelStreams.$inferSelect): ChannelStream {
   return {
@@ -14,6 +14,26 @@ export class ChannelStreamRepository implements IChannelStreamRepository {
   async findByCanonicalChannelId(canonicalChannelId: string): Promise<ChannelStream[]> {
     const rows = await db.select().from(channelStreams).where(eq(channelStreams.canonicalChannelId, canonicalChannelId));
     return rows.map(toDomain);
+  }
+
+  async findByCanonicalChannelIdWithSource(canonicalChannelId: string): Promise<StreamWithSource[]> {
+    const rows = await db
+      .select({
+        stream: channelStreams,
+        sourcePriority: m3uSources.priority,
+        sourceParticipateInOutput: m3uSources.participateInOutput,
+        sourceAllowFallback: m3uSources.allowFallback,
+      })
+      .from(channelStreams)
+      .leftJoin(m3uSources, eq(channelStreams.m3uSourceId, m3uSources.id))
+      .where(eq(channelStreams.canonicalChannelId, canonicalChannelId));
+
+    return rows.map((r) => ({
+      ...toDomain(r.stream),
+      sourcePriority: r.sourcePriority ?? null,
+      sourceParticipateInOutput: r.sourceParticipateInOutput ?? null,
+      sourceAllowFallback: r.sourceAllowFallback ?? null,
+    }));
   }
 
   async findById(id: string): Promise<ChannelStream | null> {

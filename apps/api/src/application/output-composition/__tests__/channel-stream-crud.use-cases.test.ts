@@ -46,6 +46,12 @@ function createStream(overrides: Partial<ChannelStream> = {}): ChannelStream {
     consecutiveFailures: 0,
     successRate: null,
     streamError: null,
+    streamCodec: null,
+    streamFormat: null,
+    streamWidth: null,
+    streamHeight: null,
+    streamFrameRate: null,
+    streamBitrate: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -331,7 +337,7 @@ describe("UpdateChannelStreamUseCase", () => {
       },
     });
 
-    const useCase = new UpdateChannelStreamUseCase(streamRepo);
+    const useCase = new UpdateChannelStreamUseCase(streamRepo, {} as any);
     const result = await useCase.execute("cs-1", { streamUrl: "http://new.com" });
 
     expect(result.streamUrl).toBe("http://new.com");
@@ -342,7 +348,7 @@ describe("UpdateChannelStreamUseCase", () => {
       stream: { findById: async () => null },
     });
 
-    const useCase = new UpdateChannelStreamUseCase(streamRepo);
+    const useCase = new UpdateChannelStreamUseCase(streamRepo, {} as any);
     await expect(useCase.execute("bad", { streamUrl: "http://x.com" }))
       .rejects.toThrow(NotFoundException);
   });

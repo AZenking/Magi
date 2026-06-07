@@ -64,6 +64,12 @@ export class CreateChannelStreamUseCase {
       consecutiveFailures: 0,
       successRate: null,
       streamError: null,
+    streamCodec: null,
+    streamFormat: null,
+    streamWidth: null,
+    streamHeight: null,
+    streamFrameRate: null,
+    streamBitrate: null,
     });
 
     // Sync canonical.primaryStreamId when creating the first stream
@@ -80,15 +86,37 @@ export class UpdateChannelStreamUseCase {
   constructor(
     @Inject("CHANNEL_STREAM_REPOSITORY")
     private readonly streamRepo: IChannelStreamRepository,
+    @Inject("CHANNEL_REPOSITORY")
+    private readonly channelRepo: IChannelRepository,
   ) {}
 
-  async execute(streamId: string, data: { streamUrl?: string }): Promise<ChannelStream> {
+  async execute(streamId: string, data: { streamUrl?: string; m3uSourceId?: string | null; sourceChannelId?: string | null }): Promise<ChannelStream> {
     const stream = await this.streamRepo.findById(streamId);
     if (!stream) throw new NotFoundException("Stream not found");
 
-    const updated = await this.streamRepo.update(streamId, {
-      ...(data.streamUrl !== undefined ? { streamUrl: data.streamUrl } : {}),
-    });
+    const update: Partial<ChannelStream> = {};
+
+    if (data.streamUrl !== undefined) update.streamUrl = data.streamUrl;
+
+    // If sourceChannelId provided, resolve source info from the raw channel
+    if (data.sourceChannelId !== undefined && data.sourceChannelId) {
+      const rawChannel = await this.channelRepo.findById(data.sourceChannelId);
+      if (!rawChannel) throw new NotFoundException("Source channel not found");
+      update.sourceChannelId = rawChannel.id;
+      update.m3uSourceId = rawChannel.m3uSourceId;
+      update.rawChannelId = rawChannel.rawChannelId;
+      if (data.streamUrl === undefined && rawChannel.streamUrl) {
+        update.streamUrl = rawChannel.streamUrl;
+      }
+    } else if (data.sourceChannelId === null) {
+      // Explicitly clearing source binding
+      update.sourceChannelId = null;
+      update.rawChannelId = null;
+    } else if (data.m3uSourceId !== undefined) {
+      update.m3uSourceId = data.m3uSourceId;
+    }
+
+    const updated = await this.streamRepo.update(streamId, update);
     if (!updated) throw new NotFoundException("Stream not found");
     return updated;
   }
