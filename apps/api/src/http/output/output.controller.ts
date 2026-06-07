@@ -12,6 +12,7 @@ import {
   Header,
   ForbiddenException,
 } from "@nestjs/common";
+import { inArray } from "drizzle-orm";
 import type { ApiResponse, PaginatedResponse, UpdateOutputChannel, CanonicalChannelVo, OutputChannelDetailVo, ChannelStreamVo, CreateChannelStream, UpdateChannelStream } from "@magi/types";
 import { AuthGuard } from "../../shared/guards/auth.guard";
 import { FindCanonicalChannelsUseCase } from "../../application/output-composition/find-canonical-channels.use-case";
@@ -20,6 +21,9 @@ import { GenerateXmltvOutputUseCase } from "../../application/output-composition
 import { UpdateOutputChannelUseCase } from "../../application/output-composition/update-output-channel.use-case";
 import { FindOutputChannelDetailUseCase } from "../../application/output-composition/find-output-channel-detail.use-case";
 import { FindChannelStreamsUseCase, CreateChannelStreamUseCase, UpdateChannelStreamUseCase, DeleteChannelStreamUseCase, SetPrimaryStreamUseCase } from "../../application/output-composition/channel-stream-crud.use-cases";
+import { EnqueueSyncUseCase } from "../../application/task-execution/enqueue-sync.use-case";
+import { db } from "../../infrastructure/database/connection";
+import { m3uSources, channels } from "../../infrastructure/database/schema";
 
 function toChannelVo(ch: import("../../domain/output-composition").CanonicalChannel): CanonicalChannelVo {
   return {
@@ -40,7 +44,11 @@ function toChannelVo(ch: import("../../domain/output-composition").CanonicalChan
   };
 }
 
-function toStreamVo(s: import("../../domain/output-composition").ChannelStream): ChannelStreamVo {
+function toStreamVo(
+  s: import("../../domain/output-composition").ChannelStream,
+  sourceNames: Map<string, string>,
+  channelNames: Map<string, string>,
+): ChannelStreamVo {
   return {
     id: s.id,
     canonicalChannelId: s.canonicalChannelId,
@@ -54,7 +62,15 @@ function toStreamVo(s: import("../../domain/output-composition").ChannelStream):
     lastCheckedAt: s.lastCheckedAt?.toISOString() ?? null,
     consecutiveFailures: s.consecutiveFailures,
     streamError: s.streamError,
+    streamCodec: s.streamCodec ?? null,
+    streamFormat: s.streamFormat ?? null,
+    streamWidth: s.streamWidth ?? null,
+    streamHeight: s.streamHeight ?? null,
+    streamFrameRate: s.streamFrameRate ?? null,
+    streamBitrate: s.streamBitrate ?? null,
     createdAt: s.createdAt.toISOString(),
+    m3uSourceName: s.m3uSourceId ? (sourceNames.get(s.m3uSourceId) ?? null) : null,
+    sourceChannelName: s.sourceChannelId ? (channelNames.get(s.sourceChannelId) ?? null) : null,
   };
 }
 
@@ -82,11 +98,19 @@ export class OutputController {
     private readonly deleteStreamUc: DeleteChannelStreamUseCase,
     @Inject(SetPrimaryStreamUseCase)
     private readonly setPrimaryStreamUc: SetPrimaryStreamUseCase,
+    @Inject(EnqueueSyncUseCase)
+    private readonly enqueueSync: EnqueueSyncUseCase,
   ) {}
+
+  @Post("check-streams")
+  async checkStreams(@Body() body?: { sourceId?: string }): Promise<ApiResponse<{ taskId: string }>> {
+    const result = await this.enqueueSync.enqueueStreamCheck(body?.sourceId);
+    return { success: true, data: result };
+  }
 
   @Get("channels")
   async listChannels(
-    @Query() query: { page?: string; pageSize?: string; epgStatus?: string; outputStatus?: string },
+    @Query() query: { page?: string; pageSize?: string; epgStatus?: string; outputStatus?: string; search?: string },
   ) {
     const result = await this.findChannels.execute({
       page: parseInt(query.page ?? "1", 10),
@@ -94,6 +118,8 @@ export class OutputController {
       epgStatus: query.epgStatus,
       outputStatus: query.outputStatus,
       hidden: false,
+      disabled: false,
+      search: query.search || undefined,
     });
 
     return {
@@ -111,6 +137,26 @@ export class OutputController {
   @Get("channels/:id")
   async getDetail(@Param("id") id: string): Promise<ApiResponse<OutputChannelDetailVo>> {
     const { channel, streams } = await this.findDetail.execute(id);
+
+    // Enrich streams with source and channel names
+    const sourceIds = [...new Set(streams.map((s) => s.m3uSourceId).filter(Boolean))] as string[];
+    const channelIds = [...new Set(streams.map((s) => s.sourceChannelId).filter(Boolean))] as string[];
+
+    const sourceNames = new Map<string, string>();
+    const channelNames = new Map<string, string>();
+
+    if (sourceIds.length > 0) {
+      const sourceRows = await db.select({ id: m3uSources.id, name: m3uSources.name })
+        .from(m3uSources).where(inArray(m3uSources.id, sourceIds));
+      for (const r of sourceRows) sourceNames.set(r.id, r.name);
+    }
+
+    if (channelIds.length > 0) {
+      const channelRows = await db.select({ id: channels.id, displayName: channels.displayName })
+        .from(channels).where(inArray(channels.id, channelIds));
+      for (const r of channelRows) channelNames.set(r.id, r.displayName);
+    }
+
     return {
       success: true,
       data: {
@@ -118,7 +164,7 @@ export class OutputController {
           ...toChannelVo(channel),
           mergedFromIds: channel.mergedFromIds,
         },
-        streams: streams.map(toStreamVo),
+        streams: streams.map((s) => toStreamVo(s, sourceNames, channelNames)),
       },
     };
   }
@@ -126,8 +172,8 @@ export class OutputController {
   @Get("m3u")
   @Header("Content-Type", "audio/mpegurl")
   @Header("Content-Disposition", "attachment; filename=magi.m3u")
-  async m3u(): Promise<string> {
-    return this.generateM3u.execute();
+  async m3u(@Query("mode") mode?: string): Promise<string> {
+    return this.generateM3u.execute(mode === "all" ? "all" : "primary");
   }
 
   @Get("xmltv")
@@ -135,6 +181,23 @@ export class OutputController {
   @Header("Content-Disposition", "attachment; filename=magi.xml")
   async xmltv(): Promise<string> {
     return this.generateXmltv.execute();
+  }
+
+  @Post("channels/batch")
+  async batch(@Body() body: { ids: string[]; action: "hide" | "show" | "delete" }): Promise<ApiResponse<{ updated: number }>> {
+    if (!body.ids?.length) return { success: true, data: { updated: 0 } };
+
+    if (body.action === "hide" || body.action === "show") {
+      const result = await this.updateChannel.batchUpdate(body.ids, { hidden: body.action === "hide" });
+      return { success: true, data: { updated: result } };
+    }
+
+    if (body.action === "delete") {
+      const result = await this.updateChannel.batchDelete(body.ids);
+      return { success: true, data: { updated: result } };
+    }
+
+    return { success: true, data: { updated: 0 } };
   }
 
   @Put("channels/:id")
@@ -149,7 +212,8 @@ export class OutputController {
   @Get("channels/:id/streams")
   async listStreams(@Param("id") id: string): Promise<ApiResponse<ChannelStreamVo[]>> {
     const streams = await this.findStreamsUc.execute(id);
-    return { success: true, data: streams.map(toStreamVo) };
+    const emptyNames = new Map<string, string>();
+    return { success: true, data: streams.map((s) => toStreamVo(s, emptyNames, emptyNames)) };
   }
 
   @Post("channels/:id/streams")
@@ -158,7 +222,8 @@ export class OutputController {
     @Body() body: CreateChannelStream,
   ): Promise<ApiResponse<ChannelStreamVo>> {
     const stream = await this.createStreamUc.execute(id, body);
-    return { success: true, data: toStreamVo(stream) };
+    const emptyNames = new Map<string, string>();
+    return { success: true, data: toStreamVo(stream, emptyNames, emptyNames) };
   }
 
   @Put("channels/:id/streams/:streamId")
@@ -169,7 +234,8 @@ export class OutputController {
   ): Promise<ApiResponse<ChannelStreamVo>> {
     await this.validateStreamOwnership(id, streamId);
     const stream = await this.updateStreamUc.execute(streamId, body);
-    return { success: true, data: toStreamVo(stream) };
+    const emptyNames = new Map<string, string>();
+    return { success: true, data: toStreamVo(stream, emptyNames, emptyNames) };
   }
 
   @Delete("channels/:id/streams/:streamId")
@@ -189,7 +255,8 @@ export class OutputController {
   ): Promise<ApiResponse<ChannelStreamVo>> {
     await this.validateStreamOwnership(id, streamId);
     const stream = await this.setPrimaryStreamUc.execute(streamId);
-    return { success: true, data: toStreamVo(stream) };
+    const emptyNames = new Map<string, string>();
+    return { success: true, data: toStreamVo(stream, emptyNames, emptyNames) };
   }
 
   private async validateStreamOwnership(channelId: string, streamId: string): Promise<void> {

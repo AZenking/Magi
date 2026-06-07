@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { Queue } from "bullmq";
 import { RedisModule } from "../redis/redis.module";
+import { SchedulerService } from "./scheduler";
 
 export const QUEUE_NAMES = {
   SOURCE_SYNC: "source-sync",
@@ -37,7 +38,13 @@ export const DEFAULT_JOB_OPTIONS = {
       provide: "QUEUE_DEFAULTS",
       useValue: DEFAULT_JOB_OPTIONS,
     },
+    {
+      provide: SchedulerService,
+      useFactory: (healthCheckQueue: Queue, sourceSyncQueue: Queue) =>
+        new SchedulerService(healthCheckQueue, sourceSyncQueue),
+      inject: ["HEALTH_CHECK_QUEUE", "SOURCE_SYNC_QUEUE"],
+    },
   ],
-  exports: ["SOURCE_SYNC_QUEUE", "EPG_QUEUE", "HEALTH_CHECK_QUEUE", "QUEUE_DEFAULTS"],
+  exports: ["SOURCE_SYNC_QUEUE", "EPG_QUEUE", "HEALTH_CHECK_QUEUE", "QUEUE_DEFAULTS", SchedulerService],
 })
 export class BullmqModule {}
