@@ -33,6 +33,7 @@ RUN pnpm install --frozen-lockfile --prod --filter @magi/api... && \
     rm -rf /app/node_modules/.pnpm/@next* /app/node_modules/.pnpm/next* /app/node_modules/.pnpm/@rolldown* /app/node_modules/.pnpm/sharp* /app/node_modules/.pnpm/@img* /app/node_modules/.pnpm/esbuild* /app/node_modules/.pnpm/lightningcss* /app/node_modules/.pnpm/drizzle-kit*
 
 FROM base AS runner
+ENV NODE_ENV=production
 COPY --from=builder /app/apps/api/dist ./dist
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=builder /app/packages/types/dist ./packages/types/dist
