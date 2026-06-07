@@ -1,10 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { toast } from "sonner";
 import type { OutputChannelDetailVo, ChannelStreamVo, PaginatedResponse, ProgrammeVo } from "@magi/types";
 import { apiClient } from "@/services/api";
 import { Button } from "@magi/ui/components/button";
 import { Badge } from "@magi/ui/components/badge";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@magi/ui/components/alert-dialog";
 import { ArrowLeftIcon, PlusIcon, TrashIcon, StarIcon, LinkIcon, PencilIcon } from "lucide-react";
 import { OutputChannelFormDialog } from "@/features/dashboard/channels/channel-form-dialog";
 import { EpgMatchDialog } from "@/features/dashboard/channels/epg-match-dialog";
@@ -36,6 +41,7 @@ function ChannelDetailPage() {
   const [epgOpen, setEpgOpen] = useState(false);
   const [streamDialogOpen, setStreamDialogOpen] = useState(false);
   const [editingStream, setEditingStream] = useState<ChannelStreamVo | null>(null);
+  const [confirmDeleteStreamId, setConfirmDeleteStreamId] = useState<string | null>(null);
 
   // Channel detail
   const { data: detail, isLoading } = useQuery({
@@ -60,13 +66,16 @@ function ChannelDetailPage() {
 
   const programmes = progData?.data?.items ?? [];
 
-  // Update channel mutation
+  // Update channel mutation (with error toast)
   const updateMutation = useMutation({
     mutationFn: async (body: Record<string, unknown>) =>
       apiClient(`/output/channels/${channelId}`, { method: "PUT", body }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["output-channel-detail", channelId] });
       queryClient.invalidateQueries({ queryKey: ["output-channels"] });
+    },
+    onError: (err) => {
+      toast.error("保存失败", { description: err.message });
     },
   });
 
@@ -78,14 +87,20 @@ function ChannelDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["output-channel-detail", channelId] });
       queryClient.invalidateQueries({ queryKey: ["output-channels"] });
     },
+    onError: (err) => {
+      toast.error("新增播放源失败", { description: err.message });
+    },
   });
 
   const updateStreamMutation = useMutation({
-    mutationFn: async ({ streamId, data }: { streamId: string; data: { streamUrl: string } }) =>
+    mutationFn: async ({ streamId, data }: { streamId: string; data: { streamUrl?: string; m3uSourceId?: string | null; sourceChannelId?: string | null } }) =>
       apiClient(`/output/channels/${channelId}/streams/${streamId}`, { method: "PUT", body: data }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["output-channel-detail", channelId] });
       queryClient.invalidateQueries({ queryKey: ["output-channels"] });
+    },
+    onError: (err) => {
+      toast.error("更新播放源失败", { description: err.message });
     },
   });
 
@@ -96,6 +111,9 @@ function ChannelDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["output-channel-detail", channelId] });
       queryClient.invalidateQueries({ queryKey: ["output-channels"] });
     },
+    onError: (err) => {
+      toast.error("删除失败", { description: err.message });
+    },
   });
 
   const setPrimaryMutation = useMutation({
@@ -104,6 +122,9 @@ function ChannelDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["output-channel-detail", channelId] });
       queryClient.invalidateQueries({ queryKey: ["output-channels"] });
+    },
+    onError: (err) => {
+      toast.error("设为主源失败", { description: err.message });
     },
   });
 
@@ -224,10 +245,26 @@ function ChannelDetailPage() {
                       <div className="w-12 shrink-0" />
                     )}
                     <Badge variant={hs.variant} className="shrink-0">{hs.label}</Badge>
+                    {s.m3uSourceName && (
+                      <Badge variant="outline" className="shrink-0 text-xs">{s.m3uSourceName}</Badge>
+                    )}
+                    {s.streamCodec && (
+                      <Badge variant="outline" className="shrink-0 text-xs">{s.streamCodec}</Badge>
+                    )}
+                    {s.streamWidth && s.streamHeight && (
+                      <Badge variant="outline" className="shrink-0 text-xs">{s.streamWidth}×{s.streamHeight}</Badge>
+                    )}
+                    {s.streamBitrate && (
+                      <Badge variant="outline" className="shrink-0 text-xs">{s.streamBitrate} kbps</Badge>
+                    )}
                     <div className="flex-1 min-w-0">
                       <span className="font-mono text-xs truncate block">{s.streamUrl}</span>
-                      {s.sourceChannelId && (
-                        <span className="text-[10px] text-muted-foreground">来源：原始频道</span>
+                      {(s.sourceChannelName || s.responseTime) && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {s.sourceChannelName ? `来源：${s.sourceChannelName}` : ""}
+                          {s.sourceChannelName && s.responseTime ? " · " : ""}
+                          {s.responseTime ? `${s.responseTime}ms` : ""}
+                        </span>
                       )}
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
@@ -256,7 +293,7 @@ function ChannelDetailPage() {
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7 text-destructive"
-                        onClick={() => deleteStreamMutation.mutate(s.id)}
+                        onClick={() => setConfirmDeleteStreamId(s.id)}
                         aria-label="删除"
                         disabled={deleteStreamMutation.isPending}
                       >
@@ -272,6 +309,21 @@ function ChannelDetailPage() {
       </div>
 
       {/* Dialogs */}
+      <AlertDialog open={!!confirmDeleteStreamId} onOpenChange={() => setConfirmDeleteStreamId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>确定要删除该播放源吗？此操作不可撤销。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { deleteStreamMutation.mutate(confirmDeleteStreamId!); setConfirmDeleteStreamId(null); }}>
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {channel && (
         <OutputChannelFormDialog
           open={editOpen}
@@ -296,20 +348,28 @@ function ChannelDetailPage() {
         pending={updateMutation.isPending}
       />
 
-      <ChannelStreamDialog
-        open={streamDialogOpen}
-        onOpenChange={setStreamDialogOpen}
-        initialUrl={editingStream?.streamUrl}
-        title={editingStream ? "编辑播放源" : "新增播放源"}
-        editing={!!editingStream}
-        onSubmit={async (data) => {
-          if (editingStream) {
-            await updateStreamMutation.mutateAsync({ streamId: editingStream.id, data: { streamUrl: data.streamUrl } });
-          } else {
-            await createStreamMutation.mutateAsync(data);
-          }
-        }}
-      />
+      {streamDialogOpen && (
+        <ChannelStreamDialog
+          open={streamDialogOpen}
+          onOpenChange={(open) => {
+            setStreamDialogOpen(open);
+            if (!open) setEditingStream(null);
+          }}
+          key={editingStream?.id ?? "new"}
+          initialUrl={editingStream?.streamUrl}
+          initialSourceChannelId={editingStream?.sourceChannelId}
+          initialM3uSourceId={editingStream?.m3uSourceId}
+          title={editingStream ? "编辑播放源" : "新增播放源"}
+          editing={!!editingStream}
+          onSubmit={async (data) => {
+            if (editingStream) {
+              await updateStreamMutation.mutateAsync({ streamId: editingStream.id, data });
+            } else {
+              await createStreamMutation.mutateAsync(data);
+            }
+          }}
+        />
+      )}
     </>
   );
 }

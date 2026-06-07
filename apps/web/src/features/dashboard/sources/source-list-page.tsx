@@ -44,6 +44,7 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [checkingId, setCheckingId] = useState<string | null>(null);
 
   const sortBy = sorting[0]?.id;
   const sortDir = sorting[0] ? (sorting[0].desc ? "desc" : "asc") : undefined;
@@ -74,7 +75,7 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
   }, [queryClient]);
 
   const handleCreate = useCallback(
-    async (formData: { name: string; url: string; enabled: boolean }) => {
+    async (formData: { name: string; url: string; enabled: boolean; priority?: number; allowFallback?: boolean; participateInOutput?: boolean }) => {
       try {
         await apiClient("/sources", {
           method: "POST",
@@ -93,7 +94,7 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
   );
 
   const handleUpdate = useCallback(
-    async (formData: { name: string; url: string; enabled: boolean }) => {
+    async (formData: { name: string; url: string; enabled: boolean; priority?: number; allowFallback?: boolean; participateInOutput?: boolean }) => {
       if (!editingSource) return;
       try {
         await apiClient(`/sources/${editingSource.type}/${editingSource.id}`, {
@@ -158,6 +159,33 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
     [refresh, navigate],
   );
 
+  const handleCheck = useCallback(
+    async (source: SourceVo) => {
+      setCheckingId(source.id);
+      try {
+        const result = await apiClient<{ success: boolean; data: { taskId: string } }>(
+          `/sources/${source.type}/${source.id}/check`,
+          { method: "POST" },
+        );
+        toast.success("源检测已提交", {
+          description: "检测中，稍后刷新查看结果",
+          action: {
+            label: "查看详情",
+            onClick: () => navigate({ to: "/dashboard/tasks/$taskId", params: { taskId: result.data.taskId } }),
+          },
+        });
+        refresh();
+      } catch (err) {
+        toast.error("提交检测失败", {
+          description: err instanceof Error ? err.message : "请稍后重试",
+        });
+      } finally {
+        setCheckingId(null);
+      }
+    },
+    [refresh, navigate],
+  );
+
   const columns = useMemo(
     () =>
       getSourceColumns({
@@ -167,9 +195,11 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
         },
         onDelete: (source) => setConfirmDeleteId(source.id),
         onSync: handleSync,
+        onCheck: handleCheck,
         syncingId,
+        checkingId,
       }),
-    [handleSync, syncingId],
+    [handleSync, handleCheck, syncingId, checkingId],
   );
 
   const table = useReactTable({
