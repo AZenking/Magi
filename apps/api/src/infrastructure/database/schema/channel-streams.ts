@@ -44,6 +44,12 @@ export const channelStreams = pgTable(
       .default(0),
     successRate: real("success_rate"),
     streamError: text("stream_error"),
+    streamCodec: varchar("stream_codec", { length: 50 }),
+    streamFormat: varchar("stream_format", { length: 50 }),
+    streamWidth: integer("stream_width"),
+    streamHeight: integer("stream_height"),
+    streamFrameRate: real("stream_frame_rate"),
+    streamBitrate: integer("stream_bitrate"),
     ...timestamps,
   },
   (t) => [

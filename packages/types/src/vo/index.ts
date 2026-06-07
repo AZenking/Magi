@@ -13,6 +13,8 @@ export interface SourceVo {
   lastSyncStatus?: string | null;
   lastCheckAt?: string;
   checkStatus?: string | null;
+  checkResponseTime?: number | null;
+  checkError?: string | null;
   qualityScore?: number | null;
   createdAt: string;
   updatedAt: string;
@@ -89,7 +91,15 @@ export interface ChannelStreamVo {
   lastCheckedAt: string | null;
   consecutiveFailures: number;
   streamError: string | null;
+  streamCodec: string | null;
+  streamFormat: string | null;
+  streamWidth: number | null;
+  streamHeight: number | null;
+  streamFrameRate: number | null;
+  streamBitrate: number | null;
   createdAt: string;
+  m3uSourceName: string | null;
+  sourceChannelName: string | null;
 }
 
 export interface CreateChannelStream {
@@ -100,6 +110,8 @@ export interface CreateChannelStream {
 
 export interface UpdateChannelStream {
   streamUrl?: string;
+  m3uSourceId?: string | null;
+  sourceChannelId?: string | null;
 }
 
 export interface OutputChannelDetailVo {

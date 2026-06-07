@@ -19,6 +19,7 @@ COPY packages ./packages
 RUN pnpm --filter @magi/worker build
 
 FROM base AS runner
+RUN apk add --no-cache ffmpeg
 COPY --from=builder /app/apps/worker/dist ./dist
 COPY --from=builder /app/apps/worker/node_modules ./node_modules
 COPY --from=builder /app/node_modules ./node_modules
