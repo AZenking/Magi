@@ -38,6 +38,7 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
             cd ${{ secrets.DEPLOY_PATH }}
+            echo "${{ secrets.DOCKER_API_KEY }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             export DOCKER_REGISTRY=${{ env.DOCKER_REGISTRY }}
             export DOCKER_TAG=${{ github.sha }}
             docker compose -f docker/docker-compose.yml pull
