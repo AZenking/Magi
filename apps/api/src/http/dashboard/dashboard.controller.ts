@@ -1,9 +1,9 @@
-import { Controller, Get, Inject } from "@nestjs/common";
+import { Controller, Get, Inject, UseGuards } from "@nestjs/common";
 import type { ApiResponse } from "@magi/types";
 import type { IM3uSourceRepository, IXmltvSourceRepository } from "@/domain/source-management";
 import type { IChannelRepository, IProgrammeRepository } from "@/domain/channel-catalog";
+import { GetHealthSummaryUseCase } from "../../application/dashboard/get-health-summary.use-case";
 import { AuthGuard } from "../../shared/guards/auth.guard";
-import { UseGuards } from "@nestjs/common";
 
 @Controller("dashboard")
 @UseGuards(AuthGuard)
@@ -17,6 +17,8 @@ export class DashboardController {
     private readonly channelRepo: IChannelRepository,
     @Inject("PROGRAMME_REPOSITORY")
     private readonly programmeRepo: IProgrammeRepository,
+    @Inject(GetHealthSummaryUseCase)
+    private readonly healthSummaryUc: GetHealthSummaryUseCase,
   ) {}
 
   @Get("stats")
@@ -48,5 +50,11 @@ export class DashboardController {
         synced: allChannels.items.filter((c) => c.epgChannelId).length,
       },
     };
+  }
+
+  @Get("health-summary")
+  async getHealthSummary() {
+    const data = await this.healthSummaryUc.execute();
+    return { success: true, data };
   }
 }

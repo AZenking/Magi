@@ -4,6 +4,12 @@ import tsConfigPaths from "vite-tsconfig-paths";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 
-export default defineConfig({
-  plugins: [tsConfigPaths(), tanstackStart(), react(), tailwindcss()],
+export default defineConfig(({ command }) => {
+  const config = {
+    plugins: [tsConfigPaths(), tanstackStart(), react(), tailwindcss()],
+  };
+  if (command === "build") {
+    config.ssr = { noExternal: true };
+  }
+  return config;
 });

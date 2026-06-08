@@ -41,8 +41,7 @@ services:
       - "${API_PORT:-3001}:3001"
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-magi}:${POSTGRES_PASSWORD:-magi}@postgres:5432/${POSTGRES_DB:-magi}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
       API_PORT: 3001
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
@@ -51,6 +50,8 @@ services:
       MAGI_ADMIN_PASSWORD: ${MAGI_ADMIN_PASSWORD}
       MAGI_ADMIN_EMAIL: ${MAGI_ADMIN_EMAIL}
       MAGI_ADMIN_NAME: ${MAGI_ADMIN_NAME}
+    volumes:
+      - logo_uploads:/app/uploads/logos
     depends_on:
       postgres:
         condition: service_healthy
@@ -65,8 +66,7 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-magi}:${POSTGRES_PASSWORD:-magi}@postgres:5432/${POSTGRES_DB:-magi}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
     depends_on:
       postgres:
         condition: service_healthy
@@ -89,3 +89,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  logo_uploads:

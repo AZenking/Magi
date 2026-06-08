@@ -4,6 +4,7 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { OutputChannelDetailVo, ChannelStreamVo, PaginatedResponse, ProgrammeVo } from "@magi/types";
 import { apiClient } from "@/services/api";
+import { LogoUpload } from "@/features/dashboard/channels/logo-upload";
 import { Button } from "@magi/ui/components/button";
 import { Badge } from "@magi/ui/components/badge";
 import {
@@ -153,11 +154,11 @@ function ChannelDetailPage() {
             </Link>
           </Button>
           <div className="flex items-center gap-3">
-            {channel.standardLogo ? (
-              <img src={channel.standardLogo} alt="" className="h-8 w-8 rounded object-contain" />
-            ) : (
-              <div className="h-8 w-8 rounded bg-muted" />
-            )}
+            <LogoUpload
+              currentLogo={channel.standardLogo}
+              channelId={channel.id}
+              onLogoChange={(url) => queryClient.invalidateQueries({ queryKey: ["output-channel-detail", channelId] })}
+            />
             <div>
               <h1 className="text-xl font-bold">{channel.standardName}</h1>
               {channel.standardGroup && (

@@ -1,4 +1,4 @@
-export type TaskType = "m3u-sync" | "xmltv-sync" | "epg-match" | "source-check" | "stream-check" | "import-epg" | "refresh-epg";
+export type TaskType = "m3u-sync" | "xmltv-sync" | "epg-match" | "source-check" | "stream-check" | "import-epg" | "refresh-epg" | "cleanup";
 export type TaskStatus = "pending" | "running" | "success" | "failed" | "cancelled";
 
 export interface Task {

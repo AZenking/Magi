@@ -4,6 +4,7 @@ import { FindTasksUseCase } from "@/application/task-execution/find-tasks.use-ca
 import { FindTaskUseCase } from "@/application/task-execution/find-task.use-case";
 import { RetryTaskUseCase } from "@/application/task-execution/retry-task.use-case";
 import { CancelTaskUseCase } from "@/application/task-execution/cancel-task.use-case";
+import { FindScheduledJobsUseCase, UpdateScheduleUseCase, TriggerScheduledJobUseCase } from "@/application/task-execution/schedule.use-cases";
 import { SyncLogRepository } from "@/infrastructure/database/sync-log.repository";
 import { BullmqTaskQueueAdapter } from "@/infrastructure/bullmq/task-queue.adapter";
 import { BullmqModule } from "@/infrastructure/bullmq/bullmq.module";
@@ -18,6 +19,9 @@ import { BullmqModule } from "@/infrastructure/bullmq/bullmq.module";
     FindTaskUseCase,
     RetryTaskUseCase,
     CancelTaskUseCase,
+    FindScheduledJobsUseCase,
+    UpdateScheduleUseCase,
+    TriggerScheduledJobUseCase,
   ],
   exports: ["TASK_REPOSITORY", "TASK_QUEUE_PORT"],
 })

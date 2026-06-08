@@ -31,6 +31,7 @@ function ChannelsPage() {
   const [pageSize, setPageSize] = useState(20);
   const [epgStatus, setEpgStatus] = useState<string>("");
   const [outputStatus, setOutputStatus] = useState<string>("");
+  const [groupFilter, setGroupFilter] = useState<string>("");
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [confirmBatchDelete, setConfirmBatchDelete] = useState(false);
@@ -38,8 +39,13 @@ function ChannelsPage() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search, 300);
 
+  const { data: groupsData } = useQuery({
+    queryKey: ["channel-groups"],
+    queryFn: () => apiClient<{ success: boolean; data: { name: string; count: number }[] }>("/output/groups"),
+  });
+
   const { data, isLoading } = useQuery({
-    queryKey: ["output-channels", page, pageSize, epgStatus, outputStatus, debouncedSearch],
+    queryKey: ["output-channels", page, pageSize, epgStatus, outputStatus, groupFilter, debouncedSearch],
     queryFn: () =>
       apiClient<{ success: boolean; data: PaginatedResponse<CanonicalChannelVo> }>("/output/channels", {
         params: {
@@ -47,6 +53,7 @@ function ChannelsPage() {
           pageSize,
           epgStatus: epgStatus || undefined,
           outputStatus: outputStatus || undefined,
+          group: groupFilter || undefined,
           search: debouncedSearch || undefined,
         },
       }),
@@ -226,6 +233,23 @@ function ChannelsPage() {
             <SelectItem value="degraded">降级</SelectItem>
             <SelectItem value="unavailable">不可用</SelectItem>
             <SelectItem value="unknown">未知</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={groupFilter}
+          onValueChange={(v) => {
+            setGroupFilter(v === "all" ? "" : v);
+            setPage(1);
+          }}
+        >
+          <SelectTrigger className="w-[160px]" aria-label="分组筛选">
+            <SelectValue placeholder="全部分组" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部分组</SelectItem>
+            {groupsData?.data?.map((g) => (
+              <SelectItem key={g.name} value={g.name}>{g.name} ({g.count})</SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <DataTableViewOptions table={table} />

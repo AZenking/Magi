@@ -28,11 +28,14 @@ function getRootLogger(): PinoInstance {
     timestamp: pino.stdTimeFunctions.isoTime,
   };
 
-  const transport = isDev
-    ? { target: "pino-pretty", options: { colorize: true, translateTime: "SYS:standard" } }
-    : undefined;
-
-  rootLogger = pino(transport ? { ...options, transport } : options);
+  if (isDev) {
+    rootLogger = pino({
+      ...options,
+      transport: { target: "pino-pretty", options: { colorize: true, translateTime: "SYS:standard" } },
+    });
+  } else {
+    rootLogger = pino(options);
+  }
   return rootLogger;
 }
 

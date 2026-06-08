@@ -5,6 +5,7 @@ import { ChannelOverrideRepository } from "../../infrastructure/database/channel
 import { ChannelStreamRepository } from "../../infrastructure/database/channel-stream.repository";
 import { ChannelRepository } from "../../infrastructure/database/channel.repository";
 import { ProgrammeRepository } from "../../infrastructure/database/programme.repository";
+import { StreamEnrichmentService } from "../../infrastructure/database/stream-enrichment.service";
 import { FindCanonicalChannelsUseCase } from "../../application/output-composition/find-canonical-channels.use-case";
 import { GenerateM3uOutputUseCase } from "../../application/output-composition/generate-m3u-output.use-case";
 import { GenerateXmltvOutputUseCase } from "../../application/output-composition/generate-xmltv-output.use-case";
@@ -12,6 +13,7 @@ import { UpdateOutputChannelUseCase } from "../../application/output-composition
 import { FindOutputChannelDetailUseCase } from "../../application/output-composition/find-output-channel-detail.use-case";
 import { FindChannelStreamsUseCase, CreateChannelStreamUseCase, UpdateChannelStreamUseCase, DeleteChannelStreamUseCase, SetPrimaryStreamUseCase } from "../../application/output-composition/channel-stream-crud.use-cases";
 import { EnqueueSyncUseCase } from "../../application/task-execution/enqueue-sync.use-case";
+import { LogoUploadService } from "../../infrastructure/storage/logo-upload.service";
 import { TaskModule } from "../task/task.module";
 
 @Module({
@@ -23,6 +25,7 @@ import { TaskModule } from "../task/task.module";
     { provide: "CHANNEL_STREAM_REPOSITORY", useClass: ChannelStreamRepository },
     { provide: "CHANNEL_REPOSITORY", useClass: ChannelRepository },
     { provide: "PROGRAMME_REPOSITORY", useClass: ProgrammeRepository },
+    { provide: "STREAM_ENRICHMENT_SERVICE", useClass: StreamEnrichmentService },
     FindCanonicalChannelsUseCase,
     GenerateM3uOutputUseCase,
     GenerateXmltvOutputUseCase,
@@ -34,6 +37,7 @@ import { TaskModule } from "../task/task.module";
     DeleteChannelStreamUseCase,
     SetPrimaryStreamUseCase,
     EnqueueSyncUseCase,
+    LogoUploadService,
   ],
 })
 export class OutputModule {}

@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
-import { json, type NextFunction, type Request, type Response } from "express";
+import { json, static as serveStatic, type NextFunction, type Request, type Response } from "express";
 import { Logger } from "nestjs-pino";
 import { AppModule } from "./app.module";
 import { toNodeHandler } from "better-auth/node";
@@ -52,6 +52,10 @@ async function bootstrap() {
 
   // JSON body parser for all other routes.
   app.use(json());
+
+  // Static file serving for uploaded logos.
+  const uploadDir = process.env.LOGO_UPLOAD_DIR ?? "/app/uploads/logos";
+  app.use("/uploads", serveStatic(uploadDir.split("/logos")[0] || uploadDir));
 
   const port = process.env.API_PORT ?? 3001;
   await app.listen(port);
