@@ -50,6 +50,8 @@ services:
       MAGI_ADMIN_PASSWORD: ${MAGI_ADMIN_PASSWORD}
       MAGI_ADMIN_EMAIL: ${MAGI_ADMIN_EMAIL}
       MAGI_ADMIN_NAME: ${MAGI_ADMIN_NAME}
+    volumes:
+      - logo_uploads:/app/uploads/logos
     depends_on:
       postgres:
         condition: service_healthy
@@ -87,3 +89,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  logo_uploads:

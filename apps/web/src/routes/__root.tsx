@@ -6,7 +6,11 @@ import {
   createRootRouteWithContext,
 } from "@tanstack/react-router";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+import { lazy, Suspense } from "react";
+
+const ReactQueryDevtools = import.meta.env.DEV
+  ? lazy(() => import("@tanstack/react-query-devtools").then(m => ({ default: m.ReactQueryDevtools })))
+  : () => null;
 import { Toaster } from "@magi/ui/components/sonner";
 import { TooltipProvider } from "@magi/ui/components/tooltip";
 import { ThemeProvider } from "@/lib/theme";

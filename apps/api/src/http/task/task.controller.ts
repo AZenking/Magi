@@ -1,11 +1,12 @@
-import { Controller, Get, Post, Param, Query, Inject, UseGuards, BadRequestException } from "@nestjs/common";
+import { Controller, Get, Post, Put, Param, Query, Body, Inject, UseGuards, BadRequestException } from "@nestjs/common";
 import type { ApiResponse, PaginatedResponse } from "@magi/types";
-import type { Task, TaskStatus } from "../../domain/task-execution";
+import type { Task, TaskStatus, ScheduledJob } from "../../domain/task-execution";
 import type { TaskDetail } from "../../application/task-execution/find-task.use-case";
 import { FindTasksUseCase } from "../../application/task-execution/find-tasks.use-case";
 import { FindTaskUseCase } from "../../application/task-execution/find-task.use-case";
 import { RetryTaskUseCase } from "../../application/task-execution/retry-task.use-case";
 import { CancelTaskUseCase } from "../../application/task-execution/cancel-task.use-case";
+import { FindScheduledJobsUseCase, UpdateScheduleUseCase, TriggerScheduledJobUseCase } from "../../application/task-execution/schedule.use-cases";
 import { AuthGuard } from "../../shared/guards/auth.guard";
 
 function toVo(task: Task | TaskDetail) {
@@ -59,7 +60,31 @@ export class TaskController {
     @Inject(FindTaskUseCase) private readonly findTask: FindTaskUseCase,
     @Inject(RetryTaskUseCase) private readonly retryTask: RetryTaskUseCase,
     @Inject(CancelTaskUseCase) private readonly cancelTask: CancelTaskUseCase,
+    @Inject(FindScheduledJobsUseCase) private readonly findScheduledJobs: FindScheduledJobsUseCase,
+    @Inject(UpdateScheduleUseCase) private readonly updateScheduleUc: UpdateScheduleUseCase,
+    @Inject(TriggerScheduledJobUseCase) private readonly triggerScheduledJob: TriggerScheduledJobUseCase,
   ) {}
+
+  @Get("scheduled")
+  async listScheduled(): Promise<ApiResponse<ScheduledJob[]>> {
+    const jobs = await this.findScheduledJobs.execute();
+    return { success: true, data: jobs };
+  }
+
+  @Post("scheduled/:jobId/trigger")
+  async triggerScheduled(@Param("jobId") jobId: string): Promise<ApiResponse<{ taskId: string }>> {
+    const result = await this.triggerScheduledJob.execute(jobId);
+    return { success: true, data: result };
+  }
+
+  @Put("scheduled/:jobId")
+  async updateSchedule(
+    @Param("jobId") jobId: string,
+    @Body() body: { intervalMs: number },
+  ): Promise<ApiResponse<null>> {
+    await this.updateScheduleUc.execute(jobId, { intervalMs: body.intervalMs });
+    return { success: true, data: null };
+  }
 
   @Get()
   async findAll(

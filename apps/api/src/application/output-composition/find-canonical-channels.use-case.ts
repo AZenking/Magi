@@ -9,6 +9,7 @@ export interface FindCanonicalChannelsQuery {
   hidden?: boolean;
   disabled?: boolean;
   search?: string;
+  group?: string;
 }
 
 @Injectable()
@@ -20,5 +21,9 @@ export class FindCanonicalChannelsUseCase {
 
   async execute(query: FindCanonicalChannelsQuery): Promise<{ items: CanonicalChannel[]; total: number }> {
     return this.canonicalRepo.findAll(query);
+  }
+
+  async findGroups(): Promise<{ name: string; count: number }[]> {
+    return this.canonicalRepo.findGroups();
   }
 }

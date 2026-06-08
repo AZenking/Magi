@@ -22,14 +22,16 @@ export class CanonicalChannelRepository implements ICanonicalChannelRepository {
     hidden?: boolean;
     disabled?: boolean;
     search?: string;
+    group?: string;
   }): Promise<{ items: CanonicalChannel[]; total: number }> {
-    const { page, pageSize, epgStatus, outputStatus, hidden, disabled, search } = params;
+    const { page, pageSize, epgStatus, outputStatus, hidden, disabled, search, group } = params;
     const conditions = [];
     if (epgStatus) conditions.push(eq(canonicalChannels.epgStatus, epgStatus));
     if (outputStatus) conditions.push(eq(canonicalChannels.outputStatus, outputStatus));
     if (hidden !== undefined) conditions.push(eq(canonicalChannels.hidden, hidden));
     if (disabled !== undefined) conditions.push(eq(canonicalChannels.disabled, disabled));
     if (search) conditions.push(ilike(canonicalChannels.standardName, `%${search}%`));
+    if (group) conditions.push(eq(canonicalChannels.standardGroup, group));
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -90,5 +92,17 @@ export class CanonicalChannelRepository implements ICanonicalChannelRepository {
     if (ids.length === 0) return 0;
     const result = await db.delete(canonicalChannels).where(inArray(canonicalChannels.id, ids)).returning();
     return result.length;
+  }
+
+  async findGroups(): Promise<{ name: string; count: number }[]> {
+    const rows = await db
+      .select({
+        name: canonicalChannels.standardGroup,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(canonicalChannels)
+      .where(eq(canonicalChannels.hidden, false))
+      .groupBy(canonicalChannels.standardGroup);
+    return rows.map((r) => ({ name: r.name ?? "未分组", count: r.count }));
   }
 }

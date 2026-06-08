@@ -9,7 +9,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@magi/ui/components/card";
-import { Radio, LinkIcon, Tv, CalendarDays, CheckCircle2, Circle, ArrowRight } from "lucide-react";
+import { Radio, LinkIcon, Tv, CalendarDays, CheckCircle2, Circle, ArrowRight, ActivityIcon } from "lucide-react";
+import { HealthSummaryCards } from "@/features/dashboard/health-summary";
 
 export const Route = createFileRoute("/dashboard/")({
   component: DashboardPage,
@@ -143,6 +144,11 @@ function DashboardPage() {
         <StatCard label="XMLTV 源" value={stats?.xmltv ?? "-"} />
         <StatCard label="频道" value={stats?.channels ?? "-"} />
         <StatCard label="节目" value={stats?.programmes ?? "-"} />
+      </div>
+
+      {/* Health summary */}
+      <div className="px-4 lg:px-6">
+        <HealthSummaryCards />
       </div>
     </div>
   );

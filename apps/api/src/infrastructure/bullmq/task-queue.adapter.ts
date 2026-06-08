@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { Queue, type JobsOptions } from "bullmq";
-import type { ITaskRepository, TaskType, TaskQueuePort, TaskPayload, EnqueueOptions, JobDetail } from "@/domain/task-execution";
+import type { ITaskRepository, TaskType, TaskQueuePort, TaskPayload, EnqueueOptions, JobDetail, ScheduledJob } from "@/domain/task-execution";
 import { QUEUE_NAMES } from "./bullmq.module";
 
 @Injectable()
@@ -164,5 +164,93 @@ export class BullmqTaskQueueAdapter implements TaskQueuePort {
       case QUEUE_NAMES.HEALTH_CHECK: return this.healthCheckQueue;
       default: return null;
     }
+  }
+
+  private static readonly JOB_REGISTRY: {
+    jobId: string;
+    name: string;
+    queueName: string;
+    taskType: TaskType;
+    description: string;
+  }[] = [
+    {
+      jobId: "scheduled-stream-check",
+      name: "流健康检查",
+      queueName: QUEUE_NAMES.HEALTH_CHECK,
+      taskType: "stream-check",
+      description: "定期检测所有播放源的在线状态和响应时间",
+    },
+    {
+      jobId: "scheduled-source-sync",
+      name: "源同步",
+      queueName: QUEUE_NAMES.SOURCE_SYNC,
+      taskType: "m3u-sync",
+      description: "定期同步 M3U 源的频道数据",
+    },
+    {
+      jobId: "scheduled-cleanup",
+      name: "系统清理",
+      queueName: QUEUE_NAMES.SOURCE_SYNC,
+      taskType: "cleanup",
+      description: "每日清理过期任务和孤立频道数据",
+    },
+  ];
+
+  async getScheduledJobs(): Promise<ScheduledJob[]> {
+    const allRepeatable = await Promise.all([
+      this.healthCheckQueue.getRepeatableJobs(),
+      this.sourceSyncQueue.getRepeatableJobs(),
+      this.epgQueue.getRepeatableJobs(),
+    ]);
+    const repeatableMap = new Map(allRepeatable.flat().map((r) => [r.key, r]));
+
+    return BullmqTaskQueueAdapter.JOB_REGISTRY.map((reg) => {
+      const repeatable = repeatableMap.get(reg.jobId);
+      return {
+        id: reg.jobId,
+        name: reg.name,
+        queueName: reg.queueName,
+        taskType: reg.taskType,
+        description: reg.description,
+        enabled: !!repeatable,
+        intervalMs: repeatable?.every ? Number(repeatable.every) : null,
+        nextRunAt: repeatable?.next ? new Date(repeatable.next) : null,
+        lastRunAt: null,
+        lastStatus: null,
+      };
+    });
+  }
+
+  async updateSchedule(jobId: string, config: { intervalMs: number }): Promise<void> {
+    const reg = BullmqTaskQueueAdapter.JOB_REGISTRY.find((r) => r.jobId === jobId);
+    if (!reg) throw new Error(`Unknown scheduled job: ${jobId}`);
+
+    const queue = this.getQueueByName(reg.queueName);
+    if (!queue) throw new Error(`Queue not found: ${reg.queueName}`);
+
+    // Remove existing repeatable
+    const existing = (await queue.getRepeatableJobs()).find((r) => r.key === jobId);
+    if (existing) {
+      await queue.removeRepeatableByKey(existing.key);
+    }
+
+    // Add new if enabled
+    if (config.intervalMs > 0) {
+      await queue.add(
+        reg.taskType,
+        { sourceId: null, sourceType: reg.taskType === "stream-check" ? "m3u" : "system", taskType: reg.taskType },
+        { repeat: { every: config.intervalMs }, jobId: reg.jobId },
+      );
+    }
+  }
+
+  async triggerScheduledJob(jobId: string): Promise<{ taskId: string }> {
+    const reg = BullmqTaskQueueAdapter.JOB_REGISTRY.find((r) => r.jobId === jobId);
+    if (!reg) throw new Error(`Unknown scheduled job: ${jobId}`);
+    return this.enqueue(reg.taskType, {
+      sourceId: null,
+      sourceType: reg.taskType === "stream-check" ? "m3u" : "system",
+      taskType: reg.taskType,
+    });
   }
 }

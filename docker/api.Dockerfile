@@ -30,7 +30,11 @@ COPY packages/utils/package.json packages/utils/
 COPY packages/backend-core/package.json packages/backend-core/
 COPY apps/api/package.json apps/api/
 RUN pnpm install --frozen-lockfile --prod --filter @magi/api... && \
-    rm -rf /app/node_modules/.pnpm/@next* /app/node_modules/.pnpm/next* /app/node_modules/.pnpm/@rolldown* /app/node_modules/.pnpm/sharp* /app/node_modules/.pnpm/@img* /app/node_modules/.pnpm/esbuild* /app/node_modules/.pnpm/lightningcss* /app/node_modules/.pnpm/drizzle-kit*
+    rm -rf /app/node_modules/.pnpm/@next* /app/node_modules/.pnpm/next* \
+            /app/node_modules/.pnpm/@rolldown* /app/node_modules/.pnpm/sharp* \
+            /app/node_modules/.pnpm/@img* /app/node_modules/.pnpm/esbuild* \
+            /app/node_modules/.pnpm/lightningcss* /app/node_modules/.pnpm/drizzle-kit* \
+            /app/node_modules/.pnpm/prettier* /app/node_modules/.pnpm/webpack*
 
 FROM base AS runner
 ENV NODE_ENV=production

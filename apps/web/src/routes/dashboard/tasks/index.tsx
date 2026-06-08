@@ -17,6 +17,8 @@ import { RefreshCwIcon } from "lucide-react";
 import { useReactTable, getCoreRowModel, type VisibilityState } from "@tanstack/react-table";
 import { getTaskColumns } from "@/features/dashboard/tasks/columns";
 import { TaskDetailContent } from "@/features/dashboard/tasks/task-detail-content";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@magi/ui/components/tabs";
+import { ScheduledTasksSection } from "@/features/dashboard/tasks/scheduled-tasks-section";
 
 export const Route = createFileRoute("/dashboard/tasks/")({
   component: TasksPage,
@@ -134,54 +136,67 @@ function TasksPage() {
         </Button>
       </div>
 
-      <div className="flex items-center gap-2">
-        <Select
-          value={statusFilter}
-          onValueChange={(v) => {
-            setStatusFilter(v === "all" ? "" : v);
-            setPage(1);
-          }}
-        >
-          <SelectTrigger className="w-[140px]" aria-label="状态筛选">
-            <SelectValue placeholder="全部状态" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部状态</SelectItem>
-            <SelectItem value="pending">等待中</SelectItem>
-            <SelectItem value="running">运行中</SelectItem>
-            <SelectItem value="success">成功</SelectItem>
-            <SelectItem value="failed">失败</SelectItem>
-            <SelectItem value="cancelled">已取消</SelectItem>
-          </SelectContent>
-        </Select>
+      <Tabs defaultValue="history">
+        <TabsList>
+          <TabsTrigger value="history">历史任务</TabsTrigger>
+          <TabsTrigger value="scheduled">定时任务</TabsTrigger>
+        </TabsList>
 
-        <Select
-          value={queueFilter}
-          onValueChange={(v) => {
-            setQueueFilter(v === "all" ? "" : v);
-            setPage(1);
-          }}
-        >
-          <SelectTrigger className="w-[140px]" aria-label="队列筛选">
-            <SelectValue placeholder="全部队列" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部队列</SelectItem>
-            <SelectItem value="source-sync">源同步</SelectItem>
-            <SelectItem value="epg">EPG</SelectItem>
-            <SelectItem value="health-check">健康检查</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+        <TabsContent value="history" className="space-y-4 mt-4">
+          <div className="flex items-center gap-2">
+            <Select
+              value={statusFilter}
+              onValueChange={(v) => {
+                setStatusFilter(v === "all" ? "" : v);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-[140px]" aria-label="状态筛选">
+                <SelectValue placeholder="全部状态" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部状态</SelectItem>
+                <SelectItem value="pending">等待中</SelectItem>
+                <SelectItem value="running">运行中</SelectItem>
+                <SelectItem value="success">成功</SelectItem>
+                <SelectItem value="failed">失败</SelectItem>
+                <SelectItem value="cancelled">已取消</SelectItem>
+              </SelectContent>
+            </Select>
 
-      <DataTable
-        table={table}
-        columns={columns}
-        loading={isLoading}
-        onRowClick={(task) => setSelectedTaskId(task.id)}
-      />
+            <Select
+              value={queueFilter}
+              onValueChange={(v) => {
+                setQueueFilter(v === "all" ? "" : v);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-[140px]" aria-label="队列筛选">
+                <SelectValue placeholder="全部队列" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部队列</SelectItem>
+                <SelectItem value="source-sync">源同步</SelectItem>
+                <SelectItem value="epg">EPG</SelectItem>
+                <SelectItem value="health-check">健康检查</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-      <DataTablePagination table={table} />
+          <DataTable
+            table={table}
+            columns={columns}
+            loading={isLoading}
+            onRowClick={(task) => setSelectedTaskId(task.id)}
+          />
+
+          <DataTablePagination table={table} />
+        </TabsContent>
+
+        <TabsContent value="scheduled" className="mt-4">
+          <ScheduledTasksSection />
+        </TabsContent>
+      </Tabs>
 
       <Drawer
         direction="right"

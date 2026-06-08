@@ -25,10 +25,26 @@ export interface JobDetail {
   jobAvailable: boolean;
 }
 
+export interface ScheduledJob {
+  id: string;
+  name: string;
+  queueName: string;
+  taskType: string;
+  description: string;
+  enabled: boolean;
+  intervalMs: number | null;
+  nextRunAt: Date | null;
+  lastRunAt: Date | null;
+  lastStatus: string | null;
+}
+
 export interface TaskQueuePort {
   enqueue(taskType: TaskType, payload: TaskPayload, options?: EnqueueOptions): Promise<{ jobId: string; taskId: string }>;
   cancel(taskId: string): Promise<boolean>;
   retry(taskId: string): Promise<{ retried: boolean; newTaskId?: string }>;
   getJobState(jobId: string, queueName?: string | null): Promise<string | null>;
   getJobDetail(jobId: string, queueName?: string | null): Promise<JobDetail | null>;
+  getScheduledJobs(): Promise<ScheduledJob[]>;
+  updateSchedule(jobId: string, config: { intervalMs: number }): Promise<void>;
+  triggerScheduledJob(jobId: string): Promise<{ taskId: string }>;
 }

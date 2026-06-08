@@ -11,6 +11,7 @@ export interface ICanonicalChannelRepository {
     hidden?: boolean;
     disabled?: boolean;
     search?: string;
+    group?: string;
   }): Promise<{ items: CanonicalChannel[]; total: number }>;
   findById(id: string): Promise<CanonicalChannel | null>;
   findByEpgChannelId(epgChannelId: string): Promise<CanonicalChannel | null>;
@@ -20,6 +21,29 @@ export interface ICanonicalChannelRepository {
   deleteAll(): Promise<number>;
   batchUpdate(ids: string[], data: Partial<CanonicalChannel>): Promise<number>;
   batchDelete(ids: string[]): Promise<number>;
+  findGroups(): Promise<{ name: string; count: number }[]>;
+}
+
+export interface IStreamEnrichmentService {
+  getSourceNames(ids: string[]): Promise<Map<string, string>>;
+  getChannelNames(ids: string[]): Promise<Map<string, string>>;
+}
+
+export interface IHealthStatsRepository {
+  getStreamHealthStats(): Promise<{
+    total: number;
+    online: number;
+    offline: number;
+    degraded: number;
+    unknown: number;
+    avgResponseTime: number | null;
+  }>;
+  getChannelOutputStats(): Promise<{
+    total: number;
+    active: number;
+    degraded: number;
+    unavailable: number;
+  }>;
 }
 
 export interface IChannelOverrideRepository {
