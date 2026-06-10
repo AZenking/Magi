@@ -27,10 +27,14 @@ jobs:
         id: image
         run: |
           registry="ghcr.io/${GITHUB_REPOSITORY,,}"
-          echo "DOCKER_REGISTRY=${registry}" >> "$GITHUB_ENV"
-          echo "DOCKER_TAG=${GITHUB_SHA}" >> "$GITHUB_ENV"
+          version=$(jq -r .version package.json)
+          short_sha=$(git rev-parse --short=8 HEAD)
+          major=$(echo "$version" | cut -d. -f1)
+          major_minor=$(echo "$version" | cut -d. -f1,2)
           echo "registry=${registry}" >> "$GITHUB_OUTPUT"
-          echo "tag=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "tags=${version},${major_minor},${major},latest,${short_sha}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -41,5 +45,16 @@ jobs:
 
       - name: Build and push images
         run: |
+          export DOCKER_REGISTRY=${{ steps.image.outputs.registry }}
+          export DOCKER_TAG=${{ steps.image.outputs.short_sha }}
           docker compose -f docker/docker-compose.yml build
-          docker compose -f docker/docker-compose.yml push
+
+          TAGS="${{ steps.image.outputs.tags }}"
+          for svc in api worker web; do
+            source="${DOCKER_REGISTRY}/${svc}:${DOCKER_TAG}"
+            for tag in ${TAGS//,/ }; do
+              target="${DOCKER_REGISTRY}/${svc}:${tag}"
+              docker tag "$source" "$target"
+            done
+            docker push --all-tags "${DOCKER_REGISTRY}/${svc}"
+          done
