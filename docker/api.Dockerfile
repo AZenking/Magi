@@ -8,7 +8,6 @@ COPY packages/tsconfig/package.json packages/tsconfig/
 COPY packages/types/package.json packages/types/
 COPY packages/utils/package.json packages/utils/
 COPY packages/backend-core/package.json packages/backend-core/
-COPY packages/eslint-config/package.json packages/eslint-config/
 COPY apps/api/package.json apps/api/
 RUN pnpm install --frozen-lockfile
 
