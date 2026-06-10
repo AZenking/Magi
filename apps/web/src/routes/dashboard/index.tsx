@@ -1,6 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import type { PaginatedResponse } from "@magi/types";
 import { apiClient } from "@/services/api";
 import {
   Card,
@@ -9,7 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@magi/ui/components/card";
-import { Radio, LinkIcon, Tv, CalendarDays, CheckCircle2, Circle, ArrowRight, ActivityIcon } from "lucide-react";
+import { Radio, LinkIcon, Tv, CalendarDays, CheckCircle2, Circle, ArrowRight } from "lucide-react";
 import { HealthSummaryCards } from "@/features/dashboard/health-summary";
 
 export const Route = createFileRoute("/dashboard/")({

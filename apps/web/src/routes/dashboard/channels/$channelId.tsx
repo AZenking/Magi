@@ -157,7 +157,7 @@ function ChannelDetailPage() {
             <LogoUpload
               currentLogo={channel.standardLogo}
               channelId={channel.id}
-              onLogoChange={(url) => queryClient.invalidateQueries({ queryKey: ["output-channel-detail", channelId] })}
+              onLogoChange={() => queryClient.invalidateQueries({ queryKey: ["output-channel-detail", channelId] })}
             />
             <div>
               <h1 className="text-xl font-bold">{channel.standardName}</h1>
@@ -361,7 +361,6 @@ function ChannelDetailPage() {
           initialSourceChannelId={editingStream?.sourceChannelId}
           initialM3uSourceId={editingStream?.m3uSourceId}
           title={editingStream ? "编辑播放源" : "新增播放源"}
-          editing={!!editingStream}
           onSubmit={async (data) => {
             if (editingStream) {
               await updateStreamMutation.mutateAsync({ streamId: editingStream.id, data });

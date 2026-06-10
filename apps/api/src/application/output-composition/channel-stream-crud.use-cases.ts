@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { IChannelStreamRepository, ICanonicalChannelRepository, ChannelStream } from "@/domain/output-composition";
 import type { IChannelRepository } from "@/domain/channel-catalog";
 

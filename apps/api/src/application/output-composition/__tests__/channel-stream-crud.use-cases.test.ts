@@ -337,7 +337,7 @@ describe("UpdateChannelStreamUseCase", () => {
       },
     });
 
-    const useCase = new UpdateChannelStreamUseCase(streamRepo, {} as any);
+    const useCase = new UpdateChannelStreamUseCase(streamRepo, {} as IChannelRepository);
     const result = await useCase.execute("cs-1", { streamUrl: "http://new.com" });
 
     expect(result.streamUrl).toBe("http://new.com");
@@ -348,7 +348,7 @@ describe("UpdateChannelStreamUseCase", () => {
       stream: { findById: async () => null },
     });
 
-    const useCase = new UpdateChannelStreamUseCase(streamRepo, {} as any);
+    const useCase = new UpdateChannelStreamUseCase(streamRepo, {} as IChannelRepository);
     await expect(useCase.execute("bad", { streamUrl: "http://x.com" }))
       .rejects.toThrow(NotFoundException);
   });

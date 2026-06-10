@@ -38,7 +38,6 @@ interface ChannelStreamDialogProps {
   initialM3uSourceId?: string | null;
   onSubmit: (data: { streamUrl: string; m3uSourceId?: string | null; sourceChannelId?: string | null }) => Promise<void>;
   title?: string;
-  editing?: boolean;
 }
 
 export function ChannelStreamDialog({
@@ -49,7 +48,6 @@ export function ChannelStreamDialog({
   initialM3uSourceId,
   onSubmit,
   title,
-  editing,
 }: ChannelStreamDialogProps) {
   const [pending, setPending] = useState(false);
   const [mode, setMode] = useState<StreamMode>("manual");

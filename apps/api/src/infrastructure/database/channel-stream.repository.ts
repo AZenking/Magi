@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { IChannelStreamRepository, ChannelStream, StreamWithSource, HealthStatus } from "@/domain/output-composition";
 import { db } from "./connection";
 import { channelStreams, m3uSources } from "./schema";

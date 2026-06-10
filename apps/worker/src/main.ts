@@ -17,10 +17,6 @@ async function updateTask(taskId: string, data: Record<string, unknown>) {
   await db.update(syncLogs).set(data).where(eq(syncLogs.id, taskId));
 }
 
-interface SyncProgress {
-  updateProgress(pct: number, step: string): Promise<void>;
-}
-
 type SourceSyncJob = {
   taskId: string;
   sourceId: string;
@@ -32,15 +28,6 @@ type EpgJob = {
   sourceId: string;
   sourceType?: string;
 };
-
-function createProgress(jobId: string | undefined, taskId: string) {
-  return {
-    async updateProgress(pct: number, step: string) {
-      // BullMQ job reference not available here; progress is updated via job.updateProgress in the worker handler
-      await updateTask(taskId, { progress: pct, currentStep: step });
-    },
-  };
-}
 
 function setupQueueEvents(queueName: string, queue: Queue) {
   const queueEvents = new QueueEvents(queueName, { connection: redis as never });

@@ -1,4 +1,4 @@
-import { eq, and, inArray, notInArray, sql } from "drizzle-orm";
+import { eq, and, notInArray } from "drizzle-orm";
 import type { IRawM3uChannelRepository, RawM3uChannel } from "@/domain/channel-catalog";
 import { db } from "./connection";
 import { rawM3uChannels } from "./schema";
