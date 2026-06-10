@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { ITaskRepository, Task, TaskStatus, TaskType } from "@/domain/task-execution";
+import type { ITaskRepository, Task, TaskStatus } from "@/domain/task-execution";
 
 export interface FindTasksQuery {
   page: number;

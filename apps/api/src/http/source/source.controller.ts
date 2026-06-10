@@ -14,7 +14,7 @@ import {
 } from "@nestjs/common";
 import type { ApiResponse, PaginatedResponse, SourceVo, CreateSource, UpdateSource } from "@magi/types";
 import { CreateSourceSchema, UpdateSourceSchema, SourceQuerySchema } from "@magi/types";
-import type { M3uSource, XmltvSource } from "../../domain/source-management";
+import type { M3uSource } from "../../domain/source-management";
 import {
   FindSourcesUseCase,
 } from "../../application/source-management/find-sources.use-case";

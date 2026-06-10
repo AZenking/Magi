@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { ICanonicalChannelRepository } from "@/domain/output-composition";
-import type { IProgrammeRepository, Programme } from "@/domain/channel-catalog";
+import type { IProgrammeRepository } from "@/domain/channel-catalog";
 
 @Injectable()
 export class GenerateXmltvOutputUseCase {

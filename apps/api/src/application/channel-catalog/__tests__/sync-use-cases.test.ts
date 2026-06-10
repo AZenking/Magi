@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import type { IM3uSourceRepository, M3uSource, IXmltvSourceRepository, XmltvSource, ISourceDownloader } from "@/domain/source-management";
 import type { IRawM3uChannelRepository, IChannelRepository, IRawXmltvChannelRepository, IProgrammeRepository, IM3uParser, IXmltvParser } from "@/domain/channel-catalog";
 import { SyncM3uSourceUseCase } from "../sync-m3u-source.use-case";

@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import type { IM3uSourceRepository, IXmltvSourceRepository, M3uSource, XmltvSource, FindSourcesParams } from "../../../domain/source-management";
-import type { SourceType } from "../../../domain/source-management";
 import { FindSourcesUseCase } from "../find-sources.use-case";
 import { FindSourceUseCase } from "../find-source.use-case";
 import { CreateSourceUseCase } from "../create-source.use-case";

@@ -5,7 +5,6 @@ import {
   LayoutDashboard,
   Tv,
   Radio,
-  CalendarDays,
   ListTodo,
   LogOut,
   LinkIcon,
