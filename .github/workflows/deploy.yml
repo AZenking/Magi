@@ -43,19 +43,3 @@ jobs:
         run: |
           docker compose -f docker/docker-compose.yml build
           docker compose -f docker/docker-compose.yml push
-
-      - name: Deploy to server
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: |
-            cd ${{ secrets.DEPLOY_PATH }}
-            echo "${{ secrets.DOCKER_API_KEY }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            export DOCKER_REGISTRY=${{ steps.image.outputs.registry }}
-            export DOCKER_TAG=${{ steps.image.outputs.tag }}
-            docker compose -f docker/docker-compose.yml pull
-            docker compose -f docker/docker-compose.yml up -d --remove-orphans
-            docker compose -f docker/docker-compose.yml exec -T api sh -c "npx drizzle-kit migrate"
-            docker image prune -f
