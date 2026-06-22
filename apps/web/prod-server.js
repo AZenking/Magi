@@ -17,6 +17,24 @@ const MIME_TYPES = {
 };
 
 const CLIENT_DIR = join(import.meta.dirname, "dist", "client");
+const DEFAULT_API_PORT = "3001";
+
+function clean(value) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function resolveApiUrl(url) {
+  const configured = clean(process.env.VITE_API_URL);
+  if (configured) return configured;
+
+  const protocol =
+    clean(process.env.PUBLIC_PROTOCOL) ??
+    clean(url.protocol.replace(":", "")) ??
+    "http";
+  const apiPort = clean(process.env.API_PORT) ?? DEFAULT_API_PORT;
+  return `${protocol}://${url.hostname}:${apiPort}`;
+}
 
 async function main() {
   const port = parseInt(process.env.PORT ?? "3000", 10);
@@ -62,8 +80,28 @@ async function main() {
     response.headers.forEach((value, key) => {
       res.setHeader(key, value);
     });
-    const buf = await response.arrayBuffer();
-    res.end(buf.byteLength > 0 ? Buffer.from(buf) : undefined);
+    let buf = Buffer.from(await response.arrayBuffer());
+
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("text/html") && buf.byteLength > 0) {
+      const payload = JSON.stringify({
+        API_URL: resolveApiUrl(url),
+        API_PORT: clean(process.env.API_PORT) ?? DEFAULT_API_PORT,
+      }).replace(/</g, "\\u003c");
+      const envScript = `<script>window.__ENV__=${payload};</script>`;
+      const html = buf.toString("utf8");
+      const headIdx = html.indexOf("<head>");
+      if (headIdx !== -1) {
+        const insertAt = headIdx + "<head>".length;
+        const modified =
+          html.slice(0, insertAt) + envScript + html.slice(insertAt);
+        buf = Buffer.from(modified, "utf8");
+        res.removeHeader("content-length");
+        res.setHeader("content-length", buf.byteLength);
+      }
+    }
+
+    res.end(buf.byteLength > 0 ? buf : undefined);
   });
 
   server.listen(port, () => {

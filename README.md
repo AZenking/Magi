@@ -6,7 +6,8 @@
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | Next.js 15, React 19, TailwindCSS 4, shadcn/ui, TanStack Query, Zustand |
+| Frontend | TanStack Start (Vite), TanStack Router, React 19, TailwindCSS 4, shadcn/ui, TanStack Query, TanStack Table, Zustand |
+| Auth | better-auth (邮箱密码) |
 | Backend | NestJS, Drizzle ORM, PostgreSQL, Redis, BullMQ, Zod |
 | Infra | Docker, Docker Compose, Turborepo, pnpm |
 
@@ -15,16 +16,16 @@
 ```
 magi/
 ├── apps/
-│   ├── web/          # Next.js 管理后台
+│   ├── web/          # TanStack Start 管理后台
 │   ├── api/          # NestJS 核心 API
 │   ├── worker/       # BullMQ 异步任务
-│   └── tv/           # Android TV (Phase 2)
+│   └── tv/           # Android TV (Phase 2，尚未创建)
 ├── packages/
 │   ├── types/        # 共享类型 + Zod Schema
-│   ├── ui/           # 共享 UI 组件
-│   ├── utils/        # 公共工具库
-│   ├── tsconfig/     # 共享 TS 配置
-│   └── eslint-config/# 共享 ESLint 配置
+│   ├── ui/           # 共享 UI 组件 (shadcn/ui)
+│   ├── utils/        # 公共工具库 (date/logger/pagination)
+│   ├── backend-core/ # API 与 Worker 共享层 (schema/parsers/epg-matcher)
+│   └── tsconfig/     # 共享 TS 配置
 ├── docker/           # Docker 配置
 └── docs/             # 项目文档
 ```
@@ -109,13 +110,75 @@ bash scripts/docker-down.sh
 
 ## API Endpoints
 
+Base URL: `http://localhost:3001`。除 `/api/auth/*` 外，接口需登录（better-auth session）。
+
+### Dashboard
+
 | Endpoint | Description |
 |----------|-------------|
-| `GET /channels` | List channels |
-| `POST /channels` | Create channel |
-| `GET /programmes` | List programmes |
-| `POST /epg/sources/:id/import` | Import EPG source |
-| `GET /tasks` | List tasks |
+| `GET /dashboard/stats` | 仪表盘统计数据 |
+| `GET /dashboard/health-summary` | 源/流健康概览 |
+
+### Sources (M3U / XMLTV)
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /sources` | 列出源（按 `?type=m3u\|xmltv` 过滤） |
+| `GET /sources/:type/:id` | 获取单个源 |
+| `POST /sources` | 创建源 |
+| `PUT /sources/:type/:id` | 更新源 |
+| `DELETE /sources/:type/:id` | 删除源 |
+| `POST /sources/:type/:id/sync` | 同步源（入队异步任务） |
+| `POST /sources/:type/:id/check` | 检查源可用性 |
+
+### Channels / Programmes（原始导入数据）
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /channels` | 列出原始频道 |
+| `GET /channels/:id` | 获取单个原始频道 |
+| `GET /programmes` | 列出节目单 |
+| `GET /programmes/:id` | 获取单个节目 |
+
+### Output（输出频道编排）
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /output/channels` | 列出输出频道 |
+| `GET /output/channels/:id` | 获取输出频道详情 |
+| `POST /output/channels/batch` | 批量创建/更新输出频道 |
+| `PUT /output/channels/:id` | 更新输出频道（含覆盖） |
+| `GET /output/channels/:id/streams` | 列出频道的码流 |
+| `POST /output/channels/:id/streams` | 添加码流 |
+| `PUT /output/channels/:id/streams/:streamId` | 更新码流 |
+| `DELETE /output/channels/:id/streams/:streamId` | 删除码流 |
+| `POST /output/channels/:id/streams/:streamId/primary` | 设为主码流 |
+| `POST /output/channels/:id/logo` | 上传 Logo |
+| `GET /output/groups` | 按分组聚合频道 |
+| `GET /output/m3u` | 生成 M3U 播放列表 |
+| `GET /output/xmltv` | 生成 XMLTV 节目单 |
+| `POST /output/check-streams` | 批量检测码流可用性 |
+
+### EPG（匹配 / 导入 / 刷新）
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /epg/channels` | 可用于匹配的 EPG 频道 |
+| `POST /epg/match/:sourceId` | 对源执行 EPG 匹配 |
+| `POST /epg/import/:sourceId` | 导入 EPG 源 |
+| `POST /epg/refresh/:sourceId` | 刷新 EPG 源 |
+
+### Tasks（异步任务 + 定时调度）
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /tasks` | 列出任务 |
+| `GET /tasks/:id` | 获取任务详情 |
+| `POST /tasks/:id/retry` | 重试任务 |
+| `POST /tasks/:id/cancel` | 取消任务 |
+| `GET /tasks/scheduled` | 列出定时任务 |
+| `PUT /tasks/scheduled/:jobId` | 更新定时任务 |
+| `POST /tasks/scheduled/:jobId/trigger` | 手动触发定时任务 |
 
 ## License
 

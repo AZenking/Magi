@@ -18,8 +18,7 @@ import { useReactTable, getCoreRowModel, type VisibilityState, type RowSelection
 import { getChannelColumns } from "@/features/dashboard/channels/columns";
 import { OutputChannelFormDialog } from "@/features/dashboard/channels/channel-form-dialog";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
-
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+import { API_BASE } from "@/services/config";
 
 export const Route = createFileRoute("/dashboard/channels/")({
   component: ChannelsPage,

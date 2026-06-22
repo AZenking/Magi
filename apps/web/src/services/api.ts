@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+import { API_BASE } from "./config";
 
 type RequestOptions = {
   method?: string;

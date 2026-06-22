@@ -8,8 +8,7 @@ import {
   SidebarTrigger,
 } from "@magi/ui/components/sidebar";
 import { Separator } from "@magi/ui/components/separator";
-
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+import { API_BASE } from "@/services/config";
 
 export const Route = createFileRoute("/dashboard")({
   component: DashboardLayout,
