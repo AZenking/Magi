@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -10,19 +11,30 @@ import {
   Inject,
   UseGuards,
   Header,
+  Headers,
+  HttpCode,
   ForbiddenException,
   BadRequestException,
   Req,
   Res,
 } from "@nestjs/common";
 import multer from "multer";
-import type { ApiResponse, UpdateOutputChannel, CanonicalChannelVo, OutputChannelDetailVo, ChannelStreamVo, CreateChannelStream, UpdateChannelStream } from "@magi/types";
+import type { ApiResponse, UpdateOutputChannel, CanonicalChannelVo, OutputChannelDetailVo, ChannelStreamVo, CreateChannelStream, UpdateChannelStream, ChannelLifecycle } from "@magi/types";
 import { AuthGuard } from "../../shared/guards/auth.guard";
+import { IfMatchRequiredGuard, parseIfMatch, etagFor } from "../../shared/http/precondition";
 import { FindCanonicalChannelsUseCase } from "../../application/output-composition/find-canonical-channels.use-case";
 import { GenerateM3uOutputUseCase } from "../../application/output-composition/generate-m3u-output.use-case";
 import { GenerateXmltvOutputUseCase } from "../../application/output-composition/generate-xmltv-output.use-case";
 import { UpdateOutputChannelUseCase } from "../../application/output-composition/update-output-channel.use-case";
 import { FindOutputChannelDetailUseCase } from "../../application/output-composition/find-output-channel-detail.use-case";
+import { ChangeChannelLifecycleUseCase } from "../../application/output-composition/change-channel-lifecycle.use-case";
+import { PurgeChannelUseCase } from "../../application/output-composition/purge-channel.use-case";
+import { UpdateManualEpgBindingUseCase } from "../../application/output-composition/update-manual-epg-binding.use-case";
+import {
+  ReorderChannelStreamsUseCase,
+  UpdateFailoverPolicyUseCase,
+  CheckChannelStreamUseCase,
+} from "../../application/output-composition/channel-failover.use-cases";
 import { FindChannelStreamsUseCase, CreateChannelStreamUseCase, UpdateChannelStreamUseCase, DeleteChannelStreamUseCase, SetPrimaryStreamUseCase } from "../../application/output-composition/channel-stream-crud.use-cases";
 import { EnqueueSyncUseCase } from "../../application/task-execution/enqueue-sync.use-case";
 import { LogoUploadService } from "../../infrastructure/storage/logo-upload.service";
@@ -43,6 +55,12 @@ function toChannelVo(ch: import("../../domain/output-composition").CanonicalChan
     primaryStreamId: ch.primaryStreamId,
     createdAt: ch.createdAt.toISOString(),
     updatedAt: ch.updatedAt.toISOString(),
+    // Safe Operations (T057): lifecycle read model (contracts/channels.md).
+    lifecycle: ch.lifecycle ?? (ch.hidden ? "hidden" : ch.disabled ? "disabled" : "active"),
+    lifecycleReason: ch.lifecycleReason ?? null,
+    trashedAt: ch.trashedAt?.toISOString() ?? null,
+    purgeAfter: ch.purgeAfter?.toISOString() ?? null,
+    version: ch.version ?? 1,
   };
 }
 
@@ -88,6 +106,18 @@ export class OutputController {
     private readonly updateChannel: UpdateOutputChannelUseCase,
     @Inject(FindOutputChannelDetailUseCase)
     private readonly findDetail: FindOutputChannelDetailUseCase,
+    @Inject(ChangeChannelLifecycleUseCase)
+    private readonly changeLifecycle: ChangeChannelLifecycleUseCase,
+    @Inject(PurgeChannelUseCase)
+    private readonly purgeChannel: PurgeChannelUseCase,
+    @Inject(UpdateManualEpgBindingUseCase)
+    private readonly updateEpgBinding: UpdateManualEpgBindingUseCase,
+    @Inject(ReorderChannelStreamsUseCase)
+    private readonly reorderStreams: ReorderChannelStreamsUseCase,
+    @Inject(UpdateFailoverPolicyUseCase)
+    private readonly failoverPolicy: UpdateFailoverPolicyUseCase,
+    @Inject(CheckChannelStreamUseCase)
+    private readonly checkStream: CheckChannelStreamUseCase,
     @Inject(FindChannelStreamsUseCase)
     private readonly findStreamsUc: FindChannelStreamsUseCase,
     @Inject(CreateChannelStreamUseCase)
@@ -137,15 +167,20 @@ export class OutputController {
 
   @Get("channels")
   async listChannels(
-    @Query() query: { page?: string; pageSize?: string; epgStatus?: string; outputStatus?: string; search?: string; group?: string },
+    @Query() query: { page?: string; pageSize?: string; epgStatus?: string; outputStatus?: string; search?: string; group?: string; lifecycle?: string; sourcePresence?: string },
   ) {
+    // T057: lifecycle is the single filter of truth when provided; the legacy
+    // hidden/disabled booleans stay as the default (≈ active) during expand.
+    const lifecycle = query.lifecycle;
     const result = await this.findChannels.execute({
       page: parseInt(query.page ?? "1", 10),
       pageSize: parseInt(query.pageSize ?? "20", 10),
       epgStatus: query.epgStatus,
       outputStatus: query.outputStatus,
-      hidden: false,
-      disabled: false,
+      ...(lifecycle
+        ? { lifecycle }
+        : { hidden: false, disabled: false }),
+      sourcePresence: query.sourcePresence || undefined,
       search: query.search || undefined,
       group: query.group || undefined,
     });
@@ -162,10 +197,19 @@ export class OutputController {
     };
   }
 
+  // T057: per-lifecycle counts for the channel list tabs (contracts/channels.md).
+  @Get("channels/lifecycle-counts")
+  async lifecycleCounts(): Promise<ApiResponse<Record<string, number>>> {
+    const counts = await this.findChannels.countByLifecycle();
+    return { success: true, data: counts };
+  }
+
   @Get("channels/:id")
-  async getDetail(@Param("id") id: string): Promise<ApiResponse<OutputChannelDetailVo>> {
+  async getDetail(@Param("id") id: string, @Res({ passthrough: true }) res: import("express").Response): Promise<ApiResponse<OutputChannelDetailVo>> {
     const { channel, streams } = await this.findDetail.execute(id);
 
+    // T057: detail resources expose the version as an ETag (contracts/common.md).
+    res.setHeader("ETag", etagFor(channel.version ?? 1));
     return {
       success: true,
       data: {
@@ -190,6 +234,63 @@ export class OutputController {
   @Header("Content-Disposition", "attachment; filename=magi.xml")
   async xmltv(): Promise<string> {
     return this.generateXmltv.execute();
+  }
+
+  // T057: reversible lifecycle transition with If-Match (contracts/channels.md).
+  @Post("channels/:id/lifecycle")
+  @UseGuards(IfMatchRequiredGuard)
+  async changeChannelLifecycle(
+    @Param("id") id: string,
+    @Body() body: { target: ChannelLifecycle; reason?: string },
+    @Headers("if-match") ifMatch: string,
+  ): Promise<ApiResponse<{ previous: string; current: string; changedAt: string; purgeAfter: string | null; version: number }>> {
+    const expectedVersion = parseIfMatch(ifMatch);
+    if (expectedVersion === null) throw new BadRequestException("Invalid If-Match header");
+    const result = await this.changeLifecycle.execute({
+      channelId: id,
+      target: body.target,
+      reason: body.reason,
+      expectedVersion,
+    });
+    return {
+      success: true,
+      data: {
+        previous: result.previous,
+        current: result.lifecycle,
+        changedAt: result.changedAt.toISOString(),
+        purgeAfter: result.purgeAfter?.toISOString() ?? null,
+        version: result.version,
+      },
+    };
+  }
+
+  // T057: purge eligibility preview — read-only; the destructive apply goes
+  // through POST /operations/previews kind=channel_purge (contracts/channels.md).
+  @Get("channels/:id/purge-preview")
+  async purgePreview(@Param("id") id: string): Promise<ApiResponse<import("../../application/output-composition/purge-channel.use-case").PurgePreview>> {
+    const preview = await this.purgeChannel.preview({ channelId: id });
+    return { success: true, data: preview };
+  }
+
+  // T069: manual EPG binding with lock + If-Match (contracts/channels.md PATCH epg-binding).
+  @Patch("channels/:id/epg-binding")
+  @UseGuards(IfMatchRequiredGuard)
+  async patchEpgBinding(
+    @Param("id") id: string,
+    @Body() body: { xmltvSourceId: string | null; epgChannelId: string | null; locked: boolean; reason?: string },
+    @Headers("if-match") ifMatch: string,
+  ): Promise<ApiResponse<{ locked: boolean; version: number }>> {
+    const expectedVersion = parseIfMatch(ifMatch);
+    if (expectedVersion === null) throw new BadRequestException("Invalid If-Match header");
+    const result = await this.updateEpgBinding.execute({
+      channelId: id,
+      xmltvSourceId: body.xmltvSourceId,
+      epgChannelId: body.epgChannelId,
+      locked: body.locked,
+      reason: body.reason,
+      expectedVersion,
+    });
+    return { success: true, data: { locked: result.locked, version: expectedVersion } };
   }
 
   @Post("channels/batch")
@@ -262,6 +363,50 @@ export class OutputController {
     await this.validateStreamOwnership(id, streamId);
     const stream = await this.setPrimaryStreamUc.execute(streamId);
     return { success: true, data: toStreamVo(stream) };
+  }
+
+  // T120: reorder streams — If-Match on channel, contiguous positions, one primary.
+  @Put("channels/:id/streams/order")
+  @UseGuards(IfMatchRequiredGuard)
+  async updateStreamOrder(
+    @Param("id") id: string,
+    @Body() body: { streams: Array<{ id: string; position: number; isPrimary: boolean; eligibleForFailover: boolean }> },
+    @Headers("if-match") ifMatch: string,
+  ): Promise<ApiResponse<ChannelStreamVo[]>> {
+    const expectedVersion = parseIfMatch(ifMatch);
+    if (expectedVersion === null) throw new BadRequestException("Invalid If-Match header");
+    const streams = await this.reorderStreams.execute(id, expectedVersion, body.streams);
+    return { success: true, data: streams.map(toStreamVo) };
+  }
+
+  // T120: failover policy save + read.
+  @Put("channels/:id/failover-policy")
+  @UseGuards(IfMatchRequiredGuard)
+  async updateFailoverPolicy(
+    @Param("id") id: string,
+    @Body() body: { mode: string; failureThreshold: number; recoveryThreshold: number; cooldownSeconds: number },
+  ): Promise<ApiResponse<unknown>> {
+    const data = await this.failoverPolicy.execute(id, body as never);
+    return { success: true, data };
+  }
+
+  @Get("channels/:id/failover-policy")
+  async getFailoverPolicy(@Param("id") id: string): Promise<ApiResponse<unknown>> {
+    const data = await this.failoverPolicy.find(id);
+    return { success: true, data };
+  }
+
+  // T120: single-stream check — Idempotency-Key, returns 202 TaskRef scoped to stream.
+  @Post("channels/:id/streams/:streamId/check")
+  @HttpCode(202)
+  async checkChannelStream(
+    @Param("id") id: string,
+    @Param("streamId") streamId: string,
+  ): Promise<ApiResponse<{ taskId: string }>> {
+    const { stream } = await this.checkStream.execute(id, streamId);
+    // Enqueue the single-stream probe via the existing sync adapter.
+    const result = await this.enqueueSync.enqueueStreamCheck(stream.id);
+    return { success: true, data: result };
   }
 
   private async validateStreamOwnership(channelId: string, streamId: string): Promise<void> {

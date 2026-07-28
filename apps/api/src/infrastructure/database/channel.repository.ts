@@ -1,5 +1,5 @@
-import { eq, and, or, ilike, sql } from "drizzle-orm";
-import type { IChannelRepository, Channel, EpgMatchType, StreamStatus } from "@/domain/channel-catalog";
+import { eq, and, or, ilike, sql, inArray } from "drizzle-orm";
+import type { IChannelRepository, Channel, EpgMatchType, StreamStatus, SourcePresence } from "@/domain/channel-catalog";
 import { db } from "./connection";
 import { channels } from "./schema";
 
@@ -8,6 +8,7 @@ function toDomain(row: typeof channels.$inferSelect): Channel {
     ...row,
     epgMatchType: row.epgMatchType as EpgMatchType,
     streamStatus: row.streamStatus as StreamStatus | null,
+    sourcePresence: (row.sourcePresence ?? undefined) as SourcePresence | undefined,
   };
 }
 
@@ -58,6 +59,85 @@ export class ChannelRepository implements IChannelRepository {
 
   async deleteByM3uSourceId(sourceId: string): Promise<number> {
     const result = await db.delete(channels).where(eq(channels.m3uSourceId, sourceId)).returning();
+    return result.length;
+  }
+
+  // --- Safe Operations (T035): stable upsert + identity-scoped queries. ---
+  async upsertStable(data: Omit<Channel, "id" | "createdAt" | "updatedAt">): Promise<Channel> {
+    // Upsert by (m3uSourceId, channelIdentity). On conflict, update only source
+    // facts (display name/group/tvg/logo/url/epg) and restore sourcePresence;
+    // never touch the id, operator fields, or health history (FR-003/FR-004).
+    const [row] = await db
+      .insert(channels)
+      .values({
+        channelIdentity: data.channelIdentity,
+        m3uSourceId: data.m3uSourceId,
+        rawChannelId: data.rawChannelId,
+        displayName: data.displayName,
+        groupTitle: data.groupTitle,
+        tvgId: data.tvgId,
+        tvgLogo: data.tvgLogo,
+        streamUrl: data.streamUrl,
+        epgChannelId: data.epgChannelId,
+        epgMatchType: data.epgMatchType,
+        active: data.active,
+        streamStatus: data.streamStatus,
+        streamResponseTime: data.streamResponseTime,
+        streamCheckedAt: data.streamCheckedAt,
+        streamError: data.streamError,
+        sourcePresence: "present",
+        lastSeenAt: new Date(),
+        missingSince: null,
+      })
+      .onConflictDoUpdate({
+        target: channels.channelIdentity,
+        set: {
+          displayName: data.displayName,
+          groupTitle: data.groupTitle,
+          tvgId: data.tvgId,
+          tvgLogo: data.tvgLogo,
+          streamUrl: data.streamUrl,
+          epgChannelId: data.epgChannelId,
+          epgMatchType: data.epgMatchType,
+          sourcePresence: "present",
+          lastSeenAt: new Date(),
+          missingSince: null,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return toDomain(row!);
+  }
+
+  async findBySourceAndIdentity(sourceId: string, channelIdentity: string): Promise<Channel | null> {
+    const [row] = await db
+      .select()
+      .from(channels)
+      .where(and(eq(channels.m3uSourceId, sourceId), eq(channels.channelIdentity, channelIdentity)))
+      .limit(1);
+    return row ? toDomain(row) : null;
+  }
+
+  async markMissing(sourceId: string, presentIdentities: readonly string[], now: Date): Promise<number> {
+    // Mark every channel of this source whose identity is NOT in presentIdentities
+    // as missing — no deletion (FR-014, data-model.md).
+    const candidates = await db.select().from(channels).where(eq(channels.m3uSourceId, sourceId));
+    const present = new Set(presentIdentities);
+    const toMark = candidates.filter((c) => !present.has(c.channelIdentity));
+    if (toMark.length === 0) return 0;
+    const result = await db
+      .update(channels)
+      .set({ sourcePresence: "missing", missingSince: now, updatedAt: now })
+      .where(
+        and(
+          eq(channels.m3uSourceId, sourceId),
+          inArray(
+            channels.channelIdentity,
+            toMark.map((c) => c.channelIdentity),
+          ),
+        ),
+      )
+      .returning();
     return result.length;
   }
 }

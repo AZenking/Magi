@@ -79,4 +79,9 @@ export class XmltvSourceRepository implements IXmltvSourceRepository {
   async clearProgrammeBindings(sourceId: string): Promise<void> {
     await db.delete(programmes).where(eq(programmes.sourceId, sourceId));
   }
+
+  // --- Safe Operations (T022 port). Real implementation lands in T024. ---
+  async updateIfVersion(_id: string, _data: XmltvUpdateData, _expectedVersion: number): Promise<XmltvSource | null> {
+    throw new Error("T024: updateIfVersion not implemented yet");
+  }
 }

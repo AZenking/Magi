@@ -69,6 +69,7 @@ function createMockM3uRepo(overrides: Partial<IM3uSourceRepository> = {}): IM3uS
     update: async () => null,
     delete: async () => false,
     updateSyncStatus: async () => {},
+    updateIfVersion: async () => null,
     ...overrides,
   };
 }
@@ -83,6 +84,7 @@ function createMockXmltvRepo(overrides: Partial<IXmltvSourceRepository> = {}): I
     delete: async () => false,
     updateSyncStatus: async () => {},
     clearProgrammeBindings: async () => {},
+    updateIfVersion: async () => null,
     ...overrides,
   };
 }

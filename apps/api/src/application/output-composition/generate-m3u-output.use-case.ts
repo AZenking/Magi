@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { ICanonicalChannelRepository, IChannelStreamRepository, StreamWithSource } from "@/domain/output-composition";
-import { ChannelStreamModel } from "@/domain/output-composition";
+import { ChannelStreamModel, CanonicalChannelModel } from "@/domain/output-composition";
 
 const healthOrder: Record<string, number> = { online: 0, unknown: 1, degraded: 2, offline: 3 };
 
@@ -45,13 +45,16 @@ export class GenerateM3uOutputUseCase {
   ) {}
 
   async execute(mode: "primary" | "all" = "primary"): Promise<string> {
+    // T058: filter by lifecycle=active (single source of truth). Falls back to
+    // booleans when lifecycle is unset (expand phase compatibility).
     const { items: channels } = await this.canonicalRepo.findAll({
       page: 1,
       pageSize: 10000,
+      lifecycle: "active",
       hidden: false,
     });
 
-    const visible = channels.filter((c) => !c.hidden && !c.disabled);
+    const visible = channels.filter((c) => new CanonicalChannelModel(c).shouldBeInOutput());
     const lines: string[] = ["#EXTM3U"];
 
     for (const ch of visible) {

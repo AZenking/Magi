@@ -68,14 +68,31 @@ export class BullmqTaskQueueAdapter implements TaskQueuePort {
     }
 
     try {
-      const job = await queue.add(jobName, { ...payload, taskId: task.id }, {
+      // T042: deduplicationId takes precedence over task.id as the BullMQ jobId
+      // so that re-enqueuing the same scope+fingerprint is a no-op (research §7).
+      const jobId = options?.deduplicationId ?? task.id;
+      // Inject trace context into the payload so the Worker can carry it through
+      // logs, audit and the BullMQ job context (constitution VII).
+      const enrichedPayload = {
+        ...payload,
+        taskId: task.id,
+        ...(options?.requestId && { requestId: options.requestId }),
+        ...(options?.changeSetId && { changeSetId: options.changeSetId }),
+        ...(options?.inputFingerprint && { inputFingerprint: options.inputFingerprint }),
+        ...(options?.scopeType && { scopeType: options.scopeType }),
+        ...(options?.scopeId && { scopeId: options.scopeId }),
+        ...(options?.parentTaskId && { parentTaskId: options.parentTaskId }),
+        ...(options?.rootTaskId && { rootTaskId: options.rootTaskId }),
+        ...(options?.idempotencyKey && { idempotencyKey: options.idempotencyKey }),
+      };
+      const job = await queue.add(jobName, enrichedPayload, {
         ...this.defaults,
-        jobId: task.id,
+        jobId,
         delay: options?.delay,
         priority: options?.priority,
       });
-      await this.taskRepo.update(task.id, { jobId: job.id ?? task.id });
-      return { jobId: job.id ?? task.id, taskId: task.id };
+      await this.taskRepo.update(task.id, { jobId: job.id ?? jobId });
+      return { jobId: job.id ?? jobId, taskId: task.id };
     } catch (err) {
       await this.taskRepo.update(task.id, { status: "failed", finishedAt: new Date(), error: `Queue add failed: ${(err as Error).message}`.slice(0, 500) });
       throw err;

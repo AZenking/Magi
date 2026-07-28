@@ -12,7 +12,7 @@ import {
   Inject,
   UseGuards,
 } from "@nestjs/common";
-import type { ApiResponse, PaginatedResponse, SourceVo, CreateSource, UpdateSource } from "@magi/types";
+import type { ApiResponse, PaginatedResponse, SourceVo, CreateSource, UpdateSource, SourceEffectivePolicy } from "@magi/types";
 import { CreateSourceSchema, UpdateSourceSchema, SourceQuerySchema } from "@magi/types";
 import type { M3uSource } from "../../domain/source-management";
 import {
@@ -31,6 +31,7 @@ import {
   type UpdatedSource,
 } from "../../application/source-management/update-source.use-case";
 import { DeleteSourceUseCase } from "../../application/source-management/delete-source.use-case";
+import { GetSourceEffectivePolicyUseCase } from "../../application/source-management/get-source-effective-policy.use-case";
 import { EnqueueSyncUseCase } from "../../application/task-execution/enqueue-sync.use-case";
 import { AuthGuard } from "../../shared/guards/auth.guard";
 
@@ -67,6 +68,7 @@ export class SourceController {
     @Inject(CreateSourceUseCase) private readonly createSource: CreateSourceUseCase,
     @Inject(UpdateSourceUseCase) private readonly updateSource: UpdateSourceUseCase,
     @Inject(DeleteSourceUseCase) private readonly deleteSource: DeleteSourceUseCase,
+    @Inject(GetSourceEffectivePolicyUseCase) private readonly effectivePolicy: GetSourceEffectivePolicyUseCase,
     @Inject(EnqueueSyncUseCase) private readonly enqueueSync: EnqueueSyncUseCase,
   ) {}
 
@@ -158,5 +160,15 @@ export class SourceController {
   ): Promise<ApiResponse<{ taskId: string }>> {
     const result = await this.enqueueSync.enqueueSourceCheck(type, id);
     return { success: true, data: result };
+  }
+
+  // T119: effective output policy + human summary (contracts/common.md).
+  @Get(":type/:id/effective-policy")
+  async getEffectivePolicy(
+    @Param("type") _type: "m3u" | "xmltv",
+    @Param("id") id: string,
+  ): Promise<ApiResponse<SourceEffectivePolicy | null>> {
+    const data = await this.effectivePolicy.execute(id);
+    return { success: true, data };
   }
 }

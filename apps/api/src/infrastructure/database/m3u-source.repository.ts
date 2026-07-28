@@ -75,4 +75,9 @@ export class M3uSourceRepository implements IM3uSourceRepository {
   async updateSyncStatus(id: string, status: { lastSyncAt: Date; lastSyncStatus: string }): Promise<void> {
     await db.update(m3uSources).set({ ...status, updatedAt: new Date() }).where(eq(m3uSources.id, id));
   }
+
+  // --- Safe Operations (T022 port). Real implementation lands in T024. ---
+  async updateIfVersion(_id: string, _data: M3uUpdateData, _expectedVersion: number): Promise<M3uSource | null> {
+    throw new Error("T024: updateIfVersion not implemented yet");
+  }
 }

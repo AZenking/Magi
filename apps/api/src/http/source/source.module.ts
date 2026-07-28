@@ -14,6 +14,7 @@ import { FindSourceUseCase } from "../../application/source-management/find-sour
 import { CreateSourceUseCase } from "../../application/source-management/create-source.use-case";
 import { UpdateSourceUseCase } from "../../application/source-management/update-source.use-case";
 import { DeleteSourceUseCase } from "../../application/source-management/delete-source.use-case";
+import { GetSourceEffectivePolicyUseCase } from "../../application/source-management/get-source-effective-policy.use-case";
 import { SyncM3uSourceUseCase } from "../../application/channel-catalog/sync-m3u-source.use-case";
 import { SyncXmltvSourceUseCase } from "../../application/channel-catalog/sync-xmltv-source.use-case";
 import { FindChannelsUseCase } from "../../application/channel-catalog/find-channels.use-case";
@@ -40,6 +41,14 @@ import { TaskModule } from "../task/task.module";
     CreateSourceUseCase,
     UpdateSourceUseCase,
     DeleteSourceUseCase,
+    {
+      provide: GetSourceEffectivePolicyUseCase,
+      useFactory: (
+        m3uRepo: import("@/domain/source-management").IM3uSourceRepository,
+        xmltvRepo: import("@/domain/source-management").IXmltvSourceRepository,
+      ) => new GetSourceEffectivePolicyUseCase(m3uRepo, xmltvRepo),
+      inject: ["M3U_SOURCE_REPOSITORY", "XMLTV_SOURCE_REPOSITORY"],
+    },
     SyncM3uSourceUseCase,
     SyncXmltvSourceUseCase,
     FindChannelsUseCase,

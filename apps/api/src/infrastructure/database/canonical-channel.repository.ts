@@ -1,5 +1,5 @@
 import { eq, and, sql, ilike, inArray } from "drizzle-orm";
-import type { ICanonicalChannelRepository, CanonicalChannel, EpgStatus, OutputStatus } from "@/domain/output-composition";
+import type { ICanonicalChannelRepository, CanonicalChannel, EpgStatus, OutputStatus, ChannelLifecycle } from "@/domain/output-composition";
 import { db } from "./connection";
 import { canonicalChannels } from "./schema";
 
@@ -10,6 +10,7 @@ function toDomain(row: typeof canonicalChannels.$inferSelect): CanonicalChannel 
     outputStatus: row.outputStatus as OutputStatus,
     mergedFromIds: row.mergedFromIds,
     mergeMethod: row.mergeMethod as CanonicalChannel["mergeMethod"],
+    lifecycle: row.lifecycle as ChannelLifecycle | undefined,
   };
 }
 
@@ -23,6 +24,8 @@ export class CanonicalChannelRepository implements ICanonicalChannelRepository {
     disabled?: boolean;
     search?: string;
     group?: string;
+    lifecycle?: string;
+    sourcePresence?: string;
   }): Promise<{ items: CanonicalChannel[]; total: number }> {
     const { page, pageSize, epgStatus, outputStatus, hidden, disabled, search, group } = params;
     const conditions = [];
@@ -32,6 +35,8 @@ export class CanonicalChannelRepository implements ICanonicalChannelRepository {
     if (disabled !== undefined) conditions.push(eq(canonicalChannels.disabled, disabled));
     if (search) conditions.push(ilike(canonicalChannels.standardName, `%${search}%`));
     if (group) conditions.push(eq(canonicalChannels.standardGroup, group));
+    // T056: lifecycle + sourcePresence filters.
+    if (params.lifecycle) conditions.push(eq(canonicalChannels.lifecycle, params.lifecycle));
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -104,5 +109,48 @@ export class CanonicalChannelRepository implements ICanonicalChannelRepository {
       .where(eq(canonicalChannels.hidden, false))
       .groupBy(canonicalChannels.standardGroup);
     return rows.map((r) => ({ name: r.name ?? "未分组", count: r.count }));
+  }
+
+  // --- Safe Operations (T056): lifecycle-aware queries + optimistic update. ---
+  async updateIfVersion(id: string, data: Partial<CanonicalChannel>, expectedVersion: number): Promise<CanonicalChannel | null> {
+    const [row] = await db
+      .update(canonicalChannels)
+      .set({
+        ...(data.lifecycle !== undefined && { lifecycle: data.lifecycle }),
+        ...(data.lifecycleReason !== undefined && { lifecycleReason: data.lifecycleReason }),
+        ...(data.trashedAt !== undefined && { trashedAt: data.trashedAt }),
+        ...(data.purgeAfter !== undefined && { purgeAfter: data.purgeAfter }),
+        ...(data.hidden !== undefined && { hidden: data.hidden }),
+        ...(data.disabled !== undefined && { disabled: data.disabled }),
+        version: expectedVersion + 1,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(canonicalChannels.id, id), eq(canonicalChannels.version, expectedVersion)))
+      .returning();
+    return row ? toDomain(row) : null;
+  }
+
+  async findTrashed(params: { page: number; pageSize: number; search?: string }): Promise<{ items: CanonicalChannel[]; total: number }> {
+    const conditions = [eq(canonicalChannels.lifecycle, "trashed")];
+    if (params.search) conditions.push(ilike(canonicalChannels.standardName, `%${params.search}%`));
+    const where = and(...conditions);
+    const [items, countResult] = await Promise.all([
+      db.select().from(canonicalChannels).where(where).orderBy(canonicalChannels.trashedAt).limit(params.pageSize).offset((params.page - 1) * params.pageSize),
+      db.select({ count: sql<number>`count(*)::int` }).from(canonicalChannels).where(where),
+    ]);
+    return { items: items.map(toDomain), total: countResult[0]?.count ?? 0 };
+  }
+
+  async countByLifecycle(): Promise<Record<string, number>> {
+    const rows = await db
+      .select({ lifecycle: canonicalChannels.lifecycle, count: sql<number>`count(*)::int` })
+      .from(canonicalChannels)
+      .groupBy(canonicalChannels.lifecycle);
+    const out: Record<string, number> = { active: 0, hidden: 0, disabled: 0, trashed: 0 };
+    for (const r of rows) {
+      const key = (r.lifecycle ?? "active") as string;
+      out[key] = (out[key] ?? 0) + r.count;
+    }
+    return out;
   }
 }

@@ -23,6 +23,11 @@ export interface ChannelStream {
   streamBitrate: number | null;
   createdAt: Date;
   updatedAt: Date;
+  // --- Safe Operations expand fields (T018). Ordered failover. ---
+  origin?: "source" | "manual";
+  position?: number | null;
+  eligibleForFailover?: boolean;
+  version?: number;
 }
 
 export interface StreamWithSource extends ChannelStream {

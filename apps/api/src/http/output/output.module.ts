@@ -11,6 +11,17 @@ import { GenerateM3uOutputUseCase } from "../../application/output-composition/g
 import { GenerateXmltvOutputUseCase } from "../../application/output-composition/generate-xmltv-output.use-case";
 import { UpdateOutputChannelUseCase } from "../../application/output-composition/update-output-channel.use-case";
 import { FindOutputChannelDetailUseCase } from "../../application/output-composition/find-output-channel-detail.use-case";
+import { ChangeChannelLifecycleUseCase } from "../../application/output-composition/change-channel-lifecycle.use-case";
+import { PurgeChannelUseCase } from "../../application/output-composition/purge-channel.use-case";
+import { UpdateManualEpgBindingUseCase } from "../../application/output-composition/update-manual-epg-binding.use-case";
+import {
+  ReorderChannelStreamsUseCase,
+  UpdateFailoverPolicyUseCase,
+  CheckChannelStreamUseCase,
+  EvaluateStreamFailoverUseCase,
+} from "../../application/output-composition/channel-failover.use-cases";
+import { ChannelFailoverPolicyRepository } from "../../infrastructure/database/channel-failover-policy.repository";
+import type { ICanonicalChannelRepository } from "../../domain/output-composition";
 import { FindChannelStreamsUseCase, CreateChannelStreamUseCase, UpdateChannelStreamUseCase, DeleteChannelStreamUseCase, SetPrimaryStreamUseCase } from "../../application/output-composition/channel-stream-crud.use-cases";
 import { EnqueueSyncUseCase } from "../../application/task-execution/enqueue-sync.use-case";
 import { LogoUploadService } from "../../infrastructure/storage/logo-upload.service";
@@ -31,6 +42,29 @@ import { TaskModule } from "../task/task.module";
     GenerateXmltvOutputUseCase,
     UpdateOutputChannelUseCase,
     FindOutputChannelDetailUseCase,
+    {
+      provide: ChangeChannelLifecycleUseCase,
+      useFactory: (repo: ICanonicalChannelRepository) => new ChangeChannelLifecycleUseCase(repo),
+      inject: ["CANONICAL_CHANNEL_REPOSITORY"],
+    },
+    {
+      provide: PurgeChannelUseCase,
+      useFactory: (repo: ICanonicalChannelRepository) => new PurgeChannelUseCase(repo),
+      inject: ["CANONICAL_CHANNEL_REPOSITORY"],
+    },
+    // T069: manual EPG binding — locked bindings survive automatic matching.
+    {
+      provide: UpdateManualEpgBindingUseCase,
+      useFactory: (overrideRepo: import("@/domain/output-composition").IChannelOverrideRepository) =>
+        new UpdateManualEpgBindingUseCase(overrideRepo),
+      inject: ["CHANNEL_OVERRIDE_REPOSITORY"],
+    },
+    // T116/T115: failover — policy repository + 4 use cases.
+    ChannelFailoverPolicyRepository,
+    ReorderChannelStreamsUseCase,
+    UpdateFailoverPolicyUseCase,
+    CheckChannelStreamUseCase,
+    EvaluateStreamFailoverUseCase,
     FindChannelStreamsUseCase,
     CreateChannelStreamUseCase,
     UpdateChannelStreamUseCase,

@@ -23,6 +23,10 @@ interface SourceBase {
   checkError: string | null;
   createdAt: Date;
   updatedAt: Date;
+  // --- Safe Operations expand fields (T022). Optional during transition. ---
+  freshnessThresholdMinutes?: number;
+  lastContentFingerprint?: string | null;
+  version?: number;
 }
 
 export interface M3uSource extends SourceBase {

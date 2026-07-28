@@ -65,6 +65,8 @@ export interface IM3uSourceRepository {
   update(id: string, data: M3uUpdateData): Promise<M3uSource | null>;
   delete(id: string): Promise<boolean>;
   updateSyncStatus(id: string, status: { lastSyncAt: Date; lastSyncStatus: string }): Promise<void>;
+  // --- Safe Operations (T022): optimistic-concurrency config update. ---
+  updateIfVersion(id: string, data: M3uUpdateData, expectedVersion: number): Promise<M3uSource | null>;
 }
 
 export interface IXmltvSourceRepository {
@@ -76,4 +78,6 @@ export interface IXmltvSourceRepository {
   delete(id: string): Promise<boolean>;
   updateSyncStatus(id: string, status: { lastSyncAt: Date; lastSyncStatus: string }): Promise<void>;
   clearProgrammeBindings(sourceId: string): Promise<void>;
+  // --- Safe Operations (T022): optimistic-concurrency config update. ---
+  updateIfVersion(id: string, data: XmltvUpdateData, expectedVersion: number): Promise<XmltvSource | null>;
 }

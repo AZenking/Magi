@@ -10,6 +10,9 @@ export interface FindCanonicalChannelsQuery {
   disabled?: boolean;
   search?: string;
   group?: string;
+  // Safe Operations (T057): lifecycle read model filters.
+  lifecycle?: string;
+  sourcePresence?: string;
 }
 
 @Injectable()
@@ -25,5 +28,10 @@ export class FindCanonicalChannelsUseCase {
 
   async findGroups(): Promise<{ name: string; count: number }[]> {
     return this.canonicalRepo.findGroups();
+  }
+
+  /** Per-lifecycle counts for the channel list tabs (T057). */
+  async countByLifecycle(): Promise<Record<string, number>> {
+    return this.canonicalRepo.countByLifecycle();
   }
 }

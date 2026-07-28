@@ -7,14 +7,16 @@
     "dev": "bash ../../scripts/with-env.sh tsx watch src/main.ts",
     "start": "bash ../../scripts/with-env.sh node dist/main.js",
     "lint": "eslint src/",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@magi/backend-core": "workspace:*",
     "@magi/types": "workspace:*",
     "@magi/utils": "workspace:*",
     "bullmq": "^5.56.0",
-    "drizzle-orm": "^0.44.2",
+    "drizzle-orm": "^0.45.2",
     "ioredis": "^5.6.1",
     "postgres": "^3.4.7",
     "zod": "^3.25.42"
@@ -23,6 +25,7 @@
     "@magi/tsconfig": "workspace:*",
     "@types/node": "^22.15.29",
     "tsx": "^4.19.4",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.8"
   }
 }

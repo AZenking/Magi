@@ -1,8 +1,9 @@
 import { Controller, Get, Inject, UseGuards } from "@nestjs/common";
-import type { ApiResponse } from "@magi/types";
+import type { ApiResponse, OperationsSummaryVo } from "@magi/types";
 import type { IM3uSourceRepository, IXmltvSourceRepository } from "@/domain/source-management";
 import type { IChannelRepository, IProgrammeRepository } from "@/domain/channel-catalog";
 import { GetHealthSummaryUseCase } from "../../application/dashboard/get-health-summary.use-case";
+import { GetOperationsSummaryUseCase } from "../../application/dashboard/get-operations-summary.use-case";
 import { AuthGuard } from "../../shared/guards/auth.guard";
 
 @Controller("dashboard")
@@ -19,6 +20,8 @@ export class DashboardController {
     private readonly programmeRepo: IProgrammeRepository,
     @Inject(GetHealthSummaryUseCase)
     private readonly healthSummaryUc: GetHealthSummaryUseCase,
+    @Inject(GetOperationsSummaryUseCase)
+    private readonly operationsSummaryUc: GetOperationsSummaryUseCase,
   ) {}
 
   @Get("stats")
@@ -56,5 +59,26 @@ export class DashboardController {
   async getHealthSummary() {
     const data = await this.healthSummaryUc.execute();
     return { success: true, data };
+  }
+
+  // T118: operations summary — freshness/coverage/availability/issues (contracts/common.md).
+  @Get("operations-summary")
+  async getOperationsSummary(): Promise<ApiResponse<OperationsSummaryVo>> {
+    const s = await this.operationsSummaryUc.execute();
+    return {
+      success: true,
+      data: {
+        latestM3uSyncAt: s.latestM3uSyncAt?.toISOString() ?? null,
+        latestXmltvSyncAt: s.latestXmltvSyncAt?.toISOString() ?? null,
+        latestStreamCheckAt: s.latestStreamCheckAt?.toISOString() ?? null,
+        epgCoverage: s.epgCoverage,
+        tvgIdCoverage: s.epgCoverage,
+        streamAvailability: s.streamAvailability,
+        runningTaskCount: s.runningTaskCount,
+        failedTaskCount: s.failedTaskCount,
+        staleSources: s.staleSources,
+        issues: s.issues,
+      },
+    };
   }
 }

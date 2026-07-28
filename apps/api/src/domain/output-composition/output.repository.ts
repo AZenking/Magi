@@ -12,6 +12,9 @@ export interface ICanonicalChannelRepository {
     disabled?: boolean;
     search?: string;
     group?: string;
+    // --- Safe Operations (T022): lifecycle / source-presence filters. ---
+    lifecycle?: string;
+    sourcePresence?: string;
   }): Promise<{ items: CanonicalChannel[]; total: number }>;
   findById(id: string): Promise<CanonicalChannel | null>;
   findByEpgChannelId(epgChannelId: string): Promise<CanonicalChannel | null>;
@@ -22,6 +25,13 @@ export interface ICanonicalChannelRepository {
   batchUpdate(ids: string[], data: Partial<CanonicalChannel>): Promise<number>;
   batchDelete(ids: string[]): Promise<number>;
   findGroups(): Promise<{ name: string; count: number }[]>;
+  // --- Safe Operations (T022). ---
+  /** Optimistic-concurrency update; returns null when expectedVersion mismatches. */
+  updateIfVersion(id: string, data: Partial<CanonicalChannel>, expectedVersion: number): Promise<CanonicalChannel | null>;
+  /** Trash view: channels in `trashed` lifecycle with purgeAfter (FR-013). */
+  findTrashed(params: { page: number; pageSize: number; search?: string }): Promise<{ items: CanonicalChannel[]; total: number }>;
+  /** Count channels per lifecycle state (dashboard / tabs). */
+  countByLifecycle(): Promise<Record<string, number>>;
 }
 
 export interface IStreamEnrichmentService {
@@ -61,4 +71,9 @@ export interface IChannelStreamRepository {
   update(id: string, data: Partial<ChannelStream>): Promise<ChannelStream | null>;
   deleteById(id: string): Promise<boolean>;
   deleteByCanonicalChannelId(canonicalChannelId: string): Promise<number>;
+  // --- Safe Operations (T018): ordered streams + atomic reorder. ---
+  /** Streams ordered by `position` (T018 stream ordering contract). */
+  findOrderedByCanonicalChannelId(canonicalChannelId: string): Promise<ChannelStream[]>;
+  /** Atomically rewrite the ordered set of streams for a channel (FR-031). */
+  reorder(canonicalChannelId: string, orderedIds: readonly string[]): Promise<ChannelStream[]>;
 }

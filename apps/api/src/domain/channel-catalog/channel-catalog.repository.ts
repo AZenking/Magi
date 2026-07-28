@@ -25,6 +25,13 @@ export interface IChannelRepository {
   createBatch(channels: Omit<Channel, "id" | "createdAt" | "updatedAt">[]): Promise<Channel[]>;
   update(id: string, data: Partial<Channel>): Promise<Channel | null>;
   deleteByM3uSourceId(sourceId: string): Promise<number>;
+  // --- Safe Operations (T022): stable upsert + identity-scoped queries. ---
+  /** Upsert by stable (m3uSourceId, channelIdentity); preserves id + operator fields. */
+  upsertStable(data: Omit<Channel, "id" | "createdAt" | "updatedAt">): Promise<Channel>;
+  /** Find by identity within a source scope (T017 identity uniqueness). */
+  findBySourceAndIdentity(sourceId: string, channelIdentity: string): Promise<Channel | null>;
+  /** Mark identities absent from `presentIdentities` as missing (no delete). */
+  markMissing(sourceId: string, presentIdentities: readonly string[], now: Date): Promise<number>;
 }
 
 export interface IProgrammeRepository {

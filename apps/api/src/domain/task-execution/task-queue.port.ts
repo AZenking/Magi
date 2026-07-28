@@ -10,6 +10,17 @@ export interface EnqueueOptions {
   delay?: number;
   priority?: number;
   jobName?: string;
+  // --- Safe Operations (T022): trace + dedup propagation across the queue boundary. ---
+  requestId?: string;
+  changeSetId?: string;
+  inputFingerprint?: string;
+  scopeType?: string;
+  scopeId?: string;
+  /** Deduplication ID for BullMQ jobId ({operation}:{target}:{inputVersion}). */
+  deduplicationId?: string;
+  parentTaskId?: string;
+  rootTaskId?: string;
+  idempotencyKey?: string;
 }
 
 export interface JobDetail {
