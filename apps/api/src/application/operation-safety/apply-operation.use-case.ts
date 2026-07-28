@@ -116,11 +116,12 @@ export class ApplyOperationUseCase {
 
     // --- 4. acquire the scope lease ---
     const scopeKey = `${cs.scopeType}:${cs.scopeId}`;
-    const taskId = randomUUID();
+    void randomUUID; // kept for potential future use
+    const pendingTaskId = randomUUID();
     const lease = await this.leases.acquireOrReturnExisting(
       scopeKey,
       cs.kind,
-      taskId,
+      pendingTaskId,
       cs.id,
       LEASE_TTL_MS,
     );
@@ -141,7 +142,7 @@ export class ApplyOperationUseCase {
         scopeType: cs.scopeType,
         scopeId: cs.scopeId,
         changeSetId: cs.id,
-        taskId,
+        taskId: pendingTaskId,
         schemaVersion: 1,
         itemCount: 0, // Worker fills the real count during apply
         checksum: "pending",
@@ -160,49 +161,11 @@ export class ApplyOperationUseCase {
 
     // --- 6. transition change set to applying + enqueue the Worker apply job ---
     await this.changeSets.updateStatus(cs.id, "applying", cs.version);
-    await this.tasks.create({
-      sourceType: "operation",
-      taskType: `${cs.kind}-apply`,
-      sourceId: cs.sourceId,
-      status: "pending",
-      startedAt: new Date(),
-      finishedAt: null,
-      error: null,
-      progress: 0,
-      currentStep: "queued",
-      executionLog: null,
-      importedCount: 0,
-      addedCount: 0,
-      updatedCount: 0,
-      removedCount: 0,
-      queueName: "operation",
-      jobId: null,
-      jobName: null,
-      attemptsMade: 0,
-      processedOn: null,
-      scopeType: cs.scopeType,
-      scopeId: cs.scopeId,
-      targetType: cs.scopeType,
-      targetId: cs.scopeId,
-      targetDisplayName: cs.scopeId,
-      initiatorType: "user",
-      initiatorId: input.actorId,
-      parentTaskId: null,
-      rootTaskId: null,
-      requestId: input.requestId ?? currentRequestId() ?? null,
-      changeSetId: cs.id,
-      inputFingerprint: cs.inputFingerprint,
-      stage: "pending",
-      resultSummary: null,
-      cancelledAt: null,
-      cancelRequestedAt: null,
-    } as never);
 
-    const deduplicationId = `apply:${cs.scopeType}:${cs.scopeId}:${cs.inputFingerprint}`;
-    await this.queue.enqueue(
-      "cleanup", // taskType for routing; payload's `kind` carries the real operation
+    const deduplicationId = `apply-${cs.id.slice(0, 8)}`.slice(0, 50);
+    const enqueued = await this.queue.enqueue(
+      this.taskTypeFor(cs.kind),
       {
-        taskId,
         changeSetId: cs.id,
         recoveryPointId,
         kind: cs.kind,
@@ -225,21 +188,31 @@ export class ApplyOperationUseCase {
       },
     );
 
+    const applyTaskId = enqueued.taskId;
+
     // Cache the response for idempotency replay.
     if (input.idempotencyKey) {
       await this.idempotency.saveResponse(input.actorId, "operation-apply", input.idempotencyKey, 202, {
-        taskId,
+        taskId: applyTaskId,
         changeSetId: cs.id,
         recoveryPointId,
       });
     }
 
     return {
-      taskId,
+      taskId: applyTaskId,
       changeSetId: cs.id,
       recoveryPointId,
-      statusUrl: `/tasks/${taskId}`,
+      statusUrl: `/tasks/${applyTaskId}`,
       deduplicated: false,
     };
+  }
+
+  private taskTypeFor(kind: string): "m3u-sync" | "epg-match" {
+    switch (kind) {
+      case "m3u_sync": return "m3u-sync";
+      case "epg_match": return "epg-match";
+      default: return "m3u-sync";
+    }
   }
 }

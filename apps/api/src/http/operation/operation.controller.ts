@@ -4,7 +4,7 @@
  * Endpoints for the unified high-risk operation protocol
  * (contracts/operation-previews.md). Delegates to the T036 use cases.
  */
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Query, UseGuards, BadRequestException, Headers as HeadersDecorator } from "@nestjs/common";
 import {
   PrepareOperationPreviewUseCase,
   FindOperationChangeSetUseCase,
@@ -17,6 +17,7 @@ import { OperationLeaseRepository } from "@/infrastructure/database/operation-le
 import { RecoveryPointRepository } from "@/infrastructure/database/recovery-point.repository";
 import { IdempotencyRepository } from "@/infrastructure/database/idempotency.repository";
 import { SyncLogRepository } from "@/infrastructure/database/sync-log.repository";
+import { AuditEventRepository } from "@/infrastructure/database/audit-event.repository";
 import { BullmqTaskQueueAdapter } from "@/infrastructure/bullmq/task-queue.adapter";
 import { IfMatchRequiredGuard, parseIfMatch } from "@/shared/http/precondition";
 import { Idempotent } from "@/shared/http/idempotency.interceptor";
@@ -34,8 +35,9 @@ export class OperationController {
   private readonly recoveryRepo = new RecoveryPointRepository();
   private readonly taskRepo = new SyncLogRepository();
   private readonly idempotencyRepo = new IdempotencyRepository();
+  private readonly auditRepo = new AuditEventRepository();
 
-  constructor(private readonly queue: BullmqTaskQueueAdapter) {}
+  constructor(@Inject("TASK_QUEUE_PORT") private readonly queue: BullmqTaskQueueAdapter) {}
 
   @Post("previews")
   @HttpCode(202)
@@ -127,8 +129,11 @@ export class OperationController {
   async apply(
     @Param("id") id: string,
     @Body() body: { confirmedWarningCodes?: string[]; operatorReason?: string },
+    @HeadersDecorator("if-match") ifMatch: string,
     @CurrentUser() user: { id: string },
   ) {
+    const expectedVersion = parseIfMatch(ifMatch);
+    if (expectedVersion === null) throw new BadRequestException("Invalid If-Match header");
     const useCase = new ApplyOperationUseCase(
       this.changeSetRepo,
       this.leaseRepo,
@@ -139,12 +144,30 @@ export class OperationController {
     );
     const result = await useCase.execute({
       changeSetId: id,
-      expectedVersion: 0, // re-validated inside the use case against the loaded row
+      expectedVersion,
       confirmedWarningCodes: body.confirmedWarningCodes ?? [],
       operatorReason: body.operatorReason,
       actorId: user.id,
       requestId: currentRequestId(),
     });
+    // Write audit event for the apply operation.
+    const cs = await this.changeSetRepo.findById(id);
+    await this.auditRepo.append({
+      actorType: "user",
+      actorId: user.id,
+      action: `operation.${cs?.kind ?? "unknown"}.apply`,
+      targetType: cs?.scopeType ?? "source",
+      targetId: cs?.scopeId ?? id,
+      displayName: null,
+      result: "accepted",
+      requestId: currentRequestId() ?? null,
+      taskId: result.taskId,
+      parentTaskId: null,
+      changeSetId: id,
+      recoveryPointId: result.recoveryPointId,
+      summary: { operatorReason: body.operatorReason ?? null },
+      reason: body.operatorReason ?? null,
+    }).catch(() => undefined);
     return {
       success: true,
       data: {

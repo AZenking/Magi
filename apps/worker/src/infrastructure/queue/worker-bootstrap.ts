@@ -53,7 +53,13 @@ export async function startWorkers(options: BootstrapOptions): Promise<() => Pro
   options.registerHandlers(runner);
 
   // Register Safe Operations handlers + start the cleanup worker (T041).
-  registerOperationHandlers(runner);
+  // NOTE: registerOperationHandlers is called AFTER the caller's registerHandlers
+  // in main.ts. If the caller already registered operation-* handlers, we skip
+  // the stubs. The stubs are only for the case where the caller doesn't register them.
+  const registeredKinds = (runner as unknown as { handlers: Map<string, unknown> }).handlers;
+  if (!registeredKinds?.has("operation-prepare")) {
+    registerOperationHandlers(runner);
+  }
   const stopCleanup = startOperationCleanupWorker();
 
   const workers: Worker[] = [];

@@ -57,54 +57,16 @@ export class PrepareOperationPreviewUseCase {
       applyTaskId: null,
     });
 
-    // 2. Create a task row (pending) for traceability.
-    const task = await this.tasks.create({
-      sourceType: "operation",
-      taskType: this.taskTypeFor(input.kind),
-      sourceId: input.sourceId,
-      status: "pending",
-      startedAt: new Date(),
-      finishedAt: null,
-      error: null,
-      progress: 0,
-      currentStep: "queued",
-      executionLog: null,
-      importedCount: 0,
-      addedCount: 0,
-      updatedCount: 0,
-      removedCount: 0,
-      queueName: "operation",
-      jobId: null,
-      jobName: null,
-      attemptsMade: 0,
-      processedOn: null,
-      scopeType: input.scopeType,
-      scopeId: input.scopeId,
-      targetType: input.scopeType,
-      targetId: input.scopeId,
-      targetDisplayName: input.scopeId,
-      initiatorType: "user",
-      initiatorId: input.requestedBy,
-      parentTaskId: null,
-      rootTaskId: null,
-      requestId: input.requestId,
-      changeSetId,
-      inputFingerprint: input.inputFingerprint,
-      stage: "pending",
-      resultSummary: null,
-      cancelledAt: null,
-      cancelRequestedAt: null,
-    });
-
-    // 3. Link the task back to the change set.
+    // 2. Link the change set to preparing status.
     await this.changeSets.updateStatus(changeSetId, "preparing", 1);
 
-    // 4. Enqueue the Worker prepare job with full trace context (T042 enriches).
-    const deduplicationId = `prepare:${input.scopeType}:${input.scopeId}:${input.inputFingerprint}`;
+    // 3. Enqueue the Worker prepare job — this creates the task row inside enqueue.
+    //    Use changeSetId in the deduplicationId so repeated requests for the same
+    //    source don't get silently deduped by BullMQ.
+    const deduplicationId = `prep-${changeSetId.slice(0, 8)}`.slice(0, 50);
     const enqueued = await this.queue.enqueue(
-      "cleanup", // taskType for routing; the payload's `kind` carries the real operation
+      this.taskTypeFor(input.kind),
       {
-        taskId: task.id,
         changeSetId,
         kind: input.kind,
         scopeType: input.scopeType,
@@ -126,13 +88,12 @@ export class PrepareOperationPreviewUseCase {
       },
     );
 
-    // Link the enqueued job id back to the task (best-effort).
-    await this.tasks.updateSafeOps(task.id, { jobId: enqueued.jobId }).catch(() => undefined);
+    const taskId = enqueued.taskId;
 
     return {
       changeSetId,
-      taskId: task.id,
-      statusUrl: `/tasks/${task.id}`,
+      taskId,
+      statusUrl: `/tasks/${taskId}`,
     };
   }
 
