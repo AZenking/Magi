@@ -22,5 +22,11 @@ export const channelOverrides = pgTable("channel_overrides", {
   hidden: boolean("hidden").notNull().default(false),
   starred: boolean("starred").notNull().default(false),
   manualEpgChannelId: varchar("manual_epg_channel_id", { length: 255 }),
+  // --- Safe Operations expand columns (T017). Manual EPG lock + decision
+  // provenance so automatic matching cannot overwrite operator bindings. ---
+  manualEpgLocked: boolean("manual_epg_locked").notNull().default(false),
+  manualEpgSourceId: uuid("manual_epg_source_id"),
+  decisionReason: varchar("decision_reason", { length: 500 }),
+  version: integer("version").notNull().default(1),
   ...timestamps,
 });

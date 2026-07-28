@@ -58,6 +58,13 @@ export interface CanonicalChannelVo {
   primaryStreamId: string | null;
   createdAt: string;
   updatedAt: string;
+  // --- Safe Operations (T057): lifecycle read model (contracts/channels.md).
+  // Optional during the expand phase; present once the API maps them.
+  lifecycle?: "active" | "hidden" | "disabled" | "trashed";
+  lifecycleReason?: string | null;
+  trashedAt?: string | null;
+  purgeAfter?: string | null;
+  version?: number;
 }
 
 export interface UpdateOutputChannel {

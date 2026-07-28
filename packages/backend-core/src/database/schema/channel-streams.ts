@@ -44,11 +44,18 @@ export const channelStreams = pgTable(
     streamHeight: integer("stream_height"),
     streamFrameRate: real("stream_frame_rate"),
     streamBitrate: integer("stream_bitrate"),
+    // --- Safe Operations expand columns (T018). Origin/position/eligibility
+    // enable ordered failover; defaulted so existing rows keep working. ---
+    origin: varchar("origin", { length: 20 }).default("source"), // source | manual
+    position: integer("position"),
+    eligibleForFailover: boolean("eligible_for_failover").notNull().default(true),
+    version: integer("version").notNull().default(1),
     ...timestamps,
   },
   (t) => [
     index("channel_streams_canonical_idx").on(t.canonicalChannelId),
     index("channel_streams_health_idx").on(t.healthStatus),
     index("channel_streams_source_idx").on(t.m3uSourceId),
+    index("channel_streams_position_idx").on(t.canonicalChannelId, t.position),
   ],
 );
