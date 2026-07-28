@@ -1,18 +1,26 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   useQuery,
   useQueryClient,
   useMutation,
 } from "@tanstack/react-query";
+import { ProList } from "@ant-design/pro-components";
+import type { ProColumns } from "@ant-design/pro-components";
 import type { TaskVo, PaginatedResponse } from "@magi/types";
 import { apiClient } from "@/services/api";
-import { Button, Drawer, Grid, Tabs } from "antd";
-import { ProTableWrapper } from "@/components/pro-table-wrapper";
+import { Button, Drawer, Grid, Result, Tabs } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
-import { getTaskColumns } from "@/features/dashboard/tasks/columns";
 import { TaskDetailContent } from "@/features/dashboard/tasks/task-detail-content";
 import { ScheduledTasksSection } from "@/features/dashboard/tasks/scheduled-tasks-section";
+import {
+  taskActions,
+  taskAvatar,
+  taskContent,
+  taskDescription,
+  taskTitle,
+} from "@/features/dashboard/tasks/task-list-item";
+import { STATUS_VALUE_ENUM, QUEUE_NAME_VALUE_ENUM } from "@/features/dashboard/tasks/columns";
 import {
   targetPendingRegistry,
   useTargetPending,
@@ -121,15 +129,30 @@ function TasksPage() {
 
   const isRowPending = useTargetPending();
 
-  const columns = useMemo(
-    () =>
-      getTaskColumns({
-        onRetry: (task) => retryMutation.mutate(task),
-        onCancel: (task) => cancelMutation.mutate(task),
-        isPending: (task) => isRowPending(rowTarget(task)),
-      }),
-    [retryMutation, cancelMutation, isRowPending],
-  );
+  // ProList inherits ProTable's QueryFilter; these virtual columns drive the
+  // search form (queue + status). They are hidden from the list body.
+  const searchColumns: ProColumns<TaskVo>[] = [
+    {
+      title: "队列",
+      dataIndex: "queueName",
+      valueType: "select",
+      valueEnum: QUEUE_NAME_VALUE_ENUM,
+      hideInTable: true,
+    },
+    {
+      title: "状态",
+      dataIndex: "status",
+      valueType: "select",
+      valueEnum: STATUS_VALUE_ENUM,
+      hideInTable: true,
+    },
+  ];
+
+  const actionCtx = {
+    onRetry: (task: TaskVo) => retryMutation.mutate(task),
+    onCancel: (task: TaskVo) => cancelMutation.mutate(task),
+    isPending: (task: TaskVo) => isRowPending(rowTarget(task)),
+  };
 
   // ProTable's QueryFilter submit/reset routes here. Map the form values to
   // the existing filter state variables so the useQuery picks them up.
@@ -157,17 +180,7 @@ function TasksPage() {
 
   return (
     <PageStack>
-      <PageHeader
-        title="任务管理"
-        actions={
-          <Button
-            shape="circle"
-            icon={<ReloadOutlined />}
-            onClick={refresh}
-            aria-label="刷新"
-          />
-        }
-      />
+      <PageHeader title="任务管理" />
 
       <Tabs
         defaultActiveKey="history"
@@ -176,29 +189,85 @@ function TasksPage() {
             key: "history",
             label: "历史任务",
             children: (
-              <PageStack>
-                <ProTableWrapper
-                  columns={columns}
-                  dataSource={tasks}
-                  rowKey="id"
-                  loading={isLoading}
-                  error={error}
-                  onRetry={() => void refetch()}
-                  onRowClick={(task) => setSelectedTaskId(task.id)}
-                  search={true}
-                  onSearch={handleSearch}
-                  pagination={{
-                    current: page,
-                    pageSize,
-                    total: data?.data?.total ?? 0,
-                    onChange: (nextPage, nextPageSize) => {
-                      setPage(nextPage);
-                      setPageSize(nextPageSize);
-                    },
-                  }}
-                  columnsStateKey="task-columns"
-                />
-              </PageStack>
+              <ProList<TaskVo>
+                rowKey="id"
+                dataSource={tasks}
+                loading={isLoading}
+                split
+                columns={[
+                  ...searchColumns,
+                  {
+                    title: "任务",
+                    dataIndex: "taskType",
+                    listSlot: "avatar",
+                    render: (_, task) => taskAvatar(task),
+                  },
+                  {
+                    title: "任务",
+                    dataIndex: "taskType",
+                    listSlot: "title",
+                    search: false,
+                    render: (_, task) => taskTitle(task),
+                  },
+                  {
+                    title: "详情",
+                    dataIndex: "sourceType",
+                    listSlot: "description",
+                    search: false,
+                    render: (_, task) => taskDescription(task),
+                  },
+                  {
+                    title: "进度",
+                    dataIndex: "progress",
+                    listSlot: "content",
+                    search: false,
+                    render: (_, task) => taskContent(task),
+                  },
+                  {
+                    title: "操作",
+                    dataIndex: "option",
+                    valueType: "option",
+                    listSlot: "actions",
+                    search: false,
+                    render: (_, task) => taskActions(task, actionCtx),
+                  },
+                ]}
+                search={{ labelWidth: "auto", defaultCollapsed: false }}
+                onSubmit={(params) => handleSearch(params as Record<string, unknown>)}
+                onReset={() => handleSearch({})}
+                toolBarRender={() => [
+                  <Button
+                    key="refresh"
+                    icon={<ReloadOutlined />}
+                    onClick={refresh}
+                    aria-label="刷新"
+                  >
+                    刷新
+                  </Button>,
+                ]}
+                locale={{
+                  emptyText: error ? (
+                    <Result
+                      status="error"
+                      title="任务列表加载失败"
+                      extra={<Button onClick={() => void refetch()}>重试</Button>}
+                    />
+                  ) : undefined,
+                }}
+                onRow={(task: TaskVo) => ({
+                  style: { cursor: "pointer" },
+                  onClick: () => setSelectedTaskId(task.id),
+                })}
+                pagination={{
+                  current: page,
+                  pageSize,
+                  total: data?.data?.total ?? 0,
+                  onChange: (nextPage, nextPageSize) => {
+                    setPage(nextPage);
+                    setPageSize(nextPageSize);
+                  },
+                }}
+              />
             ),
           },
           {

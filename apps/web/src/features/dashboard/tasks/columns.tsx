@@ -75,6 +75,7 @@ export function getTaskColumns(ctx?: ColumnContext): ProColumns<TaskVo>[] {
     {
       title: "任务类型",
       dataIndex: "taskType",
+      search: false,
       ellipsis: true,
       render: (_, record) => taskTypeMap[record.taskType] ?? record.taskType,
     },
@@ -100,6 +101,7 @@ export function getTaskColumns(ctx?: ColumnContext): ProColumns<TaskVo>[] {
     {
       title: "进度",
       dataIndex: "progress",
+      search: false,
       render: (_, record) => {
         if (record.status === "success") return "100%";
         if (record.status === "pending" || record.status === "cancelled")
@@ -112,11 +114,13 @@ export function getTaskColumns(ctx?: ColumnContext): ProColumns<TaskVo>[] {
     {
       title: "开始时间",
       dataIndex: "startedAt",
+      search: false,
       render: (_, record) => dtf.format(new Date(record.startedAt)),
     },
     {
       title: "耗时",
       dataIndex: "duration",
+      search: false,
       render: (_, record) => {
         const { startedAt, finishedAt, status } = record;
         if (status === "pending") return "-";
@@ -129,6 +133,7 @@ export function getTaskColumns(ctx?: ColumnContext): ProColumns<TaskVo>[] {
     {
       title: "重试",
       dataIndex: "attemptsMade",
+      search: false,
       render: (_, record) => {
         const a = record.attemptsMade;
         return a > 0 ? <Tag color="warning">{a}</Tag> : "-";
@@ -137,11 +142,13 @@ export function getTaskColumns(ctx?: ColumnContext): ProColumns<TaskVo>[] {
     {
       title: "导入",
       dataIndex: "importedCount",
+      search: false,
       render: (_, record) => record.importedCount || "-",
     },
     {
       title: "错误",
       dataIndex: "error",
+      search: false,
       ellipsis: true,
       width: 200,
       render: (_, record) => {
