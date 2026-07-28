@@ -34,6 +34,10 @@ import { DeleteSourceUseCase } from "../../application/source-management/delete-
 import { GetSourceEffectivePolicyUseCase } from "../../application/source-management/get-source-effective-policy.use-case";
 import { EnqueueSyncUseCase } from "../../application/task-execution/enqueue-sync.use-case";
 import { AuthGuard } from "../../shared/guards/auth.guard";
+import { CurrentUser } from "../../shared/decorators/current-user.decorator";
+import { currentRequestId } from "../../shared/http/request-context.middleware";
+import { AppendAuditEventUseCase } from "../../application/audit/append-audit-event.use-case";
+import { AUDIT_ACTIONS, changedFieldNames } from "../../domain/audit/audit-actions";
 
 function toVo(source: AnySource | CreatedSource | UpdatedSource): SourceVo {
   return {
@@ -70,6 +74,7 @@ export class SourceController {
     @Inject(DeleteSourceUseCase) private readonly deleteSource: DeleteSourceUseCase,
     @Inject(GetSourceEffectivePolicyUseCase) private readonly effectivePolicy: GetSourceEffectivePolicyUseCase,
     @Inject(EnqueueSyncUseCase) private readonly enqueueSync: EnqueueSyncUseCase,
+    @Inject(AppendAuditEventUseCase) private readonly audit: AppendAuditEventUseCase,
   ) {}
 
   @Get()
@@ -110,12 +115,29 @@ export class SourceController {
   }
 
   @Post()
-  async create(@Body() body: unknown): Promise<ApiResponse<SourceVo>> {
+  async create(
+    @Body() body: unknown,
+    @CurrentUser() user: { id: string },
+  ): Promise<ApiResponse<SourceVo>> {
     const parsed = CreateSourceSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.flatten());
     }
     const source = await this.createSource.execute(parsed.data as CreateSource);
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.source.create,
+      targetType: "source",
+      targetId: source.id,
+      displayName: source.name,
+      result: "succeeded",
+      requestId: currentRequestId(),
+      summary: {
+        sourceType: source.type,
+        changedFieldNames: changedFieldNames(parsed.data),
+      },
+    });
     return { success: true, data: toVo(source) };
   }
 
@@ -124,12 +146,27 @@ export class SourceController {
     @Param("type") type: "m3u" | "xmltv",
     @Param("id") id: string,
     @Body() body: unknown,
+    @CurrentUser() user: { id: string },
   ): Promise<ApiResponse<SourceVo>> {
     const parsed = UpdateSourceSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.flatten());
     }
     const source = await this.updateSource.execute(id, type, parsed.data as UpdateSource);
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.source.update,
+      targetType: "source",
+      targetId: id,
+      displayName: source.name,
+      result: "succeeded",
+      requestId: currentRequestId(),
+      summary: {
+        sourceType: type,
+        changedFieldNames: changedFieldNames(parsed.data),
+      },
+    });
     return { success: true, data: toVo(source) };
   }
 
@@ -137,8 +174,21 @@ export class SourceController {
   async remove(
     @Param("type") type: "m3u" | "xmltv",
     @Param("id") id: string,
+    @CurrentUser() user: { id: string },
   ): Promise<ApiResponse<void>> {
+    const source = await this.findSource.execute(id, type);
     await this.deleteSource.execute(id, type);
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.source.delete,
+      targetType: "source",
+      targetId: id,
+      displayName: source.name,
+      result: "succeeded",
+      requestId: currentRequestId(),
+      summary: { sourceType: type },
+    });
     return { success: true };
   }
 
@@ -147,8 +197,20 @@ export class SourceController {
   async sync(
     @Param("type") type: "m3u" | "xmltv",
     @Param("id") id: string,
+    @CurrentUser() user: { id: string },
   ): Promise<ApiResponse<{ taskId: string }>> {
     const result = await this.enqueueSync.execute(type, id);
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.source.syncTrigger,
+      targetType: "source",
+      targetId: id,
+      result: "accepted",
+      requestId: currentRequestId(),
+      taskId: result.taskId,
+      summary: { sourceType: type },
+    });
     return { success: true, data: result };
   }
 
@@ -157,8 +219,20 @@ export class SourceController {
   async check(
     @Param("type") type: "m3u" | "xmltv",
     @Param("id") id: string,
+    @CurrentUser() user: { id: string },
   ): Promise<ApiResponse<{ taskId: string }>> {
     const result = await this.enqueueSync.enqueueSourceCheck(type, id);
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.source.checkTrigger,
+      targetType: "source",
+      targetId: id,
+      result: "accepted",
+      requestId: currentRequestId(),
+      taskId: result.taskId,
+      summary: { sourceType: type },
+    });
     return { success: true, data: result };
   }
 

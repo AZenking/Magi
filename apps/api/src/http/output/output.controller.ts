@@ -42,8 +42,11 @@ import {
 } from "../../application/output-composition/channel-failover.use-cases";
 import { FindChannelStreamsUseCase, CreateChannelStreamUseCase, UpdateChannelStreamUseCase, DeleteChannelStreamUseCase, SetPrimaryStreamUseCase } from "../../application/output-composition/channel-stream-crud.use-cases";
 import { EnqueueSyncUseCase } from "../../application/task-execution/enqueue-sync.use-case";
-import { AuditEventRepository } from "@/infrastructure/database/audit-event.repository";
 import { LogoUploadService } from "../../infrastructure/storage/logo-upload.service";
+import { CurrentUser } from "../../shared/decorators/current-user.decorator";
+import { currentRequestId } from "../../shared/http/request-context.middleware";
+import { AppendAuditEventUseCase } from "../../application/audit/append-audit-event.use-case";
+import { AUDIT_ACTIONS, changedFieldNames } from "../../domain/audit/audit-actions";
 
 function toBindingVo(
   channelId: string,
@@ -188,9 +191,11 @@ export class OutputController {
     private readonly setPrimaryStreamUc: SetPrimaryStreamUseCase,
     @Inject(EnqueueSyncUseCase)
     private readonly enqueueSync: EnqueueSyncUseCase,
+    @Inject(LogoUploadService)
     private readonly logoUpload: LogoUploadService,
+    @Inject(AppendAuditEventUseCase)
+    private readonly audit: AppendAuditEventUseCase,
   ) {}
-  private readonly auditRepo = new AuditEventRepository();
 
   @Post("channels/:id/logo")
   async uploadLogo(
@@ -209,12 +214,36 @@ export class OutputController {
 
     const logoUrl = await this.logoUpload.save(file.buffer, file.mimetype);
     const ch = await this.updateChannel.execute(id, { standardLogo: logoUrl });
+    await this.audit.execute({
+      actorType: "user",
+      actorId: (req as import("express").Request & { user: { id: string } }).user.id,
+      action: AUDIT_ACTIONS.channel.logoUpdate,
+      targetType: "channel",
+      targetId: id,
+      displayName: ch.standardName,
+      result: "succeeded",
+      requestId: currentRequestId(),
+      summary: { changedFieldNames: ["standardLogo"] },
+    });
     return { success: true, data: toChannelVo(ch) };
   }
 
   @Post("check-streams")
-  async checkStreams(@Body() body?: { sourceId?: string }): Promise<ApiResponse<{ taskId: string }>> {
+  async checkStreams(
+    @Body() body: { sourceId?: string } | undefined,
+    @CurrentUser() user: { id: string },
+  ): Promise<ApiResponse<{ taskId: string }>> {
     const result = await this.enqueueSync.enqueueStreamCheck(body?.sourceId);
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.channel.streamCheckTrigger,
+      targetType: body?.sourceId ? "source" : "stream_collection",
+      targetId: body?.sourceId ?? "all",
+      result: "accepted",
+      requestId: currentRequestId(),
+      taskId: result.taskId,
+    });
     return { success: true, data: result };
   }
 
@@ -384,6 +413,7 @@ export class OutputController {
     @Param("id") id: string,
     @Body() body: { target: ChannelLifecycle; reason?: string },
     @Headers("if-match") ifMatch: string,
+    @CurrentUser() user: { id: string },
   ): Promise<ApiResponse<{ previous: string; current: string; changedAt: string; purgeAfter: string | null; version: number }>> {
     const expectedVersion = parseIfMatch(ifMatch);
     if (expectedVersion === null) throw new BadRequestException("Invalid If-Match header");
@@ -393,22 +423,18 @@ export class OutputController {
       reason: body.reason,
       expectedVersion,
     });
-    await this.auditRepo.append({
+    await this.audit.execute({
       actorType: "user",
-      actorId: "system",
-      action: `channel.lifecycle.${body.target}`,
-      targetType: "canonical-channel",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.channel.lifecycleChange,
+      targetType: "channel",
       targetId: id,
       displayName: null,
       result: "succeeded",
-      requestId: null,
-      taskId: null,
-      parentTaskId: null,
-      changeSetId: null,
-      recoveryPointId: null,
-      summary: { from: result.previous, to: result.lifecycle, reason: body.reason ?? null },
+      requestId: currentRequestId(),
+      summary: { from: result.previous, to: result.lifecycle },
       reason: body.reason ?? null,
-    }).catch(() => undefined);
+    });
     return {
       success: true,
       data: {
@@ -436,6 +462,7 @@ export class OutputController {
     @Param("id") id: string,
     @Body() body: { xmltvSourceId: string | null; epgChannelId: string | null; locked: boolean; reason?: string },
     @Headers("if-match") ifMatch: string,
+    @CurrentUser() user: { id: string },
   ): Promise<ApiResponse<EpgBindingVo>> {
     const expectedVersion = parseIfMatch(ifMatch);
     if (expectedVersion === null) throw new BadRequestException("Invalid If-Match header");
@@ -448,6 +475,20 @@ export class OutputController {
       expectedVersion,
     });
     const enriched = await this.epgBindingRepo.findByCanonicalChannelId(id);
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.channel.epgBindingUpdate,
+      targetType: "channel",
+      targetId: id,
+      result: "succeeded",
+      requestId: currentRequestId(),
+      summary: {
+        changedFieldNames: ["xmltvSourceId", "epgChannelId", "locked"],
+        locked: body.locked,
+      },
+      reason: body.reason ?? null,
+    });
     return {
       success: true,
       data: toBindingVo(id, enriched ?? { ...result, xmltvSourceName: null, sourceEnabled: null, sourceLastSyncAt: null, sourceFreshnessThresholdMinutes: null })!,
@@ -455,16 +496,39 @@ export class OutputController {
   }
 
   @Post("channels/batch")
-  async batch(@Body() body: { ids: string[]; action: "hide" | "show" | "delete" }): Promise<ApiResponse<{ updated: number }>> {
+  async batch(
+    @Body() body: { ids: string[]; action: "hide" | "show" | "delete" },
+    @CurrentUser() user: { id: string },
+  ): Promise<ApiResponse<{ updated: number }>> {
     if (!body.ids?.length) return { success: true, data: { updated: 0 } };
 
     if (body.action === "hide" || body.action === "show") {
       const result = await this.updateChannel.batchUpdate(body.ids, { hidden: body.action === "hide" });
+      await this.audit.execute({
+        actorType: "user",
+        actorId: user.id,
+        action: AUDIT_ACTIONS.channel.batchUpdate,
+        targetType: "channel_batch",
+        targetId: currentRequestId() ?? "batch",
+        result: "succeeded",
+        requestId: currentRequestId(),
+        summary: { operation: body.action, requestedCount: body.ids.length, updatedCount: result },
+      });
       return { success: true, data: { updated: result } };
     }
 
     if (body.action === "delete") {
       const result = await this.updateChannel.batchDelete(body.ids);
+      await this.audit.execute({
+        actorType: "user",
+        actorId: user.id,
+        action: AUDIT_ACTIONS.channel.batchUpdate,
+        targetType: "channel_batch",
+        targetId: currentRequestId() ?? "batch",
+        result: "succeeded",
+        requestId: currentRequestId(),
+        summary: { operation: body.action, requestedCount: body.ids.length, updatedCount: result },
+      });
       return { success: true, data: { updated: result } };
     }
 
@@ -475,8 +539,20 @@ export class OutputController {
   async update(
     @Param("id") id: string,
     @Body() body: UpdateOutputChannel,
+    @CurrentUser() user: { id: string },
   ): Promise<ApiResponse<CanonicalChannelVo>> {
     const ch = await this.updateChannel.execute(id, body);
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.channel.update,
+      targetType: "channel",
+      targetId: id,
+      displayName: ch.standardName,
+      result: "succeeded",
+      requestId: currentRequestId(),
+      summary: { changedFieldNames: changedFieldNames(body) },
+    });
     return { success: true, data: toChannelVo(ch) };
   }
 
@@ -490,8 +566,19 @@ export class OutputController {
   async createStream(
     @Param("id") id: string,
     @Body() body: CreateChannelStream,
+    @CurrentUser() user: { id: string },
   ): Promise<ApiResponse<ChannelStreamVo>> {
     const stream = await this.createStreamUc.execute(id, body);
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.channel.streamCreate,
+      targetType: "stream",
+      targetId: stream.id,
+      result: "succeeded",
+      requestId: currentRequestId(),
+      summary: { channelId: id, changedFieldNames: changedFieldNames(body) },
+    });
     return { success: true, data: toStreamVo(stream) };
   }
 
@@ -500,9 +587,20 @@ export class OutputController {
     @Param("id") id: string,
     @Param("streamId") streamId: string,
     @Body() body: UpdateChannelStream,
+    @CurrentUser() user: { id: string },
   ): Promise<ApiResponse<ChannelStreamVo>> {
     await this.validateStreamOwnership(id, streamId);
     const stream = await this.updateStreamUc.execute(streamId, body);
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.channel.streamUpdate,
+      targetType: "stream",
+      targetId: streamId,
+      result: "succeeded",
+      requestId: currentRequestId(),
+      summary: { channelId: id, changedFieldNames: changedFieldNames(body) },
+    });
     return { success: true, data: toStreamVo(stream) };
   }
 
@@ -510,9 +608,20 @@ export class OutputController {
   async deleteStream(
     @Param("id") id: string,
     @Param("streamId") streamId: string,
+    @CurrentUser() user: { id: string },
   ): Promise<ApiResponse<null>> {
     await this.validateStreamOwnership(id, streamId);
     await this.deleteStreamUc.execute(streamId);
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.channel.streamDelete,
+      targetType: "stream",
+      targetId: streamId,
+      result: "succeeded",
+      requestId: currentRequestId(),
+      summary: { channelId: id },
+    });
     return { success: true, data: null };
   }
 
@@ -520,9 +629,20 @@ export class OutputController {
   async setPrimary(
     @Param("id") id: string,
     @Param("streamId") streamId: string,
+    @CurrentUser() user: { id: string },
   ): Promise<ApiResponse<ChannelStreamVo>> {
     await this.validateStreamOwnership(id, streamId);
     const stream = await this.setPrimaryStreamUc.execute(streamId);
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.channel.streamSetPrimary,
+      targetType: "stream",
+      targetId: streamId,
+      result: "succeeded",
+      requestId: currentRequestId(),
+      summary: { channelId: id },
+    });
     return { success: true, data: toStreamVo(stream) };
   }
 
@@ -533,10 +653,21 @@ export class OutputController {
     @Param("id") id: string,
     @Body() body: { streams: Array<{ id: string; position: number; isPrimary: boolean; eligibleForFailover: boolean }> },
     @Headers("if-match") ifMatch: string,
+    @CurrentUser() user: { id: string },
   ): Promise<ApiResponse<ChannelStreamVo[]>> {
     const expectedVersion = parseIfMatch(ifMatch);
     if (expectedVersion === null) throw new BadRequestException("Invalid If-Match header");
     const streams = await this.reorderStreams.execute(id, expectedVersion, body.streams);
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.channel.streamReorder,
+      targetType: "channel",
+      targetId: id,
+      result: "succeeded",
+      requestId: currentRequestId(),
+      summary: { streamCount: body.streams.length },
+    });
     return { success: true, data: streams.map(toStreamVo) };
   }
 
@@ -546,8 +677,19 @@ export class OutputController {
   async updateFailoverPolicy(
     @Param("id") id: string,
     @Body() body: { mode: string; failureThreshold: number; recoveryThreshold: number; cooldownSeconds: number },
+    @CurrentUser() user: { id: string },
   ): Promise<ApiResponse<unknown>> {
     const data = await this.failoverPolicy.execute(id, body as never);
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.channel.failoverPolicyUpdate,
+      targetType: "channel",
+      targetId: id,
+      result: "succeeded",
+      requestId: currentRequestId(),
+      summary: { changedFieldNames: changedFieldNames(body) },
+    });
     return { success: true, data };
   }
 
@@ -563,10 +705,22 @@ export class OutputController {
   async checkChannelStream(
     @Param("id") id: string,
     @Param("streamId") streamId: string,
+    @CurrentUser() user: { id: string },
   ): Promise<ApiResponse<{ taskId: string }>> {
     const { stream } = await this.checkStream.execute(id, streamId);
     // Enqueue the single-stream probe via the existing sync adapter.
     const result = await this.enqueueSync.enqueueStreamCheck(stream.id);
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.channel.streamCheckTrigger,
+      targetType: "stream",
+      targetId: streamId,
+      result: "accepted",
+      requestId: currentRequestId(),
+      taskId: result.taskId,
+      summary: { channelId: id },
+    });
     return { success: true, data: result };
   }
 

@@ -17,7 +17,6 @@ import { OperationLeaseRepository } from "@/infrastructure/database/operation-le
 import { RecoveryPointRepository } from "@/infrastructure/database/recovery-point.repository";
 import { IdempotencyRepository } from "@/infrastructure/database/idempotency.repository";
 import { SyncLogRepository } from "@/infrastructure/database/sync-log.repository";
-import { AuditEventRepository } from "@/infrastructure/database/audit-event.repository";
 import { BullmqTaskQueueAdapter } from "@/infrastructure/bullmq/task-queue.adapter";
 import { IfMatchRequiredGuard, parseIfMatch } from "@/shared/http/precondition";
 import { Idempotent } from "@/shared/http/idempotency.interceptor";
@@ -26,6 +25,8 @@ import { CurrentUser } from "@/shared/decorators/current-user.decorator";
 import { currentRequestId } from "@/shared/http/request-context.middleware";
 import { computeFingerprint } from "@magi/backend-core";
 import type { OperationKind, OperationScopeType } from "@magi/types";
+import { AppendAuditEventUseCase } from "@/application/audit/append-audit-event.use-case";
+import { AUDIT_ACTIONS } from "@/domain/audit/audit-actions";
 
 @Controller("operations")
 @UseGuards(AuthGuard)
@@ -35,9 +36,10 @@ export class OperationController {
   private readonly recoveryRepo = new RecoveryPointRepository();
   private readonly taskRepo = new SyncLogRepository();
   private readonly idempotencyRepo = new IdempotencyRepository();
-  private readonly auditRepo = new AuditEventRepository();
-
-  constructor(@Inject("TASK_QUEUE_PORT") private readonly queue: BullmqTaskQueueAdapter) {}
+  constructor(
+    @Inject("TASK_QUEUE_PORT") private readonly queue: BullmqTaskQueueAdapter,
+    @Inject(AppendAuditEventUseCase) private readonly audit: AppendAuditEventUseCase,
+  ) {}
 
   @Post("previews")
   @HttpCode(202)
@@ -150,12 +152,11 @@ export class OperationController {
       actorId: user.id,
       requestId: currentRequestId(),
     });
-    // Write audit event for the apply operation.
     const cs = await this.changeSetRepo.findById(id);
-    await this.auditRepo.append({
+    await this.audit.execute({
       actorType: "user",
       actorId: user.id,
-      action: `operation.${cs?.kind ?? "unknown"}.apply`,
+      action: AUDIT_ACTIONS.operation.apply,
       targetType: cs?.scopeType ?? "source",
       targetId: cs?.scopeId ?? id,
       displayName: null,
@@ -165,9 +166,13 @@ export class OperationController {
       parentTaskId: null,
       changeSetId: id,
       recoveryPointId: result.recoveryPointId,
-      summary: { operatorReason: body.operatorReason ?? null },
+      summary: {
+        operationKind: cs?.kind ?? "unknown",
+        confirmedWarningCount: body.confirmedWarningCodes?.length ?? 0,
+        deduplicated: result.deduplicated,
+      },
       reason: body.operatorReason ?? null,
-    }).catch(() => undefined);
+    });
     return {
       success: true,
       data: {
@@ -181,13 +186,29 @@ export class OperationController {
 
   @Post("change-sets/:id/cancel")
   @UseGuards(IfMatchRequiredGuard)
-  async cancel(@Param("id") id: string) {
+  async cancel(
+    @Param("id") id: string,
+    @CurrentUser() user: { id: string },
+  ) {
+    const cs = await this.changeSetRepo.findById(id);
     const useCase = new CancelOperationPreviewUseCase(
       this.changeSetRepo,
       this.taskRepo,
       this.queue,
     );
     const result = await useCase.execute({ changeSetId: id, expectedVersion: 0 });
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.operation.cancel,
+      targetType: cs?.scopeType ?? "change_set",
+      targetId: cs?.scopeId ?? id,
+      result: "cancelled",
+      requestId: currentRequestId(),
+      changeSetId: id,
+      taskId: cs?.prepareTaskId ?? null,
+      summary: { operationKind: cs?.kind ?? "unknown" },
+    });
     return { success: true, data: result };
   }
 }

@@ -104,6 +104,7 @@ function makeController(opts: {
     none, // setPrimaryStreamUc
     none, // enqueueSync
     none, // logoUpload
+    { execute: async () => ({ auditEventId: "audit-1" }) } as never,
   );
 }
 
@@ -168,7 +169,7 @@ describe("Channel lifecycle HTTP contract (T051/T057)", () => {
     expect(parseIfMatch(null)).toBeNull();
     expect(parseIfMatch("not-a-version")).toBeNull();
     await expect(
-      controller.changeChannelLifecycle("ch-1", { target: "hidden" }, "not-a-version"),
+      controller.changeChannelLifecycle("ch-1", { target: "hidden" }, "not-a-version", { id: "user-1" }),
     ).rejects.toThrow(BadRequestException);
   });
 
@@ -176,14 +177,14 @@ describe("Channel lifecycle HTTP contract (T051/T057)", () => {
     const controller = makeController({ channels: [makeChannel({ version: 3 })] });
 
     await expect(
-      controller.changeChannelLifecycle("ch-1", { target: "hidden" }, etagFor(1)),
+      controller.changeChannelLifecycle("ch-1", { target: "hidden" }, etagFor(1), { id: "user-1" }),
     ).rejects.toThrow(ConflictException);
   });
 
   it("POST lifecycle with matching If-Match transitions and returns the new version", async () => {
     const controller = makeController({ channels: [makeChannel({ version: 3 })] });
 
-    const res = await controller.changeChannelLifecycle("ch-1", { target: "trashed", reason: "cleanup" }, etagFor(3));
+    const res = await controller.changeChannelLifecycle("ch-1", { target: "trashed", reason: "cleanup" }, etagFor(3), { id: "user-1" });
 
     expect(res.success).toBe(true);
     expect(res.data!.previous).toBe("active");

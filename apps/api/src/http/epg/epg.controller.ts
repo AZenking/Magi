@@ -6,6 +6,10 @@ import { ImportEpgUseCase } from "../../application/epg/import-epg.use-case";
 import { RefreshEpgUseCase } from "../../application/epg/refresh-epg.use-case";
 import { FindXmltvChannelCandidatesUseCase } from "../../application/channel-catalog/find-xmltv-channel-candidates.use-case";
 import { GetXmltvSourceReadinessUseCase } from "../../application/channel-catalog/get-xmltv-source-readiness.use-case";
+import { AppendAuditEventUseCase } from "../../application/audit/append-audit-event.use-case";
+import { AUDIT_ACTIONS } from "../../domain/audit/audit-actions";
+import { CurrentUser } from "../../shared/decorators/current-user.decorator";
+import { currentRequestId } from "../../shared/http/request-context.middleware";
 
 @Controller("epg")
 @UseGuards(AuthGuard)
@@ -21,6 +25,8 @@ export class EpgController {
     private readonly findCandidates: FindXmltvChannelCandidatesUseCase,
     @Inject(GetXmltvSourceReadinessUseCase)
     private readonly readiness: GetXmltvSourceReadinessUseCase,
+    @Inject(AppendAuditEventUseCase)
+    private readonly audit: AppendAuditEventUseCase,
   ) {}
 
   @Get("channels")
@@ -55,22 +61,34 @@ export class EpgController {
 
   @Post("match/:sourceId")
   @HttpCode(202)
-  async match(@Param("sourceId") sourceId: string): Promise<ApiResponse<{ taskId: string }>> {
+  async match(
+    @Param("sourceId") sourceId: string,
+    @CurrentUser() user: { id: string },
+  ): Promise<ApiResponse<{ taskId: string }>> {
     const result = await this.enqueueSync.enqueueEpgMatch(sourceId);
+    await this.recordTrigger(user.id, AUDIT_ACTIONS.epg.matchTrigger, sourceId, result.taskId);
     return { success: true, data: result };
   }
 
   @Post("import/:sourceId")
   @HttpCode(202)
-  async import(@Param("sourceId") sourceId: string): Promise<ApiResponse<{ taskId: string }>> {
+  async import(
+    @Param("sourceId") sourceId: string,
+    @CurrentUser() user: { id: string },
+  ): Promise<ApiResponse<{ taskId: string }>> {
     const result = await this.importEpg.execute(sourceId);
+    await this.recordTrigger(user.id, AUDIT_ACTIONS.epg.importTrigger, sourceId, result.taskId);
     return { success: true, data: result };
   }
 
   @Post("refresh/:sourceId")
   @HttpCode(202)
-  async refresh(@Param("sourceId") sourceId: string): Promise<ApiResponse<{ taskId: string }>> {
+  async refresh(
+    @Param("sourceId") sourceId: string,
+    @CurrentUser() user: { id: string },
+  ): Promise<ApiResponse<{ taskId: string }>> {
     const result = await this.refreshEpg.execute(sourceId);
+    await this.recordTrigger(user.id, AUDIT_ACTIONS.epg.refreshTrigger, sourceId, result.taskId);
     return { success: true, data: result };
   }
 
@@ -88,5 +106,23 @@ export class EpgController {
         blockerCodes: [...r.blockerCodes],
       },
     };
+  }
+
+  private async recordTrigger(
+    actorId: string,
+    action: string,
+    sourceId: string,
+    taskId: string,
+  ): Promise<void> {
+    await this.audit.execute({
+      actorType: "user",
+      actorId,
+      action,
+      targetType: "source",
+      targetId: sourceId,
+      result: "accepted",
+      requestId: currentRequestId(),
+      taskId,
+    });
   }
 }

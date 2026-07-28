@@ -1,12 +1,10 @@
 /**
  * AppendAuditEventUseCase (T098).
  *
- * Appends an audit event + enqueues an outbox event in the same logical
- * transaction (research §15). The caller is responsible for wrapping both in a
- * DB transaction; this use case produces both writes. Redacts the summary.
+ * Appends an audit event + enqueues an outbox event through one transactional
+ * writer (research §15). Redacts persisted summaries and operator reasons.
  */
-import type { IAuditRepository } from "@/domain/audit";
-import type { OutboxRepository } from "@/infrastructure/database/outbox.repository";
+import type { AuditEvent } from "@/domain/audit";
 import { redact } from "@/application/backup/backup-redactor";
 import type { ActorType, AuditResult } from "@/domain/audit";
 
@@ -27,15 +25,21 @@ export interface AppendAuditInput {
   readonly reason?: string | null;
 }
 
+export interface AuditEventWriter {
+  appendWithOutbox(
+    data: Omit<AuditEvent, "id" | "occurredAt">,
+  ): Promise<AuditEvent>;
+}
+
 export class AppendAuditEventUseCase {
-  constructor(
-    private readonly auditRepo: IAuditRepository,
-    private readonly outboxRepo: OutboxRepository,
-  ) {}
+  constructor(private readonly writer: AuditEventWriter) {}
 
   async execute(input: AppendAuditInput): Promise<{ auditEventId: string }> {
     const redactedSummary = input.summary ? redact(input.summary) : null;
-    const event = await this.auditRepo.append({
+    const redactedReason = input.reason
+      ? redact({ reason: input.reason.slice(0, 500) }).reason
+      : null;
+    const event = await this.writer.appendWithOutbox({
       actorType: input.actorType,
       actorId: input.actorId,
       action: input.action,
@@ -49,16 +53,7 @@ export class AppendAuditEventUseCase {
       changeSetId: input.changeSetId ?? null,
       recoveryPointId: input.recoveryPointId ?? null,
       summary: redactedSummary,
-      reason: input.reason ?? null,
-    });
-    // Enqueue the outbox event in the same transaction (caller wraps).
-    await this.outboxRepo.enqueue({
-      topic: `audit.${input.action}`,
-      aggregateType: input.targetType,
-      aggregateId: input.targetId,
-      payload: { auditEventId: event.id, result: input.result },
-      requestId: input.requestId,
-      taskId: input.taskId,
+      reason: redactedReason,
     });
     return { auditEventId: event.id };
   }

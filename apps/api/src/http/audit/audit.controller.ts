@@ -22,6 +22,8 @@ export class AuditController {
     @Query("targetType") targetType?: string,
     @Query("targetId") targetId?: string,
     @Query("taskId") taskId?: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string,
   ) {
     const items = await this.auditRepo.findAll({
       page: Number.parseInt(page, 10),
@@ -31,6 +33,8 @@ export class AuditController {
       targetType,
       targetId,
       taskId,
+      from: from && !Number.isNaN(new Date(from).getTime()) ? new Date(from) : undefined,
+      to: to && !Number.isNaN(new Date(to).getTime()) ? new Date(to) : undefined,
     });
     return { success: true, data: items };
   }

@@ -4,7 +4,7 @@
  * Append-only writes (research §15, data-model.md). `append` is called within
  * the same transaction as the business mutation and OutboxEvent write.
  */
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, gte, lte, sql } from "drizzle-orm";
 import type { IAuditRepository } from "@/domain/audit";
 import type { AuditEvent, AuditResult } from "@/domain/audit";
 import { db } from "./connection";
@@ -77,6 +77,8 @@ export class AuditEventRepository implements IAuditRepository {
     if (params.targetType) conds.push(eq(auditEvents.targetType, params.targetType));
     if (params.targetId) conds.push(eq(auditEvents.targetId, params.targetId));
     if (params.taskId) conds.push(eq(auditEvents.taskId, params.taskId));
+    if (params.from) conds.push(gte(auditEvents.occurredAt, params.from));
+    if (params.to) conds.push(lte(auditEvents.occurredAt, params.to));
     const where = conds.length > 0 ? and(...conds) : undefined;
     const [items, countResult] = await Promise.all([
       db.select().from(auditEvents).where(where).orderBy(desc(auditEvents.occurredAt)).limit(params.pageSize).offset((params.page - 1) * params.pageSize),

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Patch, Param, Query, Body, Inject, UseGuards, BadRequestException, HttpCode } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Param, Query, Body, Inject, UseGuards, BadRequestException, HttpCode } from "@nestjs/common";
 import type { ApiResponse, PaginatedResponse, TaskSummaryVo, ScheduledJobVo } from "@magi/types";
 import type { Task, TaskStatus, ScheduledJob } from "../../domain/task-execution";
 import type { TaskDetail } from "../../application/task-execution/find-task.use-case";
@@ -10,6 +10,10 @@ import { GetTaskSummaryUseCase } from "../../application/task-execution/get-task
 import { FindScheduledJobsUseCase, UpdateScheduleUseCase, TriggerScheduledJobUseCase } from "../../application/task-execution/schedule.use-cases";
 import { AuthGuard } from "../../shared/guards/auth.guard";
 import { Idempotent } from "../../shared/http/idempotency.interceptor";
+import { CurrentUser } from "../../shared/decorators/current-user.decorator";
+import { currentRequestId } from "../../shared/http/request-context.middleware";
+import { AppendAuditEventUseCase } from "../../application/audit/append-audit-event.use-case";
+import { AUDIT_ACTIONS, changedFieldNames } from "../../domain/audit/audit-actions";
 
 function toVo(task: Task | TaskDetail) {
   const base = {
@@ -94,6 +98,7 @@ export class TaskController {
     @Inject(FindScheduledJobsUseCase) private readonly findScheduledJobs: FindScheduledJobsUseCase,
     @Inject(UpdateScheduleUseCase) private readonly updateScheduleUc: UpdateScheduleUseCase,
     @Inject(TriggerScheduledJobUseCase) private readonly triggerScheduledJob: TriggerScheduledJobUseCase,
+    @Inject(AppendAuditEventUseCase) private readonly audit: AppendAuditEventUseCase,
   ) {}
 
   @Get("scheduled")
@@ -103,8 +108,21 @@ export class TaskController {
   }
 
   @Post("scheduled/:jobId/trigger")
-  async triggerScheduled(@Param("jobId") jobId: string): Promise<ApiResponse<{ taskId: string }>> {
+  async triggerScheduled(
+    @Param("jobId") jobId: string,
+    @CurrentUser() user: { id: string },
+  ): Promise<ApiResponse<{ taskId: string }>> {
     const result = await this.triggerScheduledJob.execute(jobId);
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.schedule.trigger,
+      targetType: "schedule",
+      targetId: jobId,
+      result: "accepted",
+      requestId: currentRequestId(),
+      taskId: result.taskId,
+    });
     return { success: true, data: result };
   }
 
@@ -113,10 +131,21 @@ export class TaskController {
   async updateSchedule(
     @Param("jobId") jobId: string,
     @Body() body: { enabled?: boolean; schedule?: { type: string; intervalMs?: number; cronExpression?: string }; timeZone?: string; overlapPolicy?: string },
+    @CurrentUser() user: { id: string },
   ): Promise<ApiResponse<null>> {
     const intervalMs = body.schedule?.intervalMs;
     if (intervalMs == null) throw new BadRequestException("schedule.intervalMs is required");
     await this.updateScheduleUc.execute(jobId, { intervalMs });
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.schedule.update,
+      targetType: "schedule",
+      targetId: jobId,
+      result: "succeeded",
+      requestId: currentRequestId(),
+      summary: { changedFieldNames: changedFieldNames(body) },
+    });
     return { success: true, data: null };
   }
 
@@ -174,17 +203,44 @@ export class TaskController {
   @Post(":id/retry")
   @HttpCode(202)
   @Idempotent("task-retry")
-  async retry(@Param("id") id: string): Promise<ApiResponse<{ retried: boolean; newTaskId?: string }>> {
+  async retry(
+    @Param("id") id: string,
+    @CurrentUser() user: { id: string },
+  ): Promise<ApiResponse<{ retried: boolean; newTaskId?: string }>> {
     const result = await this.retryTask.execute(id);
     if (!result.retried) throw new BadRequestException("Cannot retry this task");
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.task.retry,
+      targetType: "task",
+      targetId: id,
+      result: "accepted",
+      requestId: currentRequestId(),
+      taskId: result.newTaskId ?? id,
+      parentTaskId: result.newTaskId ? id : null,
+    });
     return { success: true, data: result };
   }
 
   @Post(":id/cancel")
   @Idempotent("task-cancel")
-  async cancel(@Param("id") id: string): Promise<ApiResponse<boolean>> {
+  async cancel(
+    @Param("id") id: string,
+    @CurrentUser() user: { id: string },
+  ): Promise<ApiResponse<boolean>> {
     const result = await this.cancelTask.execute(id);
     if (!result) throw new BadRequestException("Cannot cancel this task");
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.task.cancel,
+      targetType: "task",
+      targetId: id,
+      result: "cancelled",
+      requestId: currentRequestId(),
+      taskId: id,
+    });
     return { success: true, data: result };
   }
 }

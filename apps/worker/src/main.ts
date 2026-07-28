@@ -25,6 +25,7 @@ import { processCleanup } from "./processors/cleanup.processor";
 import { startWorkers } from "./infrastructure/queue/worker-bootstrap";
 import type { JobKind, JobProgress } from "./domain/job-execution/job.model";
 import type { JobRunner } from "./application/job-runner";
+import { AuditCompletionRepository } from "./infrastructure/database/audit-completion.repository";
 
 const logger = createLogger({ context: "worker" });
 
@@ -162,6 +163,7 @@ function registerHandlers(runner: JobRunner) {
 function setupQueueEvents(queueName: string) {
   const queue = new Queue(queueName, { connection: redis as never });
   const events = new QueueEvents(queueName, { connection: redis as never });
+  const auditCompletions = new AuditCompletionRepository();
 
   events.on("completed", async ({ returnvalue }) => {
     try {
@@ -177,9 +179,25 @@ function setupQueueEvents(queueName: string) {
           updatedCount: rv.updatedCount ?? 0,
           removedCount: rv.removedCount ?? 0,
         }).where(eq(syncLogs.id, rv.taskId));
+        await auditCompletions.appendForTrackedTask({
+          taskId: rv.taskId,
+          result: "succeeded",
+          summary: {
+            importedCount: rv.importedCount ?? 0,
+            addedCount: rv.addedCount ?? 0,
+            updatedCount: rv.updatedCount ?? 0,
+            removedCount: rv.removedCount ?? 0,
+            matched: rv.matched ?? 0,
+            unmatched: rv.unmatched ?? 0,
+            conflicts: rv.conflicts ?? 0,
+          },
+        });
       }
-    } catch {
-      // QueueEvents is belt-and-suspenders; JobRunner already marks success.
+    } catch (error) {
+      logger.error("Failed to persist completed task projection or audit event", {
+        queueName,
+        error: (error as Error).message,
+      });
     }
   });
 
@@ -196,9 +214,18 @@ function setupQueueEvents(queueName: string) {
           error: (failedReason ?? "Unknown error").slice(0, 500),
           attemptsMade: job.attemptsMade,
         }).where(eq(syncLogs.id, taskId));
+        await auditCompletions.appendForTrackedTask({
+          taskId,
+          result: "failed",
+          summary: { attemptsMade: job.attemptsMade },
+          reason: failedReason ?? "Unknown error",
+        });
       }
-    } catch {
-      // Same belt-and-suspenders rationale.
+    } catch (error) {
+      logger.error("Failed to persist failed task projection or audit event", {
+        queueName,
+        error: (error as Error).message,
+      });
     }
   });
 
