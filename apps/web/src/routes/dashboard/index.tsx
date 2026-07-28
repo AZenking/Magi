@@ -3,15 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Button,
   Card,
-  Col,
   Flex,
   Result,
-  Row,
   Skeleton,
-  Statistic,
   Typography,
   theme,
 } from "antd";
+import { StatisticCard } from "@ant-design/pro-components";
 import {
   ArrowRightOutlined,
   CheckCircleOutlined,
@@ -110,24 +108,24 @@ function DashboardPage() {
         }
       />
 
-      <Row gutter={[token.marginMD, token.marginMD]}>
+      <StatisticCard.Group>
         {[
           ["数据源", stats ? stats.m3u + stats.xmltv : undefined],
           ["原始频道", stats?.channels],
           ["已匹配频道", stats?.synced],
           ["节目", stats?.programmes],
         ].map(([label, value]) => (
-          <Col key={String(label)} xs={12} sm={6}>
-            <Card styles={{ body: { padding: token.paddingMD } }}>
-              {isLoading ? (
-                <Skeleton active paragraph={false} />
-              ) : (
-                <Statistic title={label} value={value ?? "-"} />
-              )}
-            </Card>
-          </Col>
+          <StatisticCard
+            key={String(label)}
+            statistic={{
+              title: label as string,
+              value: isLoading ? "-" : (value ?? "-"),
+              description: "",
+            }}
+            loading={isLoading}
+          />
         ))}
-      </Row>
+      </StatisticCard.Group>
 
       <Card
         title="待处理事项"

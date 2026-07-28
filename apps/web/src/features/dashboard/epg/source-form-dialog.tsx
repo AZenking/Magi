@@ -5,18 +5,18 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Alert,
   Button,
-  Descriptions,
   Form,
   Input,
   Modal,
   Select,
-  Skeleton,
   Typography,
   theme,
 } from "antd";
+import { ProDescriptions } from "@ant-design/pro-components";
 import type { SourceEffectivePolicy, SourceVo } from "@magi/types";
 import { apiClient } from "@/services/api";
 import { useFeedback } from "@/lib/feedback";
+import { CardSkeleton } from "@/components/page-skeleton";
 
 const sourceFormSchema = z.object({
   name: z.string().min(1, "请输入名称").max(255),
@@ -71,7 +71,7 @@ function EffectivePolicyPreview({
   });
 
   if (isLoading) {
-    return <Skeleton active paragraph={{ rows: 2 }} />;
+    return <CardSkeleton rows={2} />;
   }
   if (isError) {
     return (
@@ -102,22 +102,27 @@ function EffectivePolicyPreview({
       >
         {policy.summary}
       </Typography.Paragraph>
-      <Descriptions
+      <ProDescriptions
         size="small"
         column={2}
-        items={[
-          { key: "enabled", label: "启用", children: policy.enabled ? "是" : "否" },
+        dataSource={policy}
+        columns={[
           {
-            key: "participates",
-            label: "参与输出",
-            children: policy.participatesInOutput ? "是" : "否",
+            dataIndex: "enabled",
+            title: "启用",
+            render: (_, entity) => (entity.enabled ? "是" : "否"),
           },
-          { key: "role", label: "角色", children: policy.role },
-          { key: "priority", label: "优先级", children: policy.priority },
           {
-            key: "fallback",
-            label: "允许备选",
-            children: policy.fallbackAllowed ? "是" : "否",
+            dataIndex: "participatesInOutput",
+            title: "参与输出",
+            render: (_, entity) => (entity.participatesInOutput ? "是" : "否"),
+          },
+          { dataIndex: "role", title: "角色" },
+          { dataIndex: "priority", title: "优先级" },
+          {
+            dataIndex: "fallbackAllowed",
+            title: "允许备选",
+            render: (_, entity) => (entity.fallbackAllowed ? "是" : "否"),
           },
         ]}
       />

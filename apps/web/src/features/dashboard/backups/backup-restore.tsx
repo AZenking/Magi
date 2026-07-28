@@ -11,11 +11,13 @@
  */
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, Button, Modal, Skeleton, Space, Statistic, Tag, Typography, theme } from "antd";
+import { Alert, Button, Modal, Space, Tag, Typography, theme } from "antd";
+import { StatisticCard } from "@ant-design/pro-components";
 import { apiClient } from "@/services/api";
 import { useFeedback } from "@/lib/feedback";
 import { OperationPreview } from "@/features/dashboard/operations/operation-preview";
 import { usePreparePreview } from "@/features/dashboard/operations/operation-queries";
+import { CardSkeleton } from "@/components/page-skeleton";
 
 const { Text } = Typography;
 
@@ -113,7 +115,7 @@ export function BackupRestore({
           </Text>
 
           {isLoading ? (
-            <Skeleton active paragraph={{ rows: 3 }} />
+            <CardSkeleton rows={3} />
           ) : error ? (
             <Alert
               type="error"
@@ -132,31 +134,39 @@ export function BackupRestore({
                 />
               )}
 
-              <Space size={token.marginLG} wrap>
-                <Statistic title="新增" value={data.summary.add} />
-                <Statistic title="覆盖" value={data.summary.overwrite} />
-                <Statistic title="跳过" value={data.summary.skip} />
-                <Statistic
-                  title="冲突"
-                  value={data.summary.conflict}
-                  styles={{
-                    content:
+              <StatisticCard.Group>
+                <StatisticCard
+                  statistic={{ title: "新增", value: data.summary.add, description: "" }}
+                />
+                <StatisticCard
+                  statistic={{ title: "覆盖", value: data.summary.overwrite, description: "" }}
+                />
+                <StatisticCard
+                  statistic={{ title: "跳过", value: data.summary.skip, description: "" }}
+                />
+                <StatisticCard
+                  statistic={{
+                    title: "冲突",
+                    value: data.summary.conflict,
+                    description: "",
+                    valueStyle:
                       data.summary.conflict > 0
                         ? { color: token.colorError }
                         : undefined,
                   }}
                 />
-                <Statistic
-                  title="不兼容"
-                  value={data.summary.unsupported}
-                  styles={{
-                    content:
+                <StatisticCard
+                  statistic={{
+                    title: "不兼容",
+                    value: data.summary.unsupported,
+                    description: "",
+                    valueStyle:
                       data.summary.unsupported > 0
                         ? { color: token.colorWarning }
                         : undefined,
                   }}
                 />
-              </Space>
+              </StatisticCard.Group>
 
               <Space>
                 <Button onClick={handleClose}>取消</Button>

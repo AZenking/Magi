@@ -8,7 +8,6 @@ import {
   Alert,
   Button,
   Card,
-  Descriptions,
   Flex,
   Progress,
   Tag,
@@ -21,6 +20,7 @@ import {
   ReloadOutlined,
 } from "@ant-design/icons";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { ProDescriptions } from "@ant-design/pro-components";
 
 const statusMap: Record<string, { label: string; color?: string }> = {
   pending: { label: "等待中" },
@@ -142,65 +142,67 @@ export function TaskDetailContent({
   const relations = task.relations;
   const result = task.result;
 
-  const detailItems = [
+  const detailColumns = [
     {
-      key: "id",
-      label: "任务 ID",
-      children: (
+      dataIndex: "id",
+      title: "任务 ID",
+      render: () => (
         <Typography.Text code copyable>
           {task.id}
         </Typography.Text>
       ),
     },
     {
-      key: "type",
-      label: "任务类型",
-      children: taskTypeMap[task.taskType] ?? task.taskType,
+      dataIndex: "taskType",
+      title: "任务类型",
+      render: () => taskTypeMap[task.taskType] ?? task.taskType,
     },
-    { key: "queue", label: "队列", children: task.queueName ?? "-" },
-    { key: "sourceType", label: "源类型", children: task.sourceType },
     {
-      key: "sourceId",
-      label: "源 ID",
-      children: <Typography.Text code>{task.sourceId || "-"}</Typography.Text>,
+      dataIndex: "queueName",
+      title: "队列",
+      render: () => task.queueName ?? "-",
+    },
+    { dataIndex: "sourceType", title: "源类型" },
+    {
+      dataIndex: "sourceId",
+      title: "源 ID",
+      render: () => <Typography.Text code>{task.sourceId || "-"}</Typography.Text>,
     },
     ...(task.stage
-      ? [{ key: "stage", label: "阶段", children: task.stage }]
+      ? [{ dataIndex: "stage" as const, title: "阶段", render: () => task.stage }]
       : []),
     {
-      key: "attempts",
-      label: "重试次数",
-      children: job?.attemptsMade ?? task.attemptsMade,
+      dataIndex: "attemptsMade",
+      title: "重试次数",
+      render: () => job?.attemptsMade ?? task.attemptsMade,
     },
     {
-      key: "created",
-      label: "创建时间",
-      children: dtf.format(new Date(task.createdAt)),
+      dataIndex: "createdAt",
+      title: "创建时间",
+      render: () => dtf.format(new Date(task.createdAt)),
     },
     {
-      key: "started",
-      label: "开始时间",
-      children: dtf.format(new Date(task.startedAt)),
+      dataIndex: "startedAt",
+      title: "开始时间",
+      render: () => dtf.format(new Date(task.startedAt)),
     },
     ...((job?.processedOn ?? task.processedOn)
       ? [
           {
-            key: "processed",
-            label: "处理时间",
-            children: dtf.format(
-              new Date((job?.processedOn ?? task.processedOn)!),
-            ),
+            dataIndex: "processedOn" as const,
+            title: "处理时间",
+            render: () =>
+              dtf.format(new Date((job?.processedOn ?? task.processedOn)!)),
           },
         ]
       : []),
     ...((job?.finishedOn ?? task.finishedAt)
       ? [
           {
-            key: "finished",
-            label: "完成时间",
-            children: dtf.format(
-              new Date((job?.finishedOn ?? task.finishedAt)!),
-            ),
+            dataIndex: "finishedOn" as const,
+            title: "完成时间",
+            render: () =>
+              dtf.format(new Date((job?.finishedOn ?? task.finishedAt)!)),
           },
         ]
       : []),
@@ -225,7 +227,11 @@ export function TaskDetailContent({
       </Flex>
 
       <Card title="概览">
-        <Descriptions column={{ xs: 1, sm: 2 }} items={detailItems} />
+        <ProDescriptions
+          column={{ xs: 1, sm: 2 }}
+          dataSource={task}
+          columns={detailColumns}
+        />
       </Card>
 
       <Card title="执行状态">
@@ -243,13 +249,14 @@ export function TaskDetailContent({
               progressMessage ? `${progressMessage} · ${percent}%` : `${percent}%`
             }
           />
-          <Descriptions
+          <ProDescriptions
             column={{ xs: 2, sm: 4 }}
-            items={[
-              { key: "imported", label: "导入", children: task.importedCount },
-              { key: "added", label: "新增", children: task.addedCount },
-              { key: "updated", label: "更新", children: task.updatedCount },
-              { key: "removed", label: "删除", children: task.removedCount },
+            dataSource={task}
+            columns={[
+              { dataIndex: "importedCount", title: "导入" },
+              { dataIndex: "addedCount", title: "新增" },
+              { dataIndex: "updatedCount", title: "更新" },
+              { dataIndex: "removedCount", title: "删除" },
             ]}
           />
           {result?.summary && (
@@ -269,21 +276,22 @@ export function TaskDetailContent({
 
       {(relations || result?.links) && (
         <Card title="关联">
-          <Descriptions
+          <ProDescriptions
             column={{ xs: 1, sm: 2 }}
-            items={[
+            dataSource={task}
+            columns={[
               ...(relations?.parentTaskId
                 ? [
                     {
-                      key: "parent",
-                      label: "父任务",
-                      children: (
+                      dataIndex: "parentTaskId" as const,
+                      title: "父任务",
+                      render: () => (
                         <Link
                           to="/dashboard/tasks/$taskId"
-                          params={{ taskId: relations.parentTaskId }}
+                          params={{ taskId: relations.parentTaskId! }}
                         >
                           <Typography.Link>
-                            {relations.parentTaskId.slice(0, 8)}
+                            {relations.parentTaskId!.slice(0, 8)}
                           </Typography.Link>
                         </Link>
                       ),
@@ -293,15 +301,15 @@ export function TaskDetailContent({
               ...(relations?.rootTaskId
                 ? [
                     {
-                      key: "root",
-                      label: "根任务",
-                      children: (
+                      dataIndex: "rootTaskId" as const,
+                      title: "根任务",
+                      render: () => (
                         <Link
                           to="/dashboard/tasks/$taskId"
-                          params={{ taskId: relations.rootTaskId }}
+                          params={{ taskId: relations.rootTaskId! }}
                         >
                           <Typography.Link>
-                            {relations.rootTaskId.slice(0, 8)}
+                            {relations.rootTaskId!.slice(0, 8)}
                           </Typography.Link>
                         </Link>
                       ),
@@ -309,9 +317,9 @@ export function TaskDetailContent({
                   ]
                 : []),
               {
-                key: "changeSet",
-                label: "变更集",
-                children: (
+                dataIndex: "changeSetId",
+                title: "变更集",
+                render: () => (
                   <RelationLink
                     changeSetId={
                       relations?.changeSetId ?? result?.links?.changeSetId

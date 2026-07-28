@@ -6,13 +6,13 @@ import {
   Flex,
   InputNumber,
   Select,
-  Skeleton,
   Typography,
   theme,
 } from "antd";
 import type { FailoverMode, FailoverPolicy } from "@magi/types";
 import { apiClient } from "@/services/api";
 import { useFeedback } from "@/lib/feedback";
+import { CardSkeleton } from "@/components/page-skeleton";
 
 const modeOptions: Array<{ value: FailoverMode; label: string; hint: string }> =
   [
@@ -120,7 +120,7 @@ export function ChannelFailoverPolicy({ channelId }: ChannelFailoverPolicyProps)
   });
 
   if (isLoading) {
-    return <Skeleton active paragraph={{ rows: 3 }} />;
+    return <CardSkeleton rows={3} />;
   }
   if (isError || !server) {
     return (

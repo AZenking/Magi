@@ -11,11 +11,11 @@ import {
   Result,
   Select,
   Space,
-  Spin,
   Tag,
   Typography,
   theme,
 } from "antd";
+import { ProList } from "@ant-design/pro-components";
 import { LinkOutlined, PlusOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import { Link } from "@tanstack/react-router";
 import type { SourceVo } from "@magi/types";
@@ -27,6 +27,7 @@ import { usePreparePreview, useChangeSet } from "@/features/dashboard/operations
 import { EpgMatchSummary } from "@/features/dashboard/epg/epg-match-summary";
 import { EpgMatchCandidates } from "@/features/dashboard/epg/epg-match-candidates";
 import { EpgMatchBatchActions } from "@/features/dashboard/epg/epg-match-batch-actions";
+import { InlineSkeleton } from "@/components/page-skeleton";
 
 export const Route = createFileRoute("/dashboard/epg-matching")({
   component: EpgMatchingPage,
@@ -185,7 +186,7 @@ function EpgMatchingPage() {
         </Flex>
 
         {/* T070/T074: readiness blockers + direct repair links. */}
-        {selectedSourceId && readinessLoading && <Spin size="small" />}
+        {selectedSourceId && readinessLoading && <InlineSkeleton />}
         {selectedSourceId && readiness && !readiness.canMatch && (
           <Alert
             type="warning"
@@ -228,67 +229,72 @@ function EpgMatchingPage() {
             </Link>
           </Empty>
         ) : (
-          <Flex vertical gap={token.marginSM}>
-            {xmltvSources.map((source) => (
-              <Flex
-                key={source.id}
-                align="center"
-                justify="space-between"
-                wrap
-                gap={token.marginSM}
-                style={{
-                  borderRadius: token.borderRadiusLG,
-                  border: `${token.lineWidth}px ${token.lineType} ${token.colorBorderSecondary}`,
-                  padding: token.paddingSM,
-                }}
-              >
-                <div style={{ minWidth: 0 }}>
-                  <Typography.Text strong>{source.name}</Typography.Text>
-                  <Typography.Paragraph
-                    type="secondary"
-                    ellipsis
-                    style={{ margin: 0, maxWidth: 400 }}
-                  >
-                    {source.url}
-                  </Typography.Paragraph>
-                </div>
-                <Flex align="center" wrap gap={token.marginXS}>
-                  <Tag color={source.enabled ? "blue" : undefined}>
-                    {source.enabled ? "启用" : "禁用"}
-                  </Tag>
-                  {source.lastSyncStatus && (
-                    <Tag
-                      color={
-                        source.lastSyncStatus === "success" ? "green" : "red"
-                      }
+          <ProList<SourceVo>
+            rowKey="id"
+            dataSource={xmltvSources}
+            split
+            metas={{
+              title: {
+                render: (_, source) => (
+                  <Flex vertical style={{ minWidth: 0 }}>
+                    <Typography.Text strong>{source.name}</Typography.Text>
+                    <Typography.Paragraph
+                      type="secondary"
+                      ellipsis
+                      style={{ margin: 0, maxWidth: 400 }}
                     >
-                      {source.lastSyncStatus === "success"
-                        ? "已同步"
-                        : "同步失败"}
+                      {source.url}
+                    </Typography.Paragraph>
+                  </Flex>
+                ),
+              },
+              description: {
+                render: (_, source) => (
+                  <Flex align="center" wrap gap={token.marginXS}>
+                    <Tag color={source.enabled ? "blue" : undefined}>
+                      {source.enabled ? "启用" : "禁用"}
                     </Tag>
-                  )}
-                  {source.lastSyncAt && (
-                    <Typography.Text type="secondary">
-                      {new Intl.DateTimeFormat("zh-CN", {
-                        dateStyle: "short",
-                        timeStyle: "short",
-                      }).format(new Date(source.lastSyncAt))}
-                    </Typography.Text>
-                  )}
+                    {source.lastSyncStatus && (
+                      <Tag
+                        color={
+                          source.lastSyncStatus === "success" ? "green" : "red"
+                        }
+                      >
+                        {source.lastSyncStatus === "success"
+                          ? "已同步"
+                          : "同步失败"}
+                      </Tag>
+                    )}
+                    {source.lastSyncAt && (
+                      <Typography.Text type="secondary">
+                        {new Intl.DateTimeFormat("zh-CN", {
+                          dateStyle: "short",
+                          timeStyle: "short",
+                        }).format(new Date(source.lastSyncAt))}
+                      </Typography.Text>
+                    )}
+                  </Flex>
+                ),
+              },
+              actions: {
+                render: (_, source) => [
                   <Button
+                    key="match"
                     size="small"
                     onClick={() => {
                       setSelectedSourceId(source.id);
                       handleMatch(source.id);
                     }}
-                    loading={preparePreview.isPending && selectedSourceId === source.id}
+                    loading={
+                      preparePreview.isPending && selectedSourceId === source.id
+                    }
                   >
                     预览匹配
-                  </Button>
-                </Flex>
-              </Flex>
-            ))}
-          </Flex>
+                  </Button>,
+                ],
+              },
+            }}
+          />
         )}
       </Card>
 

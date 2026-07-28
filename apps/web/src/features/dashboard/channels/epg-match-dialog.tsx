@@ -6,14 +6,13 @@ import {
   Empty,
   Flex,
   Input,
-  List,
   Modal,
-  Pagination,
   Result,
   Spin,
   Typography,
   theme,
 } from "antd";
+import { ProList } from "@ant-design/pro-components";
 import { LockOutlined } from "@ant-design/icons";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
 import { apiClient } from "@/services/api";
@@ -128,12 +127,21 @@ export function EpgMatchDialog({
         ) : candidates.length === 0 ? (
           <Empty description="无结果" />
         ) : (
-          <List
-            style={{ maxHeight: 256, overflowY: "auto" }}
+          <ProList<RawXmltvChannelVo>
+            rowKey="id"
             dataSource={candidates}
-            renderItem={(candidate) => (
-              <List.Item
-                actions={[
+            style={{ maxHeight: 320, overflowY: "auto" }}
+            metas={{
+              title: {
+                render: (_, candidate) => (
+                  <Typography.Text code>{candidate.xmltvId}</Typography.Text>
+                ),
+              },
+              description: {
+                render: (_, candidate) => candidate.displayName,
+              },
+              actions: {
+                render: (_, candidate) => [
                   <Button
                     key="select"
                     type="link"
@@ -142,27 +150,17 @@ export function EpgMatchDialog({
                   >
                     选择
                   </Button>,
-                ]}
-              >
-                <List.Item.Meta
-                  title={
-                    <Typography.Text code>{candidate.xmltvId}</Typography.Text>
-                  }
-                  description={candidate.displayName}
-                />
-              </List.Item>
-            )}
-          />
-        )}
-
-        {totalPages > 1 && (
-          <Pagination
-            current={page}
-            total={totalPages * 10}
-            pageSize={10}
-            onChange={(p) => setPage(p)}
-            size="small"
-            style={{ textAlign: "center" }}
+                ],
+              },
+            }}
+            pagination={{
+              current: page,
+              pageSize: 10,
+              total: totalPages * 10,
+              onChange: (p) => setPage(p),
+              size: "small",
+              style: { textAlign: "center" },
+            }}
           />
         )}
 

@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   Card,
-  Descriptions,
   Dropdown,
   Empty,
   Flex,
@@ -12,11 +11,11 @@ import {
   List,
   Modal,
   Result,
-  Spin,
   Tag,
   Typography,
   theme,
 } from "antd";
+import { ProDescriptions, ProList } from "@ant-design/pro-components";
 import type { MenuProps } from "antd";
 import {
   ArrowLeftOutlined,
@@ -51,6 +50,7 @@ import {
 import { ChannelStreamOrder } from "@/features/dashboard/channels/channel-stream-order";
 import { ChannelFailoverPolicy } from "@/features/dashboard/channels/channel-failover-policy";
 import { PageStack } from "@/components/page-layout";
+import { PageSkeleton, InlineSkeleton } from "@/components/page-skeleton";
 
 export const Route = createFileRoute("/dashboard/channels/$channelId")({
   component: ChannelDetailPage,
@@ -254,7 +254,7 @@ function ChannelDetailPage() {
     enabled: purgePreviewOpen,
   });
 
-  if (isLoading) return <Spin description="正在加载频道详情…" />;
+  if (isLoading) return <PageSkeleton description="正在加载频道详情…" />;
   if (isError) {
     return (
       <Result
@@ -356,25 +356,26 @@ function ChannelDetailPage() {
             </Button>
           }
         >
-          <Descriptions
+          <ProDescriptions
             column={{ xs: 1, sm: 2 }}
-            items={[
+            dataSource={channel}
+            columns={[
               {
-                key: "epgChannelId",
-                label: "频道 ID (tvg-id)",
-                children: (
+                dataIndex: "epgChannelId",
+                title: "频道 ID (tvg-id)",
+                render: (_, entity) => (
                   <Typography.Text code>
-                    {channel.epgChannelId ?? "未绑定"}
+                    {entity.epgChannelId ?? "未绑定"}
                   </Typography.Text>
                 ),
               },
               {
-                key: "matchType",
-                label: "匹配方式",
-                children:
-                  channel.epgMatchType === "manual"
+                dataIndex: "epgMatchType",
+                title: "匹配方式",
+                render: (_, entity) =>
+                  entity.epgMatchType === "manual"
                     ? "手动"
-                    : channel.epgMatchType === "auto"
+                    : entity.epgMatchType === "auto"
                       ? "自动"
                       : "—",
               },
@@ -453,16 +454,72 @@ function ChannelDetailPage() {
             <Empty description="暂无播放源" />
           ) : (
             <>
-            <List
+            <ProList<ChannelStreamVo>
+              rowKey="id"
               dataSource={streams}
-              renderItem={(stream) => {
-                const healthStatus = healthStatusMap[stream.healthStatus] ?? {
-                  label: stream.healthStatus,
-                };
-                return (
-                  <List.Item
-                    actions={[
-                      !stream.isPrimary ? (
+              split
+              metas={{
+                title: {
+                  render: (_, stream) => {
+                    const healthStatus = healthStatusMap[stream.healthStatus] ?? {
+                      label: stream.healthStatus,
+                    };
+                    return (
+                      <Flex wrap gap={token.marginXS}>
+                        {stream.isPrimary && (
+                          <Tag color="blue" icon={<StarFilled />}>
+                            主源
+                          </Tag>
+                        )}
+                        <Tag color={healthStatus.color}>
+                          {healthStatus.label}
+                        </Tag>
+                        {stream.m3uSourceName && (
+                          <Tag>{stream.m3uSourceName}</Tag>
+                        )}
+                        {stream.streamCodec && (
+                          <Tag>{stream.streamCodec}</Tag>
+                        )}
+                        {stream.streamWidth && stream.streamHeight && (
+                          <Tag>
+                            {stream.streamWidth}×{stream.streamHeight}
+                          </Tag>
+                        )}
+                        {stream.streamBitrate && (
+                          <Tag>{stream.streamBitrate} kbps</Tag>
+                        )}
+                      </Flex>
+                    );
+                  },
+                },
+                description: {
+                  render: (_, stream) => (
+                    <Flex vertical style={{ minWidth: 0 }}>
+                      <Typography.Text code copyable ellipsis>
+                        {stream.streamUrl}
+                      </Typography.Text>
+                      {(stream.sourceChannelName ||
+                        stream.responseTime) && (
+                        <Typography.Text type="secondary">
+                          {stream.sourceChannelName
+                            ? `来源：${stream.sourceChannelName}`
+                            : ""}
+                          {stream.sourceChannelName && stream.responseTime
+                            ? " · "
+                            : ""}
+                          {stream.responseTime
+                            ? `${stream.responseTime}ms`
+                            : ""}
+                        </Typography.Text>
+                      )}
+                    </Flex>
+                  ),
+                },
+                actions: {
+                  render: (_, stream) => {
+                    const actions: React.ReactNode[] = [];
+                    if (!stream.isPrimary) {
+                      actions.push(
                         <Button
                           key="primary"
                           type="text"
@@ -470,8 +527,10 @@ function ChannelDetailPage() {
                           aria-label="设为主源"
                           loading={setPrimaryMutation.isPending}
                           onClick={() => setPrimaryMutation.mutate(stream.id)}
-                        />
-                      ) : null,
+                        />,
+                      );
+                    }
+                    actions.push(
                       <Button
                         key="edit"
                         type="text"
@@ -491,59 +550,10 @@ function ChannelDetailPage() {
                         loading={deleteStreamMutation.isPending}
                         onClick={() => setConfirmDeleteStreamId(stream.id)}
                       />,
-                    ].filter(Boolean)}
-                  >
-                    <List.Item.Meta
-                      title={
-                        <Flex wrap gap={token.marginXS}>
-                          {stream.isPrimary && (
-                            <Tag color="blue" icon={<StarFilled />}>
-                              主源
-                            </Tag>
-                          )}
-                          <Tag color={healthStatus.color}>
-                            {healthStatus.label}
-                          </Tag>
-                          {stream.m3uSourceName && (
-                            <Tag>{stream.m3uSourceName}</Tag>
-                          )}
-                          {stream.streamCodec && (
-                            <Tag>{stream.streamCodec}</Tag>
-                          )}
-                          {stream.streamWidth && stream.streamHeight && (
-                            <Tag>
-                              {stream.streamWidth}×{stream.streamHeight}
-                            </Tag>
-                          )}
-                          {stream.streamBitrate && (
-                            <Tag>{stream.streamBitrate} kbps</Tag>
-                          )}
-                        </Flex>
-                      }
-                      description={
-                        <Flex vertical style={{ minWidth: 0 }}>
-                          <Typography.Text code copyable ellipsis>
-                            {stream.streamUrl}
-                          </Typography.Text>
-                          {(stream.sourceChannelName ||
-                            stream.responseTime) && (
-                            <Typography.Text type="secondary">
-                              {stream.sourceChannelName
-                                ? `来源：${stream.sourceChannelName}`
-                                : ""}
-                              {stream.sourceChannelName && stream.responseTime
-                                ? " · "
-                                : ""}
-                              {stream.responseTime
-                                ? `${stream.responseTime}ms`
-                                : ""}
-                            </Typography.Text>
-                          )}
-                        </Flex>
-                      }
-                    />
-                  </List.Item>
-                );
+                    );
+                    return actions;
+                  },
+                },
               }}
             />
             {/* T121: reorderable list with primary/eligibility controls. Lives
@@ -689,7 +699,7 @@ function ChannelDetailPage() {
         destroyOnHidden
       >
         {purgePreviewLoading ? (
-          <Spin size="small" />
+          <InlineSkeleton />
         ) : (
           <Flex vertical gap={token.marginSM}>
             <Tag color="error">

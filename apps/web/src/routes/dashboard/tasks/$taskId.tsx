@@ -2,9 +2,10 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { TaskVo } from "@magi/types";
 import { apiClient } from "@/services/api";
-import { Button, Result, Spin } from "antd";
+import { Button, Result } from "antd";
 import { TaskDetailContent } from "@/features/dashboard/tasks/task-detail-content";
 import { PageHeader, PageStack } from "@/components/page-layout";
+import { PageSkeleton } from "@/components/page-skeleton";
 
 export const Route = createFileRoute("/dashboard/tasks/$taskId")({
   component: TaskDetailPage,
@@ -64,7 +65,7 @@ function TaskDetailPage() {
   const task = data?.data;
 
   if (isLoading) {
-    return <Spin description="正在加载任务详情…" fullscreen={false} />;
+    return <PageSkeleton description="正在加载任务详情…" />;
   }
 
   if (isError) {

@@ -9,13 +9,13 @@ import {
   Flex,
   Result,
   Select,
-  Spin,
   Switch,
   Tag,
   Typography,
   theme,
 } from "antd";
 import { useFeedback } from "@/lib/feedback";
+import { PageSkeleton } from "@/components/page-skeleton";
 import {
   CheckOutlined,
   CloseOutlined,
@@ -178,7 +178,7 @@ export function ScheduledTasksSection() {
     }
   }, [editingId, data]);
 
-  if (isLoading) return <Spin description="加载定时任务…" />;
+  if (isLoading) return <PageSkeleton description="加载定时任务…" />;
   if (error) {
     return (
       <Result

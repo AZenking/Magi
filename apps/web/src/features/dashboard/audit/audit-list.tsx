@@ -16,6 +16,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type { ProColumns } from "@ant-design/pro-components";
+import { ProDescriptions } from "@ant-design/pro-components";
 import type { Dayjs } from "dayjs";
 import {
   AUDIT_ACTOR_LABELS,
@@ -27,7 +28,6 @@ import { useFeedback } from "@/lib/feedback";
 import {
   Button,
   DatePicker,
-  Descriptions,
   Drawer,
   Empty,
   Grid,
@@ -398,44 +398,57 @@ function AuditEventDetail({
 
   return (
     <Space orientation="vertical" size={token.marginMD} style={{ width: "100%" }}>
-      <Descriptions
+      <ProDescriptions
         column={1}
         size="small"
         bordered
-        items={[
-          { label: "时间", children: formatDatetime(event.occurredAt) },
+        dataSource={event}
+        columns={[
           {
-            label: "动作",
-            children: <Tag>{event.action}</Tag>,
+            dataIndex: "occurredAt",
+            title: "时间",
+            render: (_, entity) => formatDatetime(entity.occurredAt),
           },
           {
-            label: "发起方",
-            children: `${AUDIT_ACTOR_LABELS[event.actorType] ?? event.actorType} (${event.actorId})`,
+            dataIndex: "action",
+            title: "动作",
+            render: (_, entity) => <Tag>{entity.action}</Tag>,
           },
           {
-            label: "目标",
-            children: `${event.targetType}:${event.targetId}${
-              event.displayName ? ` (${event.displayName})` : ""
-            }`,
+            dataIndex: "actorType",
+            title: "发起方",
+            render: (_, entity) =>
+              `${AUDIT_ACTOR_LABELS[entity.actorType] ?? entity.actorType} (${entity.actorId})`,
           },
           {
-            label: "结果",
-            children: (() => {
-              const meta = AUDIT_RESULT_META[event.result];
+            dataIndex: "targetId",
+            title: "目标",
+            render: (_, entity) =>
+              `${entity.targetType}:${entity.targetId}${
+                entity.displayName ? ` (${entity.displayName})` : ""
+              }`,
+          },
+          {
+            dataIndex: "result",
+            title: "结果",
+            render: (_, entity) => {
+              const meta = AUDIT_RESULT_META[entity.result];
               return meta ? (
                 <Tag color={meta.color}>{meta.label}</Tag>
               ) : (
-                <Tag>{event.result}</Tag>
+                <Tag>{entity.result}</Tag>
               );
-            })(),
+            },
           },
           {
-            label: "原因",
-            children: event.reason ?? "—",
+            dataIndex: "reason",
+            title: "原因",
+            render: (_, entity) => entity.reason ?? "—",
           },
           {
-            label: "Request ID",
-            children: event.requestId ?? "—",
+            dataIndex: "requestId",
+            title: "Request ID",
+            render: (_, entity) => entity.requestId ?? "—",
           },
         ]}
       />

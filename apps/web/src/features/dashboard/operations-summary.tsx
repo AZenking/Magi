@@ -11,11 +11,11 @@ import {
   Progress,
   Result,
   Row,
-  Statistic,
   Tooltip,
   Typography,
   theme,
 } from "antd";
+import { StatisticCard } from "@ant-design/pro-components";
 import {
   ArrowRightOutlined,
   ClockCircleOutlined,
@@ -23,6 +23,7 @@ import {
 } from "@ant-design/icons";
 import type { IssueCard, OperationsSummaryVo } from "@magi/types";
 import { apiClient } from "@/services/api";
+import { CardSkeleton } from "@/components/page-skeleton";
 
 function formatTimestamp(value: string | null): string {
   if (!value) return "尚未运行";
@@ -88,7 +89,7 @@ export function OperationsSummary() {
       <Row gutter={[token.marginMD, token.marginMD]}>
         {[0, 1, 2].map((i) => (
           <Col key={i} xs={24} sm={12} lg={8}>
-            <Card loading />
+            <CardSkeleton />
           </Col>
         ))}
       </Row>
@@ -136,29 +137,41 @@ export function OperationsSummary() {
 
         <Col xs={24} sm={12} lg={8}>
           <Card title="任务异常" styles={{ body: { padding: token.paddingMD } }}>
-            <Row gutter={[token.marginSM, token.marginSM]}>
-              <Col span={8}>
-                <Statistic
-                  title="运行中"
-                  value={s.runningTaskCount}
-                  styles={{ content: s.runningTaskCount > 0 ? { color: token.colorPrimary } : undefined }}
-                />
-              </Col>
-              <Col span={8}>
-                <Statistic
-                  title="失败"
-                  value={s.failedTaskCount}
-                  styles={{ content: s.failedTaskCount > 0 ? { color: token.colorError } : undefined }}
-                />
-              </Col>
-              <Col span={8}>
-                <Statistic
-                  title="过期源"
-                  value={s.staleSources}
-                  styles={{ content: s.staleSources > 0 ? { color: token.colorWarning } : undefined }}
-                />
-              </Col>
-            </Row>
+            <StatisticCard.Group>
+              <StatisticCard
+                statistic={{
+                  title: "运行中",
+                  value: s.runningTaskCount,
+                  description: "",
+                  valueStyle:
+                    s.runningTaskCount > 0
+                      ? { color: token.colorPrimary }
+                      : undefined,
+                }}
+              />
+              <StatisticCard
+                statistic={{
+                  title: "失败",
+                  value: s.failedTaskCount,
+                  description: "",
+                  valueStyle:
+                    s.failedTaskCount > 0
+                      ? { color: token.colorError }
+                      : undefined,
+                }}
+              />
+              <StatisticCard
+                statistic={{
+                  title: "过期源",
+                  value: s.staleSources,
+                  description: "",
+                  valueStyle:
+                    s.staleSources > 0
+                      ? { color: token.colorWarning }
+                      : undefined,
+                }}
+              />
+            </StatisticCard.Group>
           </Card>
         </Col>
       </Row>

@@ -10,9 +10,12 @@
  * is refetched.
  */
 import { useState } from "react";
-import { Alert, Button, Modal, Space, Spin, Statistic, Tag, Typography, theme } from "antd";
+import { Alert, Button, Modal, Space, Spin, Tag, Typography, theme } from "antd";
+import { StatisticCard } from "@ant-design/pro-components";
+
 import { useApplyChangeSet, useCancelChangeSet, useChangeSet } from "./operation-queries";
 import { OperationImpactTable } from "./operation-impact-table";
+import { InlineSkeleton } from "@/components/page-skeleton";
 
 const { Title, Text } = Typography;
 
@@ -72,24 +75,46 @@ export function OperationPreview({
 
       {status === "preparing" && (
         <Space size={8}>
-          <Spin size="small" />
+          <InlineSkeleton />
           <Text type="secondary">正在计算影响范围…完成后自动刷新。</Text>
         </Space>
       )}
 
-      <Space size={32} wrap>
-        {summary.added != null && <Statistic title="新增" value={summary.added} />}
-        {summary.updated != null && <Statistic title="更新" value={summary.updated} />}
-        {summary.missing != null && <Statistic title="缺失" value={summary.missing} />}
-        {summary.preserved != null && <Statistic title="保留" value={summary.preserved} />}
-        {summary.conflicts != null && (
-          <Statistic
-            title="冲突"
-            value={summary.conflicts}
-            styles={{ content: summary.conflicts > 0 ? { color: token.colorError } : undefined }}
+      <StatisticCard.Group>
+        {summary.added != null && (
+          <StatisticCard
+            statistic={{ title: "新增", value: summary.added, description: "" }}
           />
         )}
-      </Space>
+        {summary.updated != null && (
+          <StatisticCard
+            statistic={{ title: "更新", value: summary.updated, description: "" }}
+          />
+        )}
+        {summary.missing != null && (
+          <StatisticCard
+            statistic={{ title: "缺失", value: summary.missing, description: "" }}
+          />
+        )}
+        {summary.preserved != null && (
+          <StatisticCard
+            statistic={{ title: "保留", value: summary.preserved, description: "" }}
+          />
+        )}
+        {summary.conflicts != null && (
+          <StatisticCard
+            statistic={{
+              title: "冲突",
+              value: summary.conflicts,
+              description: "",
+              valueStyle:
+                summary.conflicts > 0
+                  ? { color: token.colorError }
+                  : undefined,
+            }}
+          />
+        )}
+      </StatisticCard.Group>
 
       {blockers.map((b) => (
         <Alert
