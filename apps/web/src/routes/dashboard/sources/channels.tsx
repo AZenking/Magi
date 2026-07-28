@@ -1,83 +1,111 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ColumnDef } from "@tanstack/react-table";
+import type { ProColumns } from "@ant-design/pro-components";
 import type { ChannelVo, PaginatedResponse, SourceVo } from "@magi/types";
 import { apiClient } from "@/services/api";
-import { Button } from "@magi/ui/components/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@magi/ui/components/select";
-import { Badge } from "@magi/ui/components/badge";
-import { DataTable } from "@magi/ui/components/data-table";
-import { DataTablePagination } from "@magi/ui/components/data-table-pagination";
-import { DataTableViewOptions } from "@magi/ui/components/data-table-view-options";
-import { DataTableColumnHeader } from "@magi/ui/components/data-table-column-header";
-import { RefreshCwIcon } from "lucide-react";
-import { useReactTable, getCoreRowModel, type VisibilityState } from "@tanstack/react-table";
+import { Avatar, Button, Tag } from "antd";
+import { ProTableWrapper } from "@/components/pro-table-wrapper";
+import { ReloadOutlined } from "@ant-design/icons";
+import { PageHeader, PageStack } from "@/components/page-layout";
 
 export const Route = createFileRoute("/dashboard/sources/channels")({
   component: RawChannelsPage,
 });
 
-const streamStatusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  online: { label: "在线", variant: "default" },
-  offline: { label: "离线", variant: "destructive" },
-  degraded: { label: "降级", variant: "secondary" },
-  unknown: { label: "未知", variant: "outline" },
+const streamStatusMap: Record<string, { label: string; color?: string }> = {
+  online: { label: "在线", color: "green" },
+  offline: { label: "离线", color: "red" },
+  degraded: { label: "降级", color: "orange" },
+  unknown: { label: "未知" },
 };
 
-function getColumns(): ColumnDef<ChannelVo>[] {
+function getColumns(m3uSourceOptions?: { value: string; label: string }[]): ProColumns<ChannelVo>[] {
   return [
+    // Virtual column: M3U source filter, lives only in the search form.
     {
-      accessorKey: "displayName",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="频道名" />,
-      cell: ({ row }) => (
-        <div className="flex items-center gap-2">
-          {row.original.tvgLogo ? (
-            <img src={row.original.tvgLogo} alt="" className="h-5 w-5 rounded object-contain" loading="lazy" />
-          ) : (
-            <div className="h-5 w-5 rounded bg-muted" />
-          )}
-          <span className="font-medium">{row.original.displayName}</span>
+      title: "M3U 源",
+      dataIndex: "sourceId",
+      valueType: "select",
+      hideInTable: true,
+      fieldProps: { options: m3uSourceOptions, allowClear: true, placeholder: "全部 M3U 源" },
+    },
+    {
+      dataIndex: "displayName",
+      title: "频道名",
+      search: false,
+      render: (_, record) => (
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Avatar
+            shape="square"
+            size={20}
+            src={record.tvgLogo || undefined}
+          >
+            {record.displayName.slice(0, 1)}
+          </Avatar>
+          <span style={{ fontWeight: 600 }}>{record.displayName}</span>
         </div>
       ),
     },
     {
-      accessorKey: "groupTitle",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="分组" />,
-      cell: ({ row }) => row.original.groupTitle ?? "-",
+      dataIndex: "groupTitle",
+      title: "分组",
+      search: false,
+      render: (_, record) => record.groupTitle ?? "-",
     },
     {
-      accessorKey: "tvgId",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="tvgId" />,
-      cell: ({ row }) => <span className="font-mono text-xs">{row.original.tvgId ?? "-"}</span>,
+      dataIndex: "tvgId",
+      title: "tvgId",
+      search: false,
+      render: (_, record) => (
+        <span style={{ fontFamily: "monospace", fontSize: 12 }}>
+          {record.tvgId ?? "-"}
+        </span>
+      ),
     },
     {
-      accessorKey: "epgChannelId",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="EPG 绑定" />,
-      cell: ({ row }) => <span className="font-mono text-xs">{row.original.epgChannelId ?? "-"}</span>,
+      dataIndex: "epgChannelId",
+      title: "EPG 绑定",
+      search: false,
+      render: (_, record) => (
+        <span style={{ fontFamily: "monospace", fontSize: 12 }}>
+          {record.epgChannelId ?? "-"}
+        </span>
+      ),
     },
     {
-      accessorKey: "epgMatchType",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="匹配方式" />,
-      cell: ({ row }) => row.original.epgMatchType ?? "-",
+      dataIndex: "epgMatchType",
+      title: "匹配方式",
+      search: false,
+      render: (_, record) => record.epgMatchType ?? "-",
     },
     {
-      accessorKey: "active",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="激活" />,
-      cell: ({ row }) => <Badge variant={row.original.active ? "default" : "secondary"}>{row.original.active ? "是" : "否"}</Badge>,
+      dataIndex: "active",
+      title: "激活",
+      search: false,
+      render: (_, record) => (
+        <Tag color={record.active ? "blue" : undefined}>
+          {record.active ? "是" : "否"}
+        </Tag>
+      ),
     },
     {
-      accessorKey: "streamStatus",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="流状态" />,
-      cell: ({ row }) => {
-        const s = streamStatusMap[row.original.streamStatus ?? "unknown"] ?? { label: row.original.streamStatus, variant: "outline" as const };
-        return <Badge variant={s.variant}>{s.label}</Badge>;
+      dataIndex: "streamStatus",
+      title: "流状态",
+      search: false,
+      render: (_, record) => {
+        const s = streamStatusMap[record.streamStatus ?? "unknown"] ?? {
+          label: record.streamStatus ?? "未知",
+        };
+        return <Tag color={s.color}>{s.label}</Tag>;
       },
     },
     {
-      accessorKey: "updatedAt",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="更新时间" />,
-      cell: ({ row }) => new Date(row.original.updatedAt).toLocaleString("zh-CN"),
+      dataIndex: "updatedAt",
+      title: "更新时间",
+      search: false,
+      render: (_, record) =>
+        new Date(record.updatedAt).toLocaleString("zh-CN"),
     },
   ];
 }
@@ -87,89 +115,91 @@ function RawChannelsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [sourceId, setSourceId] = useState<string>("");
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
 
   const { data: sourcesData } = useQuery({
     queryKey: ["sources", "m3u"],
     queryFn: () =>
-      apiClient<{ success: boolean; data: PaginatedResponse<SourceVo> }>("/sources", {
-        params: { type: "m3u", pageSize: 100 },
-      }),
+      apiClient<{ success: boolean; data: PaginatedResponse<SourceVo> }>(
+        "/sources",
+        {
+          params: { type: "m3u", pageSize: 100 },
+        },
+      ),
   });
 
   const m3uSources = sourcesData?.data?.items ?? [];
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["raw-channels", page, pageSize, sourceId],
     queryFn: () =>
-      apiClient<{ success: boolean; data: PaginatedResponse<ChannelVo> }>("/channels", {
-        params: {
-          page,
-          pageSize,
-          sourceId: sourceId || undefined,
+      apiClient<{ success: boolean; data: PaginatedResponse<ChannelVo> }>(
+        "/channels",
+        {
+          params: {
+            page,
+            pageSize,
+            sourceId: sourceId || undefined,
+          },
         },
-      }),
+      ),
   });
 
   const channels = data?.data?.items ?? [];
-  const totalPages = data?.data?.totalPages ?? 0;
+  const total = data?.data?.total ?? 0;
 
   const refresh = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["raw-channels"] });
   }, [queryClient]);
 
-  const columns = useMemo(() => getColumns(), []);
+  const m3uSourceOptions = useMemo(
+    () => m3uSources.map((source) => ({ value: source.id, label: source.name })),
+    [m3uSources],
+  );
 
-  const table = useReactTable({
-    data: channels,
-    columns,
-    pageCount: totalPages,
-    state: {
-      columnVisibility,
-      pagination: { pageIndex: page - 1, pageSize },
-    },
-    manualPagination: true,
-    onPaginationChange: (updater) => {
-      const next = typeof updater === "function" ? updater({ pageIndex: page - 1, pageSize }) : updater;
-      setPage(next.pageIndex + 1);
-      setPageSize(next.pageSize);
-    },
-    onColumnVisibilityChange: setColumnVisibility,
-    getCoreRowModel: getCoreRowModel(),
-  });
+  const columns = useMemo(() => getColumns(m3uSourceOptions), [m3uSourceOptions]);
+
+  const handleSearch = useCallback((params: Record<string, unknown>) => {
+    setSourceId((params.sourceId as string) ?? "");
+    setPage(1);
+  }, []);
 
   return (
-    <>
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">原始频道</h1>
-        <Button variant="outline" size="icon" onClick={refresh} aria-label="刷新">
-          <RefreshCwIcon className="h-4 w-4" />
-        </Button>
-      </div>
+    <PageStack>
+      <PageHeader title="原始频道" />
 
-      <div className="flex items-center gap-2">
-        <Select
-          value={sourceId}
-          onValueChange={(v) => {
-            setSourceId(v === "all" ? "" : v);
-            setPage(1);
-          }}
-        >
-          <SelectTrigger className="w-[200px]" aria-label="M3U 源筛选">
-            <SelectValue placeholder="全部 M3U 源" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部 M3U 源</SelectItem>
-            {m3uSources.map((s) => (
-              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <DataTableViewOptions table={table} />
-      </div>
-
-      <DataTable table={table} columns={columns} loading={isLoading} />
-      <DataTablePagination table={table} />
-    </>
+      <ProTableWrapper<ChannelVo>
+        columns={columns}
+        dataSource={channels}
+        rowKey="id"
+        loading={isLoading}
+        error={error}
+        onRetry={() => void refetch()}
+        search={true}
+        onSearch={handleSearch}
+        toolBarRender={() => [
+          <Button
+            key="refresh"
+            icon={<ReloadOutlined />}
+            onClick={refresh}
+            aria-label="刷新"
+          >
+            刷新
+          </Button>,
+        ]}
+        columnsStateKey="raw-channels-columns"
+        pagination={{
+          current: page,
+          pageSize,
+          total,
+          showSizeChanger: true,
+          showQuickJumper: true,
+          showTotal: (t) => `共 ${t} 条`,
+          onChange: (nextPage, nextPageSize) => {
+            setPage(nextPage);
+            setPageSize(nextPageSize);
+          },
+        }}
+      />
+    </PageStack>
   );
 }

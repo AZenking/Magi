@@ -4,38 +4,46 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node scripts/generate-antd-css.mjs",
     "dev": "vite dev --port 3000",
+    "prebuild": "node scripts/generate-antd-css.mjs",
     "build": "vite build",
     "start": "node dist/server/server.js",
     "lint": "eslint src/",
+    "lint:antd": "antd lint src --format json",
+    "test": "vitest run",
     "clean": "rm -rf .output dist"
   },
   "dependencies": {
+    "@ant-design/cssinjs": "2.1.2",
+    "@ant-design/icons": "^6.3.2",
+    "@ant-design/pro-components": "3.1.14-5",
     "@magi/types": "workspace:*",
-    "@magi/ui": "workspace:*",
     "@magi/utils": "workspace:*",
-    "@tanstack/react-form": "^1.33.0",
     "@tanstack/react-query": "^5.101.0",
     "@tanstack/react-router": "^1.170.11",
     "@tanstack/react-start": "^1.168.19",
-    "@tanstack/react-table": "^8.21.3",
+    "antd": "^6.5.1",
     "better-auth": "^1.6.13",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "sonner": "^2.0.7",
     "zod": "^4.4.3",
     "zustand": "^5.0.5"
   },
   "devDependencies": {
+    "@ant-design/cli": "^6.5.2",
+    "@ant-design/static-style-extract": "2.1.0",
     "@magi/tsconfig": "workspace:*",
-    "@tailwindcss/vite": "^4.1.8",
     "@tanstack/react-query-devtools": "^5.101.0",
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^5.2.0",
-    "tailwindcss": "^4.1.8",
+    "jsdom": "^29.1.1",
     "typescript": "^5.8.3",
     "vite": "^7.0.0",
-    "vite-tsconfig-paths": "^5.1.4"
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^4.1.8"
   }
 }

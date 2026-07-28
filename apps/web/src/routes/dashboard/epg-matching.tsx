@@ -1,25 +1,102 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, useCallback } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Alert,
+  Button,
+  Card,
+  Empty,
+  Flex,
+  Modal,
+  Result,
+  Select,
+  Space,
+  Tag,
+  Typography,
+  theme,
+} from "antd";
+import { ProList } from "@ant-design/pro-components";
+import {
+  LinkOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  ThunderboltOutlined,
+} from "@ant-design/icons";
+import { Link } from "@tanstack/react-router";
 import type { SourceVo } from "@magi/types";
 import { apiClient } from "@/services/api";
-import { toast } from "sonner";
-import { Button } from "@magi/ui/components/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@magi/ui/components/card";
-import { Badge } from "@magi/ui/components/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@magi/ui/components/select";
-import { ZapIcon } from "lucide-react";
+import { useFeedback } from "@/lib/feedback";
+import { PageHeader, PageStack } from "@/components/page-layout";
+import { OperationPreview } from "@/features/dashboard/operations/operation-preview";
+import { usePreparePreview, useChangeSet } from "@/features/dashboard/operations/operation-queries";
+import { EpgMatchSummary } from "@/features/dashboard/epg/epg-match-summary";
+import { EpgMatchCandidates } from "@/features/dashboard/epg/epg-match-candidates";
+import { EpgMatchBatchActions } from "@/features/dashboard/epg/epg-match-batch-actions";
+import { InlineSkeleton } from "@/components/page-skeleton";
 
 export const Route = createFileRoute("/dashboard/epg-matching")({
   component: EpgMatchingPage,
 });
 
-function EpgMatchingPage() {
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const [selectedSourceId, setSelectedSourceId] = useState<string>("");
+/** T074: human-readable blocker hints with the matching repair action. */
+function blockerHint(code: string): string {
+  switch (code) {
+    case "xmltv-source-not-found":
+      return "来源不存在，请添加 XMLTV 来源。";
+    case "xmltv-source-disabled":
+      return "来源已禁用，请启用后再匹配。";
+    case "xmltv-not-synced":
+      return "来源从未同步或上次同步失败，请先执行同步。";
+    case "xmltv-data-stale":
+      return "数据已过期，请重新同步。";
+    default:
+      return code;
+  }
+}
 
-  const { data: sourcesData, isLoading } = useQuery({
+/**
+ * EpgMatchWorkbench (T072) — composes the EPG-specific summary, batch actions
+ * and candidate detail on top of the generic OperationPreview so the operator
+ * can classify, resolve conflicts and apply in one surface.
+ */
+function EpgMatchWorkbench({
+  changeSetId,
+  onClose,
+  onApplied,
+}: {
+  changeSetId: string;
+  onClose: () => void;
+  onApplied: (taskId: string) => void;
+}) {
+  const { token } = theme.useToken();
+  const { data } = useChangeSet(changeSetId);
+  const version = data?.version ?? 1;
+
+  return (
+    <Flex vertical gap={token.marginMD}>
+      <EpgMatchSummary summary={data?.summary as Record<string, number> | undefined} />
+      {data?.status === "ready" && (
+        <EpgMatchBatchActions changeSetId={changeSetId} version={version} />
+      )}
+      <EpgMatchCandidates changeSetId={changeSetId} />
+      <OperationPreview changeSetId={changeSetId} onClose={onClose} onApplied={onApplied} />
+    </Flex>
+  );
+}
+
+function EpgMatchingPage() {
+  const { message, notification } = useFeedback();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { token } = theme.useToken();
+  const [selectedSourceId, setSelectedSourceId] = useState("");
+
+  const {
+    data: sourcesData,
+    isLoading,
+    error,
+    refetch,
+  } = useQuery({
     queryKey: ["xmltv-sources"],
     queryFn: () =>
       apiClient<{ success: boolean; data: { items: SourceVo[] } }>("/sources", {
@@ -29,133 +106,253 @@ function EpgMatchingPage() {
 
   const xmltvSources = sourcesData?.data?.items ?? [];
 
-  const matchMutation = useMutation({
-    mutationFn: (sourceId: string) =>
-      apiClient<{ success: boolean; data: { taskId: string } }>(`/epg/match/${sourceId}`, {
-        method: "POST",
-      }),
-    onSuccess: (data) => {
-      const taskId = data.data?.taskId;
-      toast.success("EPG 匹配任务已创建", {
-        description: taskId ? `任务 ${taskId.slice(0, 8)}... 已提交，正在后台处理` : "任务已提交",
-        action: taskId
-          ? {
-              label: "查看任务",
-              onClick: () => navigate({ to: "/dashboard/tasks/$taskId", params: { taskId } }),
-            }
-          : undefined,
-      });
-      queryClient.invalidateQueries({ queryKey: ["xmltv-sources"] });
-    },
-    onError: (err) => {
-      toast.error("EPG 匹配失败", {
-        description: err instanceof Error ? err.message : "请稍后重试",
-      });
-    },
+  // T070/T074: XMLTV readiness for the selected source — surfacing blockers
+  // (disabled/never-synced/failed/stale) with direct repair links before the
+  // operator triggers a match (contracts/common.md SourceReadiness).
+  const {
+    data: readinessData,
+    isLoading: readinessLoading,
+  } = useQuery({
+    queryKey: ["xmltv-readiness", selectedSourceId],
+    queryFn: () =>
+      apiClient<{ success: boolean; data: { canSync: boolean; canMatch: boolean; blockerCodes: string[] } }>(
+        `/epg/sources/${selectedSourceId}/readiness`,
+      ),
+    enabled: !!selectedSourceId,
   });
+  const readiness = readinessData?.data;
 
-  const handleMatch = useCallback(() => {
-    if (!selectedSourceId) {
-      toast.error("请先选择一个 XMLTV 源");
-      return;
-    }
-    matchMutation.mutate(selectedSourceId);
-  }, [selectedSourceId, matchMutation]);
+  // Safe Operations (T047): EPG match goes preview → confirm → task (FR-001).
+  const [previewChangeSetId, setPreviewChangeSetId] = useState<string | null>(null);
+  const preparePreview = usePreparePreview();
+
+  const handleMatch = useCallback(
+    (sourceId: string) => {
+      if (!sourceId) {
+        message.error("请先选择一个 XMLTV 源");
+        return;
+      }
+      preparePreview.mutate(
+        {
+          kind: "epg_match",
+          scope: { type: "source", id: sourceId },
+          parameters: { sourceId },
+          expectedVersions: {},
+        },
+        {
+          onSuccess: (result) => {
+            setPreviewChangeSetId(result.changeSet.id);
+          },
+          onError: (mutationError) => {
+            message.error(
+              `创建匹配预览失败：${mutationError instanceof Error ? mutationError.message : "请稍后重试"}`,
+            );
+          },
+        },
+      );
+    },
+    [message, preparePreview],
+  );
 
   return (
-    <>
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">EPG 匹配</h1>
-      </div>
+    <PageStack>
+      <PageHeader title="EPG 匹配" />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>执行 EPG 匹配</CardTitle>
-          <CardDescription>
-            选择一个 XMLTV 源，将其频道数据与已有频道进行自动匹配。系统会根据 tvg-id、频道名称等多维度进行匹配。
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-end gap-4">
-            <div className="flex-1 max-w-sm">
-              <label className="text-sm font-medium mb-2 block">XMLTV 源</label>
-              <Select value={selectedSourceId} onValueChange={setSelectedSourceId}>
-                <SelectTrigger aria-label="选择 XMLTV 源">
-                  <SelectValue placeholder={isLoading ? "加载中..." : "选择 XMLTV 源"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {xmltvSources.map((source) => (
-                    <SelectItem key={source.id} value={source.id}>
-                      {source.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button
-              onClick={handleMatch}
-              disabled={!selectedSourceId || matchMutation.isPending}
-            >
-              <ZapIcon className="mr-2 h-4 w-4" aria-hidden="true" />
-              {matchMutation.isPending ? "提交中..." : "开始匹配"}
-            </Button>
+      <Card title="执行 EPG 匹配">
+        <Typography.Paragraph type="secondary">
+          选择一个 XMLTV 源，将其频道数据与已有频道进行自动匹配。系统会根据
+          tvg-id、频道名称等多维度进行匹配。
+        </Typography.Paragraph>
+        <Flex align="flex-end" wrap gap={token.marginMD}>
+          <div style={{ flex: 1, maxWidth: 400 }}>
+            <Typography.Text strong>XMLTV 源</Typography.Text>
+            <Select
+              value={selectedSourceId || undefined}
+              onChange={setSelectedSourceId}
+              loading={isLoading}
+              placeholder={isLoading ? "加载中…" : "选择 XMLTV 源"}
+              options={xmltvSources.map((source) => ({
+                value: source.id,
+                label: source.name,
+              }))}
+              aria-label="选择 XMLTV 源"
+              style={{ width: "100%", marginTop: token.marginXS }}
+            />
           </div>
-        </CardContent>
+          <Button
+            type="primary"
+            onClick={() => handleMatch(selectedSourceId)}
+            disabled={!selectedSourceId || !readiness?.canMatch}
+            loading={preparePreview.isPending}
+            icon={<ThunderboltOutlined />}
+          >
+            预览匹配
+          </Button>
+        </Flex>
+
+        {/* T070/T074: readiness blockers + direct repair links. */}
+        {selectedSourceId && readinessLoading && <InlineSkeleton />}
+        {selectedSourceId && readiness && !readiness.canMatch && (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginTop: token.marginMD }}
+            title="该来源尚不可用于匹配"
+            description={
+              <Space orientation="vertical" size={token.marginXS}>
+                {readiness.blockerCodes.map((code) => (
+                  <Typography.Text key={code}>
+                    {blockerHint(code)}
+                  </Typography.Text>
+                ))}
+                <Link to="/dashboard/sources/xmltv">
+                  <Typography.Link>
+                    前往 EPG 源管理修复 <LinkOutlined />
+                  </Typography.Link>
+                </Link>
+              </Space>
+            }
+          />
+        )}
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>XMLTV 源列表</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {xmltvSources.length === 0 && !isLoading ? (
-            <p className="text-sm text-muted-foreground">暂无 XMLTV 源。请先在 EPG 源管理中添加。</p>
+      <ProList<SourceVo>
+        rowKey="id"
+        headerTitle="XMLTV 源列表"
+        toolBarRender={() => [
+          <Link key="add" to="/dashboard/sources/xmltv">
+            <Button type="primary" icon={<PlusOutlined />}>
+              添加 XMLTV 源
+            </Button>
+          </Link>,
+          <Button
+            key="refresh"
+            icon={<ReloadOutlined />}
+            onClick={() => void refetch()}
+          >
+            刷新
+          </Button>,
+        ]}
+        dataSource={xmltvSources}
+        loading={isLoading}
+        split
+        locale={{
+          emptyText: error ? (
+            <Result
+              status="error"
+              title="XMLTV 源加载失败"
+              subTitle={error.message}
+              extra={<Button onClick={() => void refetch()}>重试</Button>}
+            />
           ) : (
-            <div className="space-y-3">
-              {xmltvSources.map((source) => (
-                <div
-                  key={source.id}
-                  className="flex items-center justify-between rounded-lg border p-3"
+            <Empty description="暂无 XMLTV 源">
+              <Link to="/dashboard/sources/xmltv">
+                <Button type="primary" icon={<PlusOutlined />}>
+                  添加 XMLTV 源
+                </Button>
+              </Link>
+            </Empty>
+          ),
+        }}
+        metas={{
+          title: {
+            render: (_, source) => (
+              <Flex vertical style={{ minWidth: 0 }}>
+                <Typography.Text strong>{source.name}</Typography.Text>
+                <Typography.Paragraph
+                  type="secondary"
+                  ellipsis
+                  style={{ margin: 0, maxWidth: 400 }}
                 >
-                  <div className="flex items-center gap-3">
-                    <div>
-                      <p className="font-medium">{source.name}</p>
-                      <p className="text-sm text-muted-foreground truncate max-w-[400px]">{source.url}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={source.enabled ? "default" : "secondary"}>
-                      {source.enabled ? "启用" : "禁用"}
-                    </Badge>
-                    {source.lastSyncStatus && (
-                      <Badge variant={source.lastSyncStatus === "success" ? "default" : "destructive"}>
-                        {source.lastSyncStatus === "success" ? "已同步" : "同步失败"}
-                      </Badge>
-                    )}
-                    {source.lastSyncAt && (
-                      <span className="text-xs text-muted-foreground">
-                        {new Intl.DateTimeFormat("zh-CN", { dateStyle: "short", timeStyle: "short" }).format(new Date(source.lastSyncAt))}
-                      </span>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedSourceId(source.id);
-                        matchMutation.mutate(source.id);
-                      }}
-                      disabled={matchMutation.isPending}
-                    >
-                      <ZapIcon className="mr-1 h-3 w-3" aria-hidden="true" />
-                      匹配
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </>
+                  {source.url}
+                </Typography.Paragraph>
+              </Flex>
+            ),
+          },
+          description: {
+            render: (_, source) => (
+              <Flex align="center" wrap gap={token.marginXS}>
+                <Tag color={source.enabled ? "blue" : undefined}>
+                  {source.enabled ? "启用" : "禁用"}
+                </Tag>
+                {source.lastSyncStatus && (
+                  <Tag
+                    color={
+                      source.lastSyncStatus === "success" ? "green" : "red"
+                    }
+                  >
+                    {source.lastSyncStatus === "success"
+                      ? "已同步"
+                      : "同步失败"}
+                  </Tag>
+                )}
+                {source.lastSyncAt && (
+                  <Typography.Text type="secondary">
+                    {new Intl.DateTimeFormat("zh-CN", {
+                      dateStyle: "short",
+                      timeStyle: "short",
+                    }).format(new Date(source.lastSyncAt))}
+                  </Typography.Text>
+                )}
+              </Flex>
+            ),
+          },
+          actions: {
+            render: (_, source) => [
+              <Button
+                key="match"
+                size="small"
+                onClick={() => {
+                  setSelectedSourceId(source.id);
+                  handleMatch(source.id);
+                }}
+                loading={
+                  preparePreview.isPending && selectedSourceId === source.id
+                }
+              >
+                预览匹配
+              </Button>,
+            ],
+          },
+        }}
+      />
+
+      <Modal
+        open={!!previewChangeSetId}
+        title="EPG 匹配工作台"
+        onCancel={() => setPreviewChangeSetId(null)}
+        footer={null}
+        width={960}
+        mask={{ closable: false }}
+        destroyOnHidden
+      >
+        {previewChangeSetId && (
+          <EpgMatchWorkbench
+            changeSetId={previewChangeSetId}
+            onClose={() => {
+              setPreviewChangeSetId(null);
+              void queryClient.invalidateQueries({ queryKey: ["xmltv-sources"] });
+            }}
+            onApplied={(taskId) => {
+              notification.success({
+                title: "EPG 匹配已提交应用",
+                description: "应用任务执行中，完成后结果自动刷新",
+                actions: (
+                  <Button
+                    type="link"
+                    size="small"
+                    onClick={() =>
+                      navigate({ to: "/dashboard/tasks/$taskId", params: { taskId } })
+                    }
+                  >
+                    查看任务
+                  </Button>
+                ),
+              });
+            }}
+          />
+        )}
+      </Modal>
+    </PageStack>
   );
 }

@@ -6,7 +6,7 @@
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | TanStack Start (Vite), TanStack Router, React 19, TailwindCSS 4, shadcn/ui, TanStack Query, TanStack Table, Zustand |
+| Frontend | TanStack Start (Vite), TanStack Router, React 19, antd v6, TanStack Query, TanStack Table, Zustand |
 | Auth | better-auth (邮箱密码) |
 | Backend | NestJS, Drizzle ORM, PostgreSQL, Redis, BullMQ, Zod |
 | Infra | Docker, Docker Compose, Turborepo, pnpm |
@@ -22,7 +22,7 @@ magi/
 │   └── tv/           # Android TV (Phase 2，尚未创建)
 ├── packages/
 │   ├── types/        # 共享类型 + Zod Schema
-│   ├── ui/           # 共享 UI 组件 (shadcn/ui)
+│   ├── ui/           # 共享 UI 组件 (antd v6)
 │   ├── utils/        # 公共工具库 (date/logger/pagination)
 │   ├── backend-core/ # API 与 Worker 共享层 (schema/parsers/epg-matcher)
 │   └── tsconfig/     # 共享 TS 配置

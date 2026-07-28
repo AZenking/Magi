@@ -82,4 +82,62 @@ export class SyncLogRepository implements ITaskRepository {
     const [row] = await db.update(syncLogs).set(data).where(eq(syncLogs.id, id)).returning();
     return row ? toDomain(row) : null;
   }
+
+  // --- Safe Operations (T022 ports). T024 implementations. ---
+  async findByScope(scopeType: string, scopeId: string): Promise<Task[]> {
+    const rows = await db
+      .select()
+      .from(syncLogs)
+      .where(and(eq(syncLogs.sourceType, scopeType), eq(syncLogs.sourceId, scopeId)))
+      .orderBy(desc(syncLogs.createdAt));
+    return rows.map(toDomain);
+  }
+  async findActiveByScope(scopeType: string, scopeId: string): Promise<Task | null> {
+    const [row] = await db
+      .select()
+      .from(syncLogs)
+      .where(
+        and(
+          eq(syncLogs.sourceType, scopeType),
+          eq(syncLogs.sourceId, scopeId),
+          inArray(syncLogs.status, ["pending", "running"] as TaskStatus[]),
+        ),
+      )
+      .orderBy(desc(syncLogs.createdAt))
+      .limit(1);
+    return row ? toDomain(row) : null;
+  }
+  async findByRoot(_rootTaskId: string): Promise<Task[]> {
+    // rootTaskId is not yet a column on sync_logs (ships with the full task-model
+    // expand). Until then a root resolves to itself — return the single task.
+    const [row] = await db.select().from(syncLogs).where(eq(syncLogs.id, _rootTaskId)).limit(1);
+    return row ? [toDomain(row)] : [];
+  }
+  async findSummary(): Promise<{ runningCount: number; failedCount: number; items: Task[] }> {
+    // Legacy status values on sync_logs: running/failed/success/cancelled/pending.
+    const [counts, recent] = await Promise.all([
+      db
+        .select({ status: syncLogs.status, count: sql<number>`count(*)::int` })
+        .from(syncLogs)
+        .where(inArray(syncLogs.status, ["pending", "running", "failed"] as TaskStatus[]))
+        .groupBy(syncLogs.status),
+      db
+        .select()
+        .from(syncLogs)
+        .orderBy(desc(syncLogs.createdAt))
+        .limit(10),
+    ]);
+    const map = new Map(counts.map((c) => [c.status, c.count]));
+    const runningCount = (map.get("running") ?? 0) + (map.get("pending") ?? 0);
+    const failedCount = map.get("failed") ?? 0;
+    return { runningCount, failedCount, items: recent.map(toDomain) };
+  }
+  async updateSafeOps(id: string, data: Partial<Task>): Promise<Task | null> {
+    const allowed = (() => {
+      const { ...rest } = data;
+      return rest;
+    })();
+    const [row] = await db.update(syncLogs).set(allowed).where(eq(syncLogs.id, id)).returning();
+    return row ? toDomain(row) : null;
+  }
 }

@@ -29,5 +29,9 @@ export const xmltvSources = pgTable("xmltv_sources", {
   checkStatus: varchar("check_status", { length: 20 }),
   checkResponseTime: integer("check_response_time"),
   checkError: text("check_error"),
+  // --- Safe Operations expand columns (T017). ---
+  freshnessThresholdMinutes: integer("freshness_threshold_minutes").notNull().default(1440),
+  lastContentFingerprint: varchar("last_content_fingerprint", { length: 80 }),
+  version: integer("version").notNull().default(1),
   ...timestamps,
 });

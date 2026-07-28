@@ -1,35 +1,47 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { Link } from "@tanstack/react-router";
-import { Button } from "@magi/ui/components/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@magi/ui/components/card";
-import { Badge } from "@magi/ui/components/badge";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { Button, Card, Flex, Tag, Typography, theme } from "antd";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
 });
 
 function HomePage() {
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-8">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold tracking-tight">MAGI</h1>
-        <p className="mt-2 text-muted-foreground">Personal EPG + Live TV Platform</p>
-      </div>
+  const { token } = theme.useToken();
 
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+  return (
+    <Flex
+      component="main"
+      vertical
+      align="center"
+      justify="center"
+      gap={token.marginLG}
+      style={{ minHeight: "100vh", padding: token.paddingLG }}
+    >
+      <Flex vertical align="center" gap={token.marginXS}>
+        <Typography.Title style={{ margin: 0 }}>MAGI</Typography.Title>
+        <Typography.Text type="secondary">
+          Personal EPG + Live TV Platform
+        </Typography.Text>
+      </Flex>
+
+      <Card
+        title={
+          <Flex align="center" gap={token.marginXS}>
             Quick Start
-            <Badge variant="secondary">v0.1</Badge>
-          </CardTitle>
-          <CardDescription>MAGI 管理后台正在建设中</CardDescription>
-        </CardHeader>
-        <CardContent className="flex gap-2">
+            <Tag color="blue">v0.1</Tag>
+          </Flex>
+        }
+        extra={<Typography.Text type="secondary">管理后台</Typography.Text>}
+      >
+        <Flex vertical gap={token.marginMD}>
+          <Typography.Text type="secondary">
+            进入控制台管理节目单与直播源。
+          </Typography.Text>
           <Link to="/dashboard">
-            <Button>Get Started</Button>
+            <Button type="primary">开始使用</Button>
           </Link>
-        </CardContent>
+        </Flex>
       </Card>
-    </main>
+    </Flex>
   );
 }

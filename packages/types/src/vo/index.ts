@@ -58,6 +58,26 @@ export interface CanonicalChannelVo {
   primaryStreamId: string | null;
   createdAt: string;
   updatedAt: string;
+  // --- Safe Operations (T057): lifecycle read model (contracts/channels.md).
+  // Optional during the expand phase; present once the API maps them.
+  lifecycle?: "active" | "hidden" | "disabled" | "trashed";
+  lifecycleReason?: string | null;
+  trashedAt?: string | null;
+  purgeAfter?: string | null;
+  version?: number;
+  epgBinding?: EpgBindingVo | null;
+}
+
+export interface EpgBindingVo {
+  xmltvSourceId: string | null;
+  xmltvSourceName: string | null;
+  xmltvChannelId: string | null;
+  outputChannelId: string;
+  status: "matched_manual" | "matched_auto" | "unmatched" | "conflict";
+  matchType: string | null;
+  locked: boolean;
+  version: number;
+  sourceStale: boolean;
 }
 
 export interface UpdateOutputChannel {
@@ -130,6 +150,30 @@ export interface ProgrammeVo {
   startAt: string;
   stopAt: string;
   createdAt: string;
+}
+
+export type OutputGuideAnomaly =
+  | "unmatched"
+  | "conflict"
+  | "source_stale"
+  | "empty"
+  | "gap"
+  | "overlap";
+
+export interface OutputGuideChannelVo {
+  channel: CanonicalChannelVo;
+  programmes: ProgrammeVo[];
+  anomalies: OutputGuideAnomaly[];
+}
+
+export interface OutputGuideVo {
+  items: OutputGuideChannelVo[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  from: string;
+  to: string;
 }
 
 export interface TaskJobDetailVo {

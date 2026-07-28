@@ -56,7 +56,7 @@ export async function processM3uSync(sourceId: string, progress?: SyncProgress):
     await tx.delete(rawM3uChannels).where(eq(rawM3uChannels.sourceId, sourceId));
 
     const rawResults = rawChannelData.length > 0
-      ? await tx.insert(rawM3uChannels).values(rawChannelData).returning()
+      ? await tx.insert(rawM3uChannels).values(rawChannelData).onConflictDoNothing().returning()
       : [];
 
     await tx.delete(channels).where(eq(channels.m3uSourceId, sourceId));

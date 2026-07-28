@@ -1,16 +1,24 @@
-import { type ColumnDef } from "@tanstack/react-table";
+import type { ProColumns } from "@ant-design/pro-components";
 import type { TaskVo } from "@magi/types";
-import { Badge } from "@magi/ui/components/badge";
-import { Button } from "@magi/ui/components/button";
-import { DataTableColumnHeader } from "@magi/ui/components/data-table-column-header";
-import { RotateCwIcon, XIcon } from "lucide-react";
+import { Button, Progress, Tag, Typography } from "antd";
+import { CloseOutlined, ReloadOutlined } from "@ant-design/icons";
 
-const statusMap: Record<TaskVo["status"], { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  pending: { label: "等待中", variant: "outline" },
-  running: { label: "运行中", variant: "default" },
-  success: { label: "成功", variant: "secondary" },
-  failed: { label: "失败", variant: "destructive" },
-  cancelled: { label: "已取消", variant: "outline" },
+const statusMap: Record<TaskVo["status"], { label: string; color?: string }> = {
+  pending: { label: "等待中" },
+  running: { label: "运行中", color: "processing" },
+  success: { label: "成功", color: "success" },
+  failed: { label: "失败", color: "error" },
+  cancelled: { label: "已取消" },
+};
+
+// ProTable QueryFilter valueEnum for the status column. Mirrors `statusMap`
+// labels so the select options match the rendered tags.
+export const STATUS_VALUE_ENUM = {
+  pending: { text: "等待中" },
+  running: { text: "运行中" },
+  success: { text: "成功" },
+  failed: { text: "失败" },
+  cancelled: { text: "已取消" },
 };
 
 const taskTypeMap: Record<string, string> = {
@@ -25,66 +33,96 @@ const taskTypeMap: Record<string, string> = {
 
 const queueNameMap: Record<string, string> = {
   "source-sync": "源同步",
-  "epg": "EPG",
+  epg: "EPG",
   "health-check": "健康检查",
 };
 
-const dtf = new Intl.DateTimeFormat("zh-CN", { dateStyle: "short", timeStyle: "medium" });
+// ProTable QueryFilter valueEnum for the queueName column. Mirrors
+// `queueNameMap` labels so the select options match the rendered text.
+export const QUEUE_NAME_VALUE_ENUM = {
+  "source-sync": { text: "源同步" },
+  epg: { text: "EPG" },
+  "health-check": { text: "健康检查" },
+};
+
+const dtf = new Intl.DateTimeFormat("zh-CN", {
+  dateStyle: "short",
+  timeStyle: "medium",
+});
+
+/**
+ * Stable target ref used to scope per-row pending state. The list endpoint
+ * returns the legacy `TaskVo` shape (no targetType/targetId pair on every
+ * row), so we derive a target from sourceType/sourceId when present and fall
+ * back to the task id itself. Combined with the task-registry, this keeps
+ * unrelated rows from showing pending (FR-027 / contracts/tasks.md).
+ */
+export interface TaskTargetRef {
+  taskId: string;
+  targetType: string;
+  targetId: string;
+}
 
 interface ColumnContext {
   onRetry?: (task: TaskVo) => void;
   onCancel?: (task: TaskVo) => void;
-  retryingId?: string | null;
+  /** Returns true if the row's task+target currently has a mutation in flight. */
+  isPending?: (task: TaskVo) => boolean;
 }
 
-export function getTaskColumns(ctx?: ColumnContext): ColumnDef<TaskVo>[] {
+export function getTaskColumns(ctx?: ColumnContext): ProColumns<TaskVo>[] {
   return [
     {
-      accessorKey: "taskType",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="任务类型" />,
-      cell: ({ row }) => taskTypeMap[row.original.taskType] ?? row.original.taskType,
+      title: "任务类型",
+      dataIndex: "taskType",
+      search: false,
+      ellipsis: true,
+      render: (_, record) => taskTypeMap[record.taskType] ?? record.taskType,
     },
     {
-      accessorKey: "queueName",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="队列" />,
-      cell: ({ row }) => queueNameMap[row.original.queueName ?? ""] ?? row.original.queueName ?? "-",
+      title: "队列",
+      dataIndex: "queueName",
+      valueType: "select",
+      valueEnum: QUEUE_NAME_VALUE_ENUM,
+      render: (_, record) =>
+        queueNameMap[record.queueName ?? ""] ?? record.queueName ?? "-",
     },
     {
-      accessorKey: "status",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="状态" />,
-      cell: ({ row }) => {
-        const s = statusMap[row.original.status];
-        if (!s) return <Badge variant="outline">{row.original.status}</Badge>;
-        return <Badge variant={s.variant}>{s.label}</Badge>;
+      title: "状态",
+      dataIndex: "status",
+      valueType: "select",
+      valueEnum: STATUS_VALUE_ENUM,
+      render: (_, record) => {
+        const s = statusMap[record.status];
+        if (!s) return <Tag>{record.status}</Tag>;
+        return <Tag color={s.color}>{s.label}</Tag>;
       },
     },
     {
-      accessorKey: "progress",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="进度" />,
-      cell: ({ row }) => {
-        const p = row.original.progress;
-        if (row.original.status === "success") return "100%";
-        if (row.original.status === "pending" || row.original.status === "cancelled") return "-";
+      title: "进度",
+      dataIndex: "progress",
+      search: false,
+      render: (_, record) => {
+        if (record.status === "success") return "100%";
+        if (record.status === "pending" || record.status === "cancelled")
+          return "-";
         return (
-          <div className="flex items-center gap-2">
-            <div className="h-2 w-16 rounded-full bg-muted overflow-hidden">
-              <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${p}%` }} />
-            </div>
-            <span className="text-xs text-muted-foreground">{p}%</span>
-          </div>
+          <Progress percent={record.progress} size="small" style={{ minWidth: 104 }} />
         );
       },
     },
     {
-      accessorKey: "startedAt",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="开始时间" />,
-      cell: ({ row }) => dtf.format(new Date(row.original.startedAt)),
+      title: "开始时间",
+      dataIndex: "startedAt",
+      search: false,
+      render: (_, record) => dtf.format(new Date(record.startedAt)),
     },
     {
-      id: "duration",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="耗时" />,
-      cell: ({ row }) => {
-        const { startedAt, finishedAt, status } = row.original;
+      title: "耗时",
+      dataIndex: "duration",
+      search: false,
+      render: (_, record) => {
+        const { startedAt, finishedAt, status } = record;
         if (status === "pending") return "-";
         const end = finishedAt ? new Date(finishedAt) : new Date();
         const ms = end.getTime() - new Date(startedAt).getTime();
@@ -93,62 +131,78 @@ export function getTaskColumns(ctx?: ColumnContext): ColumnDef<TaskVo>[] {
       },
     },
     {
-      accessorKey: "attemptsMade",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="重试" />,
-      cell: ({ row }) => {
-        const a = row.original.attemptsMade;
-        return a > 0 ? <span className="text-orange-500">{a}</span> : "-";
+      title: "重试",
+      dataIndex: "attemptsMade",
+      search: false,
+      render: (_, record) => {
+        const a = record.attemptsMade;
+        return a > 0 ? <Tag color="warning">{a}</Tag> : "-";
       },
     },
     {
-      accessorKey: "importedCount",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="导入" />,
-      cell: ({ row }) => row.original.importedCount || "-",
+      title: "导入",
+      dataIndex: "importedCount",
+      search: false,
+      render: (_, record) => record.importedCount || "-",
     },
     {
-      accessorKey: "error",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="错误" />,
-      cell: ({ row }) => {
-        const err = row.original.error;
-        if (!err) return "-";
+      title: "错误",
+      dataIndex: "error",
+      search: false,
+      ellipsis: true,
+      width: 200,
+      render: (_, record) => {
+        if (!record.error) return "-";
         return (
-          <span className="max-w-[200px] truncate block text-destructive" title={err}>
-            {err}
-          </span>
+          <Typography.Text
+            type="danger"
+            ellipsis={{ tooltip: record.error }}
+            style={{ maxWidth: 200 }}
+          >
+            {record.error}
+          </Typography.Text>
         );
       },
     },
     {
-      id: "actions",
-      header: () => null,
-      cell: ({ row }) => {
-        const task = row.original;
-        if (task.status === "failed" && ctx?.onRetry) {
-          return (
+      title: "操作",
+      valueType: "option",
+      hideInSetting: true,
+      fixed: "right",
+      width: 80,
+      render: (_, record) => {
+        const pending = ctx?.isPending?.(record) ?? false;
+        if (record.status === "failed" && ctx?.onRetry) {
+          return [
             <Button
-              variant="ghost"
-              size="icon"
-              onClick={(e) => { e.stopPropagation(); ctx.onRetry!(task); }}
-              disabled={ctx.retryingId === task.id}
+              key="retry"
+              type="text"
+              icon={<ReloadOutlined spin={pending} />}
+              onClick={(e) => {
+                e.stopPropagation();
+                ctx.onRetry!(record);
+              }}
+              disabled={pending}
               aria-label="重试"
-            >
-              <RotateCwIcon className="h-4 w-4" />
-            </Button>
-          );
+            />,
+          ];
         }
-        if (task.status === "pending" && ctx?.onCancel) {
-          return (
+        if (record.status === "pending" && ctx?.onCancel) {
+          return [
             <Button
-              variant="ghost"
-              size="icon"
-              onClick={(e) => { e.stopPropagation(); ctx.onCancel!(task); }}
+              key="cancel"
+              type="text"
+              icon={<CloseOutlined />}
+              onClick={(e) => {
+                e.stopPropagation();
+                ctx.onCancel!(record);
+              }}
+              disabled={pending}
               aria-label="取消"
-            >
-              <XIcon className="h-4 w-4" />
-            </Button>
-          );
+            />,
+          ];
         }
-        return null;
+        return [];
       },
     },
   ];

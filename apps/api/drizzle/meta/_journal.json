@@ -5,57 +5,22 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1780390965726,
-      "tag": "0000_true_the_initiative",
+      "when": 1785140779637,
+      "tag": "0000_baseline_pre_safe_operations",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1749150000000,
-      "tag": "0001_add_sync_logs_table",
+      "when": 1785140789165,
+      "tag": "0001_amazing_xorn",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1749200000000,
-      "tag": "0002_add_bullmq_task_fields",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1749250000000,
-      "tag": "0003_add_active_task_unique_index",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1749300000000,
-      "tag": "0004_alter_channel_streams_table",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1749350000000,
-      "tag": "0005_alter_channel_overrides_table",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1749400000000,
-      "tag": "0006_alter_sync_logs_source_id_nullable",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1749450000000,
-      "tag": "0007_add_stream_quality_fields",
+      "when": 1785227366939,
+      "tag": "0002_tense_zodiak",
       "breakpoints": true
     }
   ]

@@ -6,8 +6,11 @@ import { SourceModule } from "./source/source.module";
 import { OutputModule } from "./output/output.module";
 import { EpgModule } from "./epg/epg.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
+import { OperationModule } from "./operation/operation.module";
+import { BackupAuditModule } from "./backup/backup.module";
+import { AuditModule } from "./audit/audit.module";
 
 @Module({
-  imports: [DashboardModule, ChannelModule, ProgrammeModule, TaskModule, SourceModule, OutputModule, EpgModule],
+  imports: [AuditModule, DashboardModule, ChannelModule, ProgrammeModule, TaskModule, SourceModule, OutputModule, EpgModule, OperationModule, BackupAuditModule],
 })
 export class HttpModule {}

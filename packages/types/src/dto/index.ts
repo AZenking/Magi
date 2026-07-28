@@ -71,3 +71,17 @@ export const UpdateSourceSchema = z.object({
   allowFallback: z.boolean().optional(),
 });
 export type UpdateSource = z.infer<typeof UpdateSourceSchema>;
+
+// Safe Operations feature DTOs (T006 / T007 / T008 / T009).
+// Each module owns its own schemas; this barrel is the single import surface
+// consumed by API / Worker / Web. No parallel handwritten wire types allowed
+// (constitution V).
+export * from "./operation";
+export * from "./channel-operations";
+export * from "./task-operations";
+export * from "./schedule";
+export * from "./audit";
+export * from "./backup";
+export * from "./dashboard-operations";
+export * from "./problem-details";
+export * from "./concurrency";

@@ -42,11 +42,10 @@ Worker Async Processing
 ## Frontend
 
 ```txt
-Next.js 15
+TanStack Start (Vite)
 React 19
 TypeScript
-TailwindCSS
-shadcn/ui
+antd v6
 TanStack Query
 TanStack Table
 TanStack Virtual

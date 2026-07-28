@@ -12,13 +12,17 @@ export class GenerateXmltvOutputUseCase {
   ) {}
 
   async execute(): Promise<string> {
+    // T058: lifecycle-aware output exclusion (FR-012).
     const { items: channels } = await this.canonicalRepo.findAll({
       page: 1,
       pageSize: 10000,
+      lifecycle: "active",
       hidden: false,
     });
 
-    const withEpg = channels.filter((c) => c.epgChannelId);
+    const withEpg = channels.filter(
+      (c) => c.epgChannelId && !c.hidden && !c.disabled && (c.lifecycle ?? "active") === "active",
+    );
     const lines: string[] = [`<?xml version="1.0" encoding="UTF-8"?>`, `<tv>`];
 
     for (const ch of withEpg) {

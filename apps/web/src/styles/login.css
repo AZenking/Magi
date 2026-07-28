@@ -1,0 +1,151 @@
+.magi-auth-layout {
+  min-height: 100svh;
+}
+
+.magi-auth-sider {
+  position: relative;
+  overflow: hidden;
+}
+
+.magi-auth-sider::after {
+  position: absolute;
+  right: -110px;
+  bottom: 80px;
+  width: 260px;
+  height: 260px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 42px rgba(255, 255, 255, 0.025),
+    0 0 0 84px rgba(255, 255, 255, 0.018);
+  content: "";
+  pointer-events: none;
+}
+
+.magi-auth-sider__inner {
+  position: relative;
+  z-index: 1;
+  min-height: 100svh;
+  padding: 28px 32px 24px;
+}
+
+.magi-auth-logo {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.magi-auth-sider__content {
+  margin-block: auto;
+  padding-block: 48px;
+}
+
+.magi-auth-feature-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.magi-auth-sider__footer {
+  font-size: 11px;
+}
+
+.magi-auth-content {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.magi-auth-content::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  opacity: 0.45;
+  background-image: radial-gradient(#d9d9d9 0.7px, transparent 0.7px);
+  background-size: 20px 20px;
+}
+
+.magi-auth-card {
+  position: relative;
+  z-index: 1;
+  width: min(440px, 100%);
+}
+
+.magi-login-form {
+  width: 100%;
+}
+
+.magi-login-alert {
+  margin-bottom: 20px;
+}
+
+.magi-login-submit {
+  margin-top: 4px;
+}
+
+.magi-auth-copyright {
+  position: relative;
+  z-index: 1;
+  margin-top: 24px;
+  text-align: center;
+}
+
+.magi-auth-mobile-brand {
+  position: relative;
+  z-index: 1;
+  width: min(440px, 100%);
+  margin-bottom: 24px;
+  display: none;
+  align-items: center;
+  gap: 12px;
+}
+
+.magi-auth-mobile-brand > div:last-child {
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 768px) {
+  .magi-auth-sider {
+    display: none;
+  }
+
+  .magi-auth-content {
+    justify-content: flex-start;
+    padding: 32px 20px !important;
+  }
+
+  .magi-auth-mobile-brand {
+    display: flex;
+  }
+
+  .magi-auth-card {
+    margin-block: auto;
+  }
+
+  .magi-auth-copyright {
+    margin-top: 24px;
+  }
+}
+
+@media (max-width: 480px) {
+  .magi-auth-content {
+    padding: 24px 16px !important;
+  }
+
+  .magi-auth-card {
+    border-radius: 8px;
+  }
+}

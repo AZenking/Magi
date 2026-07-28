@@ -1,6 +1,5 @@
-import { StartClient } from "@tanstack/react-start";
-import { router } from "./router";
+import { StartClient } from "@tanstack/react-start/client";
 
 export default function App() {
-  return <StartClient router={router} />;
+  return <StartClient />;
 }

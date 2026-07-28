@@ -35,7 +35,19 @@ export const channels = pgTable(
     streamResponseTime: integer("stream_response_time"),
     streamCheckedAt: timestamp("stream_checked_at", { withTimezone: true }),
     streamError: text("stream_error"),
+    // --- Safe Operations expand columns (T017). Nullable/defaulted so existing
+    // reads and the delete/recreate path keep working until US1 switches writes. ---
+    sourcePresence: varchar("source_presence", { length: 20 }).default("present"),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    missingSince: timestamp("missing_since", { withTimezone: true }),
+    sourceRevision: varchar("source_revision", { length: 80 }),
+    version: integer("version").notNull().default(1),
     ...timestamps,
   },
-  (t) => [index("channels_m3u_source_idx").on(t.m3uSourceId)],
+  (t) => [
+    index("channels_m3u_source_idx").on(t.m3uSourceId),
+    index("channels_source_presence_idx").on(t.sourcePresence),
+    index("channels_identity_source_idx").on(t.channelIdentity, t.m3uSourceId),
+  ],
 );

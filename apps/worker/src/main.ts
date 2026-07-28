@@ -1,8 +1,20 @@
-import { Worker, QueueEvents, Queue } from "bullmq";
+/**
+ * Worker entry point.
+ *
+ * Registers all job handlers (legacy processors + Safe Operations) with the
+ * JobRunner, then starts BullMQ workers via worker-bootstrap. The bootstrap
+ * layer owns Worker/QueueEvents lifecycle, concurrency, and shutdown.
+ *
+ * Each handler is a thin adapter: parse payload → call processor → return
+ * result. The JobRunner handles markRunning/markSucceeded/markFailed +
+ * progress reporting against sync_logs (constitution III boundary).
+ */
+import { QueueEvents, Queue } from "bullmq";
 import { createLogger } from "@magi/utils";
+import type { SyncProgress } from "@magi/backend-core";
 import { redis } from "./redis";
 import { db } from "./db";
-import { syncLogs } from "./schema";
+import { operationChangeSets, syncLogs } from "./schema";
 import { eq } from "drizzle-orm";
 import { processM3uSync } from "./processors/m3u-sync.processor";
 import { processXmltvSync } from "./processors/xmltv-sync.processor";
@@ -10,33 +22,154 @@ import { processEpgMatch } from "./processors/epg-match.processor";
 import { processStreamCheck } from "./processors/stream-check.processor";
 import { processSourceCheck } from "./processors/source-check.processor";
 import { processCleanup } from "./processors/cleanup.processor";
+import { startWorkers } from "./infrastructure/queue/worker-bootstrap";
+import type { JobKind, JobProgress } from "./domain/job-execution/job.model";
+import type { JobRunner } from "./application/job-runner";
+import { AuditCompletionRepository } from "./infrastructure/database/audit-completion.repository";
 
 const logger = createLogger({ context: "worker" });
 
-async function updateTask(taskId: string, data: Record<string, unknown>) {
-  await db.update(syncLogs).set(data).where(eq(syncLogs.id, taskId));
+// ---------------------------------------------------------------------------
+// Queue definitions — single source of truth for queue ↔ kind mapping.
+// ---------------------------------------------------------------------------
+const QUEUE_CONFIG = [
+  { queue: "source-sync", concurrency: 2, kinds: ["m3u-sync", "xmltv-sync", "source-check", "cleanup", "operation-prepare", "operation-apply"] as JobKind[] },
+  { queue: "epg", concurrency: 1, kinds: ["epg-match", "import-epg", "refresh-epg"] as JobKind[] },
+  { queue: "health-check", concurrency: 1, kinds: ["stream-check"] as JobKind[] },
+] as const;
+
+// ---------------------------------------------------------------------------
+// Handler registration — maps each JobKind to its processor function.
+// ---------------------------------------------------------------------------
+function registerHandlers(runner: JobRunner) {
+  // Adapter: JobProgress.update → SyncProgress.updateProgress for legacy processors.
+  const toSyncProgress = (p: JobProgress): SyncProgress => ({
+    updateProgress: p.update,
+  });
+
+  // --- source-sync handlers ---
+
+  runner.register("m3u-sync", async (job, progress) => {
+    const r = await processM3uSync(job.payload.sourceId as string, toSyncProgress(progress));
+    return { taskId: job.payload.taskId as string, ...r };
+  });
+
+  runner.register("xmltv-sync", async (job, progress) => {
+    const r = await processXmltvSync(job.payload.sourceId as string, toSyncProgress(progress));
+    return { taskId: job.payload.taskId as string, ...r };
+  });
+
+  runner.register("source-check", async (job, progress) => {
+    await processSourceCheck(job.payload.sourceType as string as "m3u" | "xmltv", job.payload.sourceId as string, toSyncProgress(progress));
+    return { taskId: job.payload.taskId as string };
+  });
+
+  runner.register("cleanup", async (_job, progress) => {
+    const r = await processCleanup(toSyncProgress(progress));
+    return { taskId: _job.payload.taskId as string, importedCount: r.deletedTasks, removedCount: r.deletedOrphanChannels };
+  });
+
+  runner.register("operation-prepare", async (job, progress) => {
+    const sourceId = job.payload.sourceId as string;
+    const changeSetId = job.payload.changeSetId as string;
+    const kind = job.payload.kind as string;
+    const sp = toSyncProgress(progress);
+    let result: { importedCount: number; addedCount: number; updatedCount: number; removedCount: number } | undefined;
+    let error: string | null = null;
+
+    try {
+      if (kind === "epg_match") {
+        const r = await processEpgMatch(sourceId, sp);
+        result = { importedCount: r.importedCount, addedCount: r.addedCount, updatedCount: r.updatedCount, removedCount: r.removedCount };
+      } else {
+        result = await processM3uSync(sourceId, sp);
+      }
+    } catch (e) {
+      error = (e as Error).message;
+      logger.error(`operation-prepare failed for ${changeSetId}`, { error });
+    }
+
+    // Update change-set status so the UI unblocks.
+    try {
+      if (error) {
+        await db.update(operationChangeSets).set({
+          status: "failed",
+          summary: { error: error.slice(0, 500) },
+          warnings: [],
+          blockers: [{ code: "sync-failed", message: error.slice(0, 200) }],
+        }).where(eq(operationChangeSets.id, changeSetId));
+      } else {
+        await db.update(operationChangeSets).set({
+          status: "ready",
+          summary: { updated: result?.addedCount ?? 0, preserved: result?.updatedCount ?? 0 },
+          warnings: [],
+          blockers: [],
+        }).where(eq(operationChangeSets.id, changeSetId));
+      }
+    } catch (csErr) {
+      logger.error(`Failed to update change set ${changeSetId}`, { error: (csErr as Error).message });
+    }
+
+    return { taskId: job.payload.taskId as string, ...result };
+  });
+
+  runner.register("operation-apply", async (job) => {
+    return { taskId: job.payload.taskId as string };
+  });
+
+  // --- epg handlers ---
+
+  runner.register("epg-match", async (job, progress) => {
+    const r = await processEpgMatch(job.payload.sourceId as string, toSyncProgress(progress));
+    return { taskId: job.payload.taskId as string, ...r };
+  });
+
+  runner.register("import-epg", async (job, progress) => {
+    const r = await processXmltvSync(job.payload.sourceId as string, toSyncProgress(progress));
+    return { taskId: job.payload.taskId as string, ...r };
+  });
+
+  runner.register("refresh-epg", async (job, progress) => {
+    const sp = toSyncProgress(progress);
+    const syncResult = await processXmltvSync(job.payload.sourceId as string, sp);
+    const matchResult = await processEpgMatch(job.payload.sourceId as string, sp);
+    return {
+      taskId: job.payload.taskId as string,
+      importedCount: syncResult.importedCount,
+      addedCount: syncResult.addedCount,
+      updatedCount: matchResult.matched,
+      removedCount: syncResult.removedCount,
+    };
+  });
+
+  // --- health-check handlers ---
+
+  runner.register("stream-check", async (job, progress) => {
+    const r = await processStreamCheck(job.payload.sourceId as string | undefined, toSyncProgress(progress));
+    return {
+      taskId: job.payload.taskId as string,
+      importedCount: r.checked,
+      addedCount: r.online,
+      updatedCount: r.degraded,
+      removedCount: r.offline,
+    };
+  });
 }
 
-type SourceSyncJob = {
-  taskId: string;
-  sourceId: string;
-  sourceType: string;
-};
+// ---------------------------------------------------------------------------
+// Legacy QueueEvents — belt-and-suspenders for task status updates on
+// scheduled/repeatable jobs that may race with the Worker handler.
+// ---------------------------------------------------------------------------
+function setupQueueEvents(queueName: string) {
+  const queue = new Queue(queueName, { connection: redis as never });
+  const events = new QueueEvents(queueName, { connection: redis as never });
+  const auditCompletions = new AuditCompletionRepository();
 
-type EpgJob = {
-  taskId: string;
-  sourceId: string;
-  sourceType?: string;
-};
-
-function setupQueueEvents(queueName: string, queue: Queue) {
-  const queueEvents = new QueueEvents(queueName, { connection: redis as never });
-
-  queueEvents.on("completed", async ({ jobId, returnvalue }) => {
+  events.on("completed", async ({ returnvalue }) => {
     try {
       const rv = typeof returnvalue === "string" ? JSON.parse(returnvalue) : returnvalue;
       if (rv?.taskId) {
-        await updateTask(rv.taskId, {
+        await db.update(syncLogs).set({
           status: "success",
           finishedAt: new Date(),
           currentStep: "done",
@@ -45,221 +178,80 @@ function setupQueueEvents(queueName: string, queue: Queue) {
           addedCount: rv.addedCount ?? 0,
           updatedCount: rv.updatedCount ?? 0,
           removedCount: rv.removedCount ?? 0,
+        }).where(eq(syncLogs.id, rv.taskId));
+        await auditCompletions.appendForTrackedTask({
+          taskId: rv.taskId,
+          result: "succeeded",
+          summary: {
+            importedCount: rv.importedCount ?? 0,
+            addedCount: rv.addedCount ?? 0,
+            updatedCount: rv.updatedCount ?? 0,
+            removedCount: rv.removedCount ?? 0,
+            matched: rv.matched ?? 0,
+            unmatched: rv.unmatched ?? 0,
+            conflicts: rv.conflicts ?? 0,
+          },
         });
-        logger.info(`Task ${rv.taskId} marked success`);
       }
-    } catch (err) {
-      logger.error(`Failed to process completed event for job ${jobId}`, { error: (err as Error).message });
+    } catch (error) {
+      logger.error("Failed to persist completed task projection or audit event", {
+        queueName,
+        error: (error as Error).message,
+      });
     }
   });
 
-  queueEvents.on("failed", async ({ jobId, failedReason }) => {
+  events.on("failed", async ({ jobId, failedReason }) => {
     try {
       const job = await queue.getJob(jobId);
       const taskId = job?.data?.taskId;
       if (!taskId) return;
-
-      const errorMsg = (failedReason ?? "Unknown error").slice(0, 500);
       const jobState = await job.getState();
-
       if (jobState === "failed") {
-        await updateTask(taskId, {
+        await db.update(syncLogs).set({
           status: "failed",
           finishedAt: new Date(),
-          error: errorMsg,
+          error: (failedReason ?? "Unknown error").slice(0, 500),
           attemptsMade: job.attemptsMade,
+        }).where(eq(syncLogs.id, taskId));
+        await auditCompletions.appendForTrackedTask({
+          taskId,
+          result: "failed",
+          summary: { attemptsMade: job.attemptsMade },
+          reason: failedReason ?? "Unknown error",
         });
-        logger.info(`Task ${taskId} marked failed (final)`);
-      } else {
-        await updateTask(taskId, {
-          currentStep: "retrying",
-          error: errorMsg,
-          attemptsMade: job.attemptsMade,
-        });
-        logger.info(`Task ${taskId} attempt failed, will retry`, { attemptsMade: job.attemptsMade });
       }
-    } catch (err) {
-      logger.error(`Failed to process failed event for job ${jobId}`, { error: (err as Error).message });
+    } catch (error) {
+      logger.error("Failed to persist failed task projection or audit event", {
+        queueName,
+        error: (error as Error).message,
+      });
     }
   });
 
-  return queueEvents;
+  return { events, queue };
 }
 
+// ---------------------------------------------------------------------------
+// Bootstrap
+// ---------------------------------------------------------------------------
 async function bootstrap() {
-  const sourceSyncQueue = new Queue("source-sync", { connection: redis as never });
-  const epgQueue = new Queue("epg", { connection: redis as never });
-  const healthCheckQueue = new Queue("health-check", { connection: redis as never });
+  const stopWorkers = await startWorkers({
+    queues: QUEUE_CONFIG,
+    registerHandlers,
+  });
 
-  // --- source-sync worker ---
-  const sourceSyncWorker = new Worker(
-    "source-sync",
-    async (job) => {
-      const { taskId, sourceId, sourceType } = job.data as SourceSyncJob;
+  const eventAdapters = QUEUE_CONFIG.map((q) => setupQueueEvents(q.queue));
 
-      logger.info(`Processing job ${job.id}`, { name: job.name, taskId, sourceId, sourceType });
-
-      await updateTask(taskId, {
-        status: "running",
-        currentStep: "starting",
-        processedOn: new Date(),
-      });
-
-      const progress = {
-        async updateProgress(pct: number, step: string) {
-          await job.updateProgress(pct);
-          await updateTask(taskId, { progress: pct, currentStep: step });
-        },
-      };
-
-      let result: { importedCount: number; addedCount: number; updatedCount: number; removedCount: number } | undefined;
-
-      if (job.name === "m3u-sync") {
-        result = await processM3uSync(sourceId, progress);
-      } else if (job.name === "xmltv-sync") {
-        result = await processXmltvSync(sourceId, progress);
-      } else if (job.name === "source-check") {
-        await processSourceCheck(sourceType as "m3u" | "xmltv", sourceId, progress);
-        return { taskId };
-      } else if (job.name === "cleanup") {
-        const result = await processCleanup(progress);
-        return { taskId, importedCount: result.deletedTasks, removedCount: result.deletedOrphanChannels };
-      } else {
-        throw new Error(`Unknown job name: ${job.name}`);
-      }
-
-      return {
-        taskId,
-        importedCount: result?.importedCount ?? 0,
-        addedCount: result?.addedCount ?? 0,
-        updatedCount: result?.updatedCount ?? 0,
-        removedCount: result?.removedCount ?? 0,
-      };
-    },
-    { connection: redis as never, concurrency: 2 },
-  );
-
-  // --- epg worker ---
-  const epgWorker = new Worker(
-    "epg",
-    async (job) => {
-      const { taskId, sourceId } = job.data as EpgJob;
-
-      logger.info(`Processing epg job ${job.id}`, { name: job.name, taskId, sourceId });
-
-      await updateTask(taskId, {
-        status: "running",
-        currentStep: "starting",
-        processedOn: new Date(),
-      });
-
-      const progress = {
-        async updateProgress(pct: number, step: string) {
-          await job.updateProgress(pct);
-          await updateTask(taskId, { progress: pct, currentStep: step });
-        },
-      };
-
-      if (job.name === "epg-match") {
-        const result = await processEpgMatch(sourceId, progress);
-        return {
-          taskId,
-          importedCount: result.importedCount,
-          addedCount: result.addedCount,
-          updatedCount: result.updatedCount,
-          removedCount: result.removedCount,
-          matched: result.matched,
-          unmatched: result.unmatched,
-          conflicts: result.conflicts,
-        };
-      }
-
-      if (job.name === "import-epg") {
-        const result = await processXmltvSync(sourceId, progress);
-        return {
-          taskId,
-          importedCount: result.importedCount,
-          addedCount: result.addedCount,
-          updatedCount: result.updatedCount,
-          removedCount: result.removedCount,
-        };
-      }
-
-      if (job.name === "refresh-epg") {
-        const syncResult = await processXmltvSync(sourceId, progress);
-        const matchResult = await processEpgMatch(sourceId, progress);
-        return {
-          taskId,
-          importedCount: syncResult.importedCount,
-          addedCount: syncResult.addedCount,
-          updatedCount: matchResult.matched,
-          removedCount: syncResult.removedCount,
-        };
-      }
-
-      throw new Error(`Unknown epg job name: ${job.name}`);
-    },
-    { connection: redis as never, concurrency: 1 },
-  );
-
-  // --- health-check worker ---
-  const healthCheckWorker = new Worker(
-    "health-check",
-    async (job) => {
-      const { taskId, sourceId } = job.data as { taskId: string; sourceId?: string };
-
-      logger.info(`Processing stream-check job ${job.id}`, { taskId, sourceId });
-
-      await updateTask(taskId, {
-        status: "running",
-        currentStep: "starting",
-        processedOn: new Date(),
-      });
-
-      const progress = {
-        async updateProgress(pct: number, step: string) {
-          await job.updateProgress(pct);
-          await updateTask(taskId, { progress: pct, currentStep: step });
-        },
-      };
-
-      const result = await processStreamCheck(sourceId, progress);
-
-      return {
-        taskId,
-        importedCount: result.checked,
-        addedCount: result.online,
-        updatedCount: result.degraded,
-        removedCount: result.offline,
-      };
-    },
-    { connection: redis as never, concurrency: 1 },
-  );
-
-  const sourceSyncEvents = setupQueueEvents("source-sync", sourceSyncQueue);
-  const epgEvents = setupQueueEvents("epg", epgQueue);
-  const healthCheckEvents = setupQueueEvents("health-check", healthCheckQueue);
-
-  sourceSyncWorker.on("completed", (job) => logger.info(`Job ${job.id} completed`));
-  sourceSyncWorker.on("failed", (job, err) => logger.error(`Job ${job?.id} failed`, { error: err.message }));
-  epgWorker.on("completed", (job) => logger.info(`Epg job ${job.id} completed`));
-  epgWorker.on("failed", (job, err) => logger.error(`Epg job ${job?.id} failed`, { error: err.message }));
-  healthCheckWorker.on("completed", (job) => logger.info(`Health-check job ${job.id} completed`));
-  healthCheckWorker.on("failed", (job, err) => logger.error(`Health-check job ${job?.id} failed`, { error: err.message }));
-
-  logger.info("Worker started (source-sync + epg + health-check queues)");
+  logger.info("Worker started", {
+    queues: QUEUE_CONFIG.map((q) => `${q.queue}(${q.kinds.join(",")})`).join(", "),
+  });
 
   const shutdown = async () => {
     logger.info("Shutting down worker...");
-    await healthCheckEvents.close();
-    await epgEvents.close();
-    await sourceSyncEvents.close();
-    await healthCheckQueue.close();
-    await epgQueue.close();
-    await sourceSyncQueue.close();
-    await healthCheckWorker.close();
-    await epgWorker.close();
-    await sourceSyncWorker.close();
+    await stopWorkers();
+    await Promise.all(eventAdapters.map((a) => a.events.close()));
+    await Promise.all(eventAdapters.map((a) => a.queue.close()));
     process.exit(0);
   };
 

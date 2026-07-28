@@ -14,15 +14,18 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "lint": "eslint src/",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest"
   },
   "dependencies": {
-    "drizzle-orm": "^0.44.2",
+    "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.7"
   },
   "devDependencies": {
     "@magi/tsconfig": "workspace:*",
     "@types/node": "^22.15.29",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.8"
   }
 }

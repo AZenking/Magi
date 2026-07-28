@@ -1,19 +1,8 @@
-export enum TaskStatus {
-  PENDING = "pending",
-  RUNNING = "running",
-  SUCCESS = "success",
-  FAILED = "failed",
-  CANCELLED = "cancelled",
-}
+// Legacy enums re-exported for backward compatibility. New feature code uses
+// the const-array enums below.
+export * from "./legacy";
 
-export enum EpgSourceType {
-  M3U = "m3u",
-  XMLTV = "xmltv",
-  API = "api",
-  SCRAPER = "scraper",
-}
-
-export enum ChannelStatus {
-  ACTIVE = "active",
-  INACTIVE = "inactive",
-}
+// New operation / lifecycle / failover enums (T006 / T007 / T008).
+export * from "./operation";
+export * from "./channel-lifecycle";
+export * from "./failover";

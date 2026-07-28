@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db";
-import { channels, rawXmltvChannels, canonicalChannels, channelOverrides, channelStreams, m3uSources } from "../schema";
+import { channels, rawXmltvChannels, canonicalChannels, canonicalEpgBindings, channelOverrides, channelStreams, m3uSources } from "../schema";
 import { EpgMatcher, computeMergeKey } from "@magi/backend-core";
 import type { SyncProgress } from "@magi/backend-core";
 
@@ -19,6 +19,18 @@ export async function processEpgMatch(sourceId: string, progress?: SyncProgress)
 
   const xmltvChannelRows = await db.select().from(rawXmltvChannels).where(eq(rawXmltvChannels.sourceId, sourceId));
   const xmltvList = xmltvChannelRows.map((c) => ({ id: c.xmltvId, displayName: c.displayName ?? "" }));
+  const allXmltvIdentities = await db
+    .select({
+      sourceId: rawXmltvChannels.sourceId,
+      xmltvId: rawXmltvChannels.xmltvId,
+    })
+    .from(rawXmltvChannels);
+  const sourcesByXmltvId = new Map<string, Set<string>>();
+  for (const row of allXmltvIdentities) {
+    const sourceIds = sourcesByXmltvId.get(row.xmltvId) ?? new Set<string>();
+    sourceIds.add(row.sourceId);
+    sourcesByXmltvId.set(row.xmltvId, sourceIds);
+  }
 
   const allChannels = await db.select().from(channels).limit(50000);
 
@@ -30,6 +42,7 @@ export async function processEpgMatch(sourceId: string, progress?: SyncProgress)
   let conflicts = 0;
 
   const channelUpdates: { channelId: string; epgChannelId: string; epgMatchType: string | null }[] = [];
+  const channelConflicts = new Map<string, string>();
 
   for (const channel of allChannels) {
     const result = matcher.match({
@@ -41,8 +54,13 @@ export async function processEpgMatch(sourceId: string, progress?: SyncProgress)
     });
 
     if (result.matched && result.xmltvChannelId) {
-      channelUpdates.push({ channelId: channel.id, epgChannelId: result.xmltvChannelId, epgMatchType: result.matchType });
-      matched++;
+      if ((sourcesByXmltvId.get(result.xmltvChannelId)?.size ?? 0) > 1) {
+        channelConflicts.set(channel.id, result.xmltvChannelId);
+        conflicts++;
+      } else {
+        channelUpdates.push({ channelId: channel.id, epgChannelId: result.xmltvChannelId, epgMatchType: result.matchType });
+        matched++;
+      }
     } else if (result.matchType === "conflict") {
       conflicts++;
     } else {
@@ -53,6 +71,9 @@ export async function processEpgMatch(sourceId: string, progress?: SyncProgress)
   await progress?.updateProgress(50, "rebuild-canonical");
 
   await db.transaction(async (tx) => {
+    const updateByChannelId = new Map(
+      channelUpdates.map((update) => [update.channelId, update]),
+    );
     // Update EPG match results on raw channels
     for (const u of channelUpdates) {
       await tx.update(channels).set({
@@ -87,6 +108,10 @@ export async function processEpgMatch(sourceId: string, progress?: SyncProgress)
 
     // Load existing canonical channels
     const existingCanonical = await tx.select().from(canonicalChannels);
+    const existingBindingRows = await tx.select().from(canonicalEpgBindings);
+    const bindingByCanonicalId = new Map(
+      existingBindingRows.map((binding) => [binding.canonicalChannelId, binding]),
+    );
 
     // Load existing streams indexed by canonicalChannelId
     const existingStreams = await tx.select().from(channelStreams);
@@ -187,12 +212,14 @@ export async function processEpgMatch(sourceId: string, progress?: SyncProgress)
 
       // Collect best EPG info from the group
       let epgChannelId: string | null = null;
+      let epgSourceId: string | null = null;
       let epgMatchType: string | null = null;
       let epgStatus: string | null = null;
 
       // Check manual override from any channel in the group first
       if (ov?.manualEpgChannelId !== undefined && ov.manualEpgChannelId !== null) {
         epgChannelId = ov.manualEpgChannelId;
+        epgSourceId = ov.manualEpgSourceId ?? sourceId;
         epgMatchType = "manual";
         epgStatus = "matched_manual";
       } else {
@@ -200,13 +227,24 @@ export async function processEpgMatch(sourceId: string, progress?: SyncProgress)
           const chOv = overrideByIdentity.get(ch.channelIdentity);
           if (chOv?.manualEpgChannelId) {
             epgChannelId = chOv.manualEpgChannelId;
+            epgSourceId = chOv.manualEpgSourceId ?? sourceId;
             epgMatchType = "manual";
             epgStatus = "matched_manual";
             break;
           }
-          if (ch.epgChannelId && !epgChannelId) {
-            epgChannelId = ch.epgChannelId;
-            epgMatchType = ch.epgMatchType;
+          const conflictChannelId = channelConflicts.get(ch.id);
+          if (conflictChannelId) {
+            epgChannelId = conflictChannelId;
+            epgSourceId = null;
+            epgMatchType = "conflict";
+            epgStatus = "conflict";
+            break;
+          }
+          const automatic = updateByChannelId.get(ch.id);
+          if (automatic && !epgChannelId) {
+            epgChannelId = automatic.epgChannelId;
+            epgSourceId = sourceId;
+            epgMatchType = automatic.epgMatchType;
             epgStatus = "matched_auto";
           }
         }
@@ -223,6 +261,27 @@ export async function processEpgMatch(sourceId: string, progress?: SyncProgress)
           const bStreams = streamsByCanonicalId.get(b.id)?.length ?? 0;
           return aStreams >= bStreams ? a : b;
         });
+        const lockedBinding = bindingByCanonicalId.get(survivor.id);
+        if (lockedBinding?.locked) {
+          epgChannelId = lockedBinding.xmltvChannelId;
+          epgSourceId = lockedBinding.xmltvSourceId;
+          epgMatchType = lockedBinding.matchType;
+          epgStatus = lockedBinding.status;
+        } else if (
+          lockedBinding?.status.startsWith("matched") &&
+          lockedBinding.xmltvSourceId !== sourceId
+        ) {
+          if (epgSourceId || epgStatus === "conflict") {
+            epgSourceId = null;
+            epgMatchType = "conflict";
+            epgStatus = "conflict";
+          } else {
+            epgChannelId = lockedBinding.xmltvChannelId;
+            epgSourceId = lockedBinding.xmltvSourceId;
+            epgMatchType = lockedBinding.matchType;
+            epgStatus = lockedBinding.status;
+          }
+        }
 
         // Disable and migrate duplicates
         for (const canon of existingGroup) {
@@ -272,6 +331,40 @@ export async function processEpgMatch(sourceId: string, progress?: SyncProgress)
           mergeMethod: group.length > 1 ? "merge_key" : null,
           lastMergedAt: new Date(),
         }).where(eq(canonicalChannels.id, survivor.id));
+
+        if (!lockedBinding?.locked) {
+          const bindingStatus = epgChannelId
+            ? epgStatus === "conflict"
+              ? "conflict"
+              : epgStatus === "matched_manual"
+              ? "matched_manual"
+              : "matched_auto"
+            : "unmatched";
+          await tx
+            .insert(canonicalEpgBindings)
+            .values({
+              canonicalChannelId: survivor.id,
+              xmltvSourceId: epgChannelId ? epgSourceId : null,
+              xmltvChannelId: epgChannelId,
+              status: bindingStatus,
+              matchType: epgMatchType,
+              locked: ov?.manualEpgLocked ?? false,
+              decisionReason: ov?.decisionReason ?? null,
+            })
+            .onConflictDoUpdate({
+              target: canonicalEpgBindings.canonicalChannelId,
+              set: {
+                xmltvSourceId: epgChannelId ? epgSourceId : null,
+                xmltvChannelId: epgChannelId,
+                status: bindingStatus,
+                matchType: epgMatchType,
+                locked: ov?.manualEpgLocked ?? false,
+                decisionReason: ov?.decisionReason ?? null,
+                version: (lockedBinding?.version ?? 0) + 1,
+                updatedAt: new Date(),
+              },
+            });
+        }
 
         // Create streams — dedupe by streamUrl (sourceChannelId may be stale)
         const allSurvivorStreams = await tx.select().from(channelStreams)
@@ -328,6 +421,21 @@ export async function processEpgMatch(sourceId: string, progress?: SyncProgress)
         }).returning();
 
         if (inserted) {
+          await tx.insert(canonicalEpgBindings).values({
+            canonicalChannelId: inserted.id,
+            xmltvSourceId: epgChannelId ? epgSourceId : null,
+            xmltvChannelId: epgChannelId,
+            status: epgChannelId
+              ? epgStatus === "conflict"
+                ? "conflict"
+                : epgStatus === "matched_manual"
+                ? "matched_manual"
+                : "matched_auto"
+              : "unmatched",
+            matchType: epgMatchType,
+            locked: ov?.manualEpgLocked ?? false,
+            decisionReason: ov?.decisionReason ?? null,
+          });
           let hasPrimary = false;
           for (const ch of group) {
             if (!ch.streamUrl) continue;

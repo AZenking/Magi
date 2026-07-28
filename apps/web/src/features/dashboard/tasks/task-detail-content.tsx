@@ -1,14 +1,34 @@
 import type { TaskVo } from "@magi/types";
-import { Button } from "@magi/ui/components/button";
-import { Badge } from "@magi/ui/components/badge";
-import { RotateCwIcon, XIcon } from "lucide-react";
+import type {
+  TaskCapabilities,
+  TaskRelations,
+  TaskResult,
+} from "@magi/types";
+import {
+  Alert,
+  Button,
+  Card,
+  Flex,
+  Progress,
+  Tag,
+  Typography,
+  theme,
+} from "antd";
+import {
+  CloseOutlined,
+  LinkOutlined,
+  ReloadOutlined,
+} from "@ant-design/icons";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { ProDescriptions } from "@ant-design/pro-components";
 
-const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  pending: { label: "等待中", variant: "outline" },
-  running: { label: "运行中", variant: "default" },
-  success: { label: "成功", variant: "secondary" },
-  failed: { label: "失败", variant: "destructive" },
-  cancelled: { label: "已取消", variant: "outline" },
+const statusMap: Record<string, { label: string; color?: string }> = {
+  pending: { label: "等待中" },
+  running: { label: "运行中", color: "processing" },
+  success: { label: "成功", color: "success" },
+  succeeded: { label: "成功", color: "success" },
+  failed: { label: "失败", color: "error" },
+  cancelled: { label: "已取消" },
 };
 
 const taskTypeMap: Record<string, string> = {
@@ -21,14 +41,77 @@ const taskTypeMap: Record<string, string> = {
   "refresh-epg": "刷新 EPG",
 };
 
-const dtf = new Intl.DateTimeFormat("zh-CN", { dateStyle: "short", timeStyle: "medium" });
+const dtf = new Intl.DateTimeFormat("zh-CN", {
+  dateStyle: "short",
+  timeStyle: "medium",
+});
+
+/**
+ * Display-ready task shape. Backwards compatible with the legacy TaskVo (so the
+ * existing test fixtures keep working) while accepting the newer TaskDetailVo
+ * wire fields — stage/capabilities/relations/result — when the new endpoint
+ * supplies them (T088).
+ */
+export interface DisplayTask extends TaskVo {
+  /** Wire stage (contracts/tasks.md) — e.g. "applying". */
+  stage?: string;
+  /** Capabilities drive Retry/Cancel/Restore button visibility. */
+  capabilities?: TaskCapabilities;
+  /** Relations expose parent/root and link to changeSet / recoveryPoint. */
+  relations?: TaskRelations;
+  /** Final result, present once the task reaches a terminal state. */
+  result?: TaskResult | null;
+}
 
 interface TaskDetailContentProps {
-  task: TaskVo;
+  task: DisplayTask;
   onRetry: () => void;
   onCancel: () => void;
   retryPending?: boolean;
   cancelPending?: boolean;
+  /** Optional restore handler — surfaced only when canRestore is true. */
+  onRestore?: () => void;
+  restorePending?: boolean;
+}
+
+/** Link to a related audit/change-set/recovery resource. */
+function RelationLink({
+  changeSetId,
+  recoveryPointId,
+}: {
+  changeSetId?: string;
+  recoveryPointId?: string;
+}) {
+  const navigate = useNavigate();
+  if (!changeSetId && !recoveryPointId) return <>-</>;
+  return (
+    <Flex gap={8} wrap>
+      {changeSetId && (
+        <Typography.Link
+          onClick={() =>
+            navigate({
+              to: "/dashboard/tasks",
+              search: { changeSetId } as never,
+            })
+          }
+        >
+          <LinkOutlined /> 变更集 {changeSetId.slice(0, 8)}
+        </Typography.Link>
+      )}
+      {recoveryPointId && (
+        <Typography.Link
+          onClick={() =>
+            navigate({
+              to: "/dashboard/tasks",
+              search: { recoveryPointId } as never,
+            })
+          }
+        >
+          <LinkOutlined /> 恢复点 {recoveryPointId.slice(0, 8)}
+        </Typography.Link>
+      )}
+    </Flex>
+  );
 }
 
 export function TaskDetailContent({
@@ -37,123 +120,298 @@ export function TaskDetailContent({
   onCancel,
   retryPending,
   cancelPending,
+  onRestore,
+  restorePending,
 }: TaskDetailContentProps) {
-  const s = statusMap[task.status] ?? { label: task.status, variant: "outline" as const };
-  const isActive = task.status === "pending";
-  const jd = task.jobDetail;
+  const { token } = theme.useToken();
+  const status = statusMap[task.status] ?? { label: task.status };
+  // Normalize legacy `success` and wire `succeeded` without tripping TS literal
+  // narrowing (TaskVo.status is the legacy enum; newer payloads may use either).
+  const rawStatus: string = task.status;
+  const isSucceeded = rawStatus === "success" || rawStatus === "succeeded";
+  const job = task.jobDetail;
+  const caps = task.capabilities;
+
+  // Capabilities take precedence when present (new wire contract). Otherwise
+  // fall back to legacy status-based visibility so the existing test passes.
+  const canRetry = caps?.canRetry ?? task.status === "failed";
+  const canCancel =
+    caps?.canCancel ?? (task.status === "pending" || task.status === "running");
+  const canRestore = caps?.canRestore ?? false;
+
+  const relations = task.relations;
+  const result = task.result;
+
+  const detailColumns = [
+    {
+      dataIndex: "id",
+      title: "任务 ID",
+      render: () => (
+        <Typography.Text code copyable>
+          {task.id}
+        </Typography.Text>
+      ),
+    },
+    {
+      dataIndex: "taskType",
+      title: "任务类型",
+      render: () => taskTypeMap[task.taskType] ?? task.taskType,
+    },
+    {
+      dataIndex: "queueName",
+      title: "队列",
+      render: () => task.queueName ?? "-",
+    },
+    { dataIndex: "sourceType", title: "源类型" },
+    {
+      dataIndex: "sourceId",
+      title: "源 ID",
+      render: () => <Typography.Text code>{task.sourceId || "-"}</Typography.Text>,
+    },
+    ...(task.stage
+      ? [{ dataIndex: "stage" as const, title: "阶段", render: () => task.stage }]
+      : []),
+    {
+      dataIndex: "attemptsMade",
+      title: "重试次数",
+      render: () => job?.attemptsMade ?? task.attemptsMade,
+    },
+    {
+      dataIndex: "createdAt",
+      title: "创建时间",
+      render: () => dtf.format(new Date(task.createdAt)),
+    },
+    {
+      dataIndex: "startedAt",
+      title: "开始时间",
+      render: () => dtf.format(new Date(task.startedAt)),
+    },
+    ...((job?.processedOn ?? task.processedOn)
+      ? [
+          {
+            dataIndex: "processedOn" as const,
+            title: "处理时间",
+            render: () =>
+              dtf.format(new Date((job?.processedOn ?? task.processedOn)!)),
+          },
+        ]
+      : []),
+    ...((job?.finishedOn ?? task.finishedAt)
+      ? [
+          {
+            dataIndex: "finishedOn" as const,
+            title: "完成时间",
+            render: () =>
+              dtf.format(new Date((job?.finishedOn ?? task.finishedAt)!)),
+          },
+        ]
+      : []),
+  ];
+
+  // Progress message prefers the wire progress.message, falls back to currentStep.
+  const progressMessage =
+    task.stage ??
+    (task.progress != null && task.currentStep
+      ? task.currentStep
+      : undefined);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <h2 className="text-lg font-semibold">
+    <Flex vertical gap={token.marginMD}>
+      <Flex wrap align="center" gap={token.marginSM}>
+        <Typography.Title level={3} style={{ margin: 0 }}>
           {taskTypeMap[task.taskType] ?? task.taskType}
-        </h2>
-        <Badge variant={s.variant}>{s.label}</Badge>
-        {jd && (
-          <Badge variant="outline" className="text-xs">
-            BullMQ: {jd.state}
-          </Badge>
-        )}
-      </div>
+        </Typography.Title>
+        <Tag color={status.color}>{status.label}</Tag>
+        {task.stage && <Tag color="processing">{task.stage}</Tag>}
+        {job && <Tag>BullMQ: {job.state}</Tag>}
+      </Flex>
 
-      <div className="space-y-4 rounded-md border p-4">
-        <h3 className="font-medium text-sm text-muted-foreground">概览</h3>
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-          <dt className="text-muted-foreground">任务 ID</dt>
-          <dd className="font-mono text-xs">{task.id}</dd>
-          <dt className="text-muted-foreground">任务类型</dt>
-          <dd>{taskTypeMap[task.taskType] ?? task.taskType}</dd>
-          <dt className="text-muted-foreground">队列</dt>
-          <dd>{task.queueName ?? "-"}</dd>
-          <dt className="text-muted-foreground">源类型</dt>
-          <dd>{task.sourceType}</dd>
-          <dt className="text-muted-foreground">源 ID</dt>
-          <dd className="font-mono text-xs">{task.sourceId}</dd>
-          <dt className="text-muted-foreground">重试次数</dt>
-          <dd>{jd?.attemptsMade ?? task.attemptsMade}</dd>
-          <dt className="text-muted-foreground">创建时间</dt>
-          <dd>{dtf.format(new Date(task.createdAt))}</dd>
-          <dt className="text-muted-foreground">开始时间</dt>
-          <dd>{dtf.format(new Date(task.startedAt))}</dd>
-          {(jd?.processedOn ?? task.processedOn) && (
-            <>
-              <dt className="text-muted-foreground">处理时间</dt>
-              <dd>{dtf.format(new Date((jd?.processedOn ?? task.processedOn)!))}</dd>
-            </>
+      <Card title="概览">
+        <ProDescriptions
+          column={{ xs: 1, sm: 2 }}
+          dataSource={task}
+          columns={detailColumns}
+        />
+      </Card>
+
+      <Card title="执行状态">
+        <Flex vertical gap={token.marginMD}>
+          <Progress
+            percent={isSucceeded ? 100 : task.progress}
+            status={
+              task.status === "failed"
+                ? "exception"
+                : isSucceeded
+                  ? "success"
+                  : "active"
+            }
+            format={(percent) =>
+              progressMessage ? `${progressMessage} · ${percent}%` : `${percent}%`
+            }
+          />
+          <ProDescriptions
+            column={{ xs: 2, sm: 4 }}
+            dataSource={task}
+            columns={[
+              { dataIndex: "importedCount", title: "导入" },
+              { dataIndex: "addedCount", title: "新增" },
+              { dataIndex: "updatedCount", title: "更新" },
+              { dataIndex: "removedCount", title: "删除" },
+            ]}
+          />
+          {result?.summary && (
+            <Typography.Text type="secondary">{result.summary}</Typography.Text>
           )}
-          {(jd?.finishedOn ?? task.finishedAt) && (
-            <>
-              <dt className="text-muted-foreground">完成时间</dt>
-              <dd>{dtf.format(new Date((jd?.finishedOn ?? task.finishedAt)!))}</dd>
-            </>
+          {result?.counts && Object.keys(result.counts).length > 0 && (
+            <Flex wrap gap={token.marginXS}>
+              {Object.entries(result.counts).map(([k, v]) => (
+                <Tag key={k}>
+                  {k}: {v}
+                </Tag>
+              ))}
+            </Flex>
           )}
-        </dl>
-      </div>
+        </Flex>
+      </Card>
 
-      <div className="space-y-4 rounded-md border p-4">
-        <h3 className="font-medium text-sm text-muted-foreground">进度</h3>
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-sm">
-            <span>{task.currentStep ?? "-"}</span>
-            <span>{task.progress}%</span>
-          </div>
-          <div className="h-3 w-full rounded-full bg-muted overflow-hidden">
-            <div
-              className="h-full rounded-full bg-primary transition-all"
-              style={{ width: `${task.status === "success" ? 100 : task.progress}%` }}
-            />
-          </div>
-        </div>
-
-        <h3 className="font-medium text-sm text-muted-foreground pt-2">统计</h3>
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-          <dt className="text-muted-foreground">导入</dt>
-          <dd>{task.importedCount}</dd>
-          <dt className="text-muted-foreground">新增</dt>
-          <dd>{task.addedCount}</dd>
-          <dt className="text-muted-foreground">更新</dt>
-          <dd>{task.updatedCount}</dd>
-          <dt className="text-muted-foreground">删除</dt>
-          <dd>{task.removedCount}</dd>
-        </dl>
-      </div>
+      {(relations || result?.links) && (
+        <Card title="关联">
+          <ProDescriptions
+            column={{ xs: 1, sm: 2 }}
+            dataSource={task}
+            columns={[
+              ...(relations?.parentTaskId
+                ? [
+                    {
+                      dataIndex: "parentTaskId" as const,
+                      title: "父任务",
+                      render: () => (
+                        <Link
+                          to="/dashboard/tasks/$taskId"
+                          params={{ taskId: relations.parentTaskId! }}
+                        >
+                          <Typography.Link>
+                            {relations.parentTaskId!.slice(0, 8)}
+                          </Typography.Link>
+                        </Link>
+                      ),
+                    },
+                  ]
+                : []),
+              ...(relations?.rootTaskId
+                ? [
+                    {
+                      dataIndex: "rootTaskId" as const,
+                      title: "根任务",
+                      render: () => (
+                        <Link
+                          to="/dashboard/tasks/$taskId"
+                          params={{ taskId: relations.rootTaskId! }}
+                        >
+                          <Typography.Link>
+                            {relations.rootTaskId!.slice(0, 8)}
+                          </Typography.Link>
+                        </Link>
+                      ),
+                    },
+                  ]
+                : []),
+              {
+                dataIndex: "changeSetId",
+                title: "变更集",
+                render: () => (
+                  <RelationLink
+                    changeSetId={
+                      relations?.changeSetId ?? result?.links?.changeSetId
+                    }
+                    recoveryPointId={
+                      relations?.recoveryPointId ??
+                      result?.links?.recoveryPointId
+                    }
+                  />
+                ),
+              },
+            ]}
+          />
+        </Card>
+      )}
 
       {task.error && (
-        <div className="space-y-2 rounded-md border border-destructive p-4">
-          <h3 className="font-medium text-destructive">错误信息</h3>
-          <pre className="whitespace-pre-wrap text-sm text-destructive">{task.error}</pre>
-          {jd?.stacktrace && jd.stacktrace.length > 0 && (
-            <details className="mt-2">
-              <summary className="cursor-pointer text-xs text-muted-foreground">查看堆栈跟踪</summary>
-              <pre className="mt-2 whitespace-pre-wrap text-xs text-destructive/80 overflow-auto max-h-64">
-                {jd.stacktrace.join("\n")}
-              </pre>
-            </details>
-          )}
-        </div>
+        <Alert
+          type="error"
+          showIcon
+          title="任务执行失败"
+          description={
+            <Flex vertical gap={token.marginSM}>
+              <Typography.Paragraph
+                style={{ whiteSpace: "pre-wrap", margin: 0 }}
+              >
+                {task.error}
+              </Typography.Paragraph>
+              {job?.stacktrace && job.stacktrace.length > 0 && (
+                <details>
+                  <summary style={{ cursor: "pointer" }}>查看堆栈跟踪</summary>
+                  <Typography.Paragraph
+                    code
+                    copyable
+                    style={{
+                      whiteSpace: "pre-wrap",
+                      marginTop: token.marginXS,
+                    }}
+                  >
+                    {job.stacktrace.join("\n")}
+                  </Typography.Paragraph>
+                </details>
+              )}
+            </Flex>
+          }
+        />
       )}
 
-      {!jd?.jobAvailable && task.status !== "success" && (
-        <div className="rounded-md border border-muted p-4 text-sm text-muted-foreground">
-          BullMQ job 已清理，无法获取实时状态
-        </div>
-      )}
+      {!job?.jobAvailable && !isSucceeded && (
+          <Alert
+            type="warning"
+            showIcon
+            title="实时状态不可用"
+            description="BullMQ job 已清理，无法获取实时状态。"
+          />
+        )}
 
-      <div className="flex gap-2">
-        {task.status === "failed" && (
-          <Button size="sm" onClick={onRetry} disabled={retryPending}>
-            <RotateCwIcon className="mr-2 h-4 w-4" />
+      {/* Capabilities-driven action row. When capabilities are present the
+          server is authoritative; otherwise we fall back to status-based
+          visibility so legacy rows still render. */}
+      <Flex gap={token.marginXS}>
+        {canRetry && (
+          <Button
+            type="primary"
+            onClick={onRetry}
+            loading={retryPending}
+            icon={<ReloadOutlined />}
+          >
             重试
           </Button>
         )}
-        {isActive && (
-          <Button size="sm" variant="destructive" onClick={onCancel} disabled={cancelPending}>
-            <XIcon className="mr-2 h-4 w-4" />
+        {canCancel && (
+          <Button
+            danger
+            onClick={onCancel}
+            loading={cancelPending}
+            icon={<CloseOutlined />}
+          >
             取消
           </Button>
         )}
-      </div>
-    </div>
+        {canRestore && onRestore && (
+          <Button
+            onClick={onRestore}
+            loading={restorePending}
+            icon={<ReloadOutlined />}
+          >
+            恢复
+          </Button>
+        )}
+      </Flex>
+    </Flex>
   );
 }
 

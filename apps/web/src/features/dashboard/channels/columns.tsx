@@ -1,154 +1,242 @@
-import { type ColumnDef } from "@tanstack/react-table";
+import type { ProColumns } from "@ant-design/pro-components";
 import { Link } from "@tanstack/react-router";
 import type { CanonicalChannelVo } from "@magi/types";
-import { Badge } from "@magi/ui/components/badge";
-import { Button } from "@magi/ui/components/button";
-import { Checkbox } from "@magi/ui/components/checkbox";
-import { DataTableColumnHeader } from "@magi/ui/components/data-table-column-header";
-import { PencilIcon, ExternalLinkIcon, EyeIcon, EyeOffIcon } from "lucide-react";
+import { Button, Flex, Tag, theme } from "antd";
+import {
+  lifecycleMap,
+  formatPurgeAfter,
+} from "@/features/dashboard/channels/channel-lifecycle-actions";
+import {
+  EditOutlined,
+  EyeInvisibleOutlined,
+  EyeOutlined,
+  ExportOutlined,
+  StarFilled,
+} from "@ant-design/icons";
 
-const epgStatusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  matched_auto: { label: "自动匹配", variant: "default" },
-  matched_manual: { label: "手动匹配", variant: "secondary" },
-  unmatched: { label: "未匹配", variant: "outline" },
-  conflict: { label: "冲突", variant: "destructive" },
+const epgStatusMap: Record<string, { label: string; color?: string }> = {
+  matched_auto: { label: "自动匹配", color: "processing" },
+  matched_manual: { label: "手动匹配", color: "blue" },
+  unmatched: { label: "未匹配" },
+  conflict: { label: "冲突", color: "error" },
 };
 
-const outputStatusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  active: { label: "正常", variant: "default" },
-  degraded: { label: "降级", variant: "secondary" },
-  unavailable: { label: "不可用", variant: "destructive" },
-  inactive: { label: "停用", variant: "outline" },
-  unknown: { label: "未知", variant: "outline" },
+const outputStatusMap: Record<string, { label: string; color?: string }> = {
+  active: { label: "正常", color: "success" },
+  degraded: { label: "降级", color: "warning" },
+  unavailable: { label: "不可用", color: "error" },
+  inactive: { label: "停用" },
+  unknown: { label: "未知" },
+};
+
+// ProTable QueryFilter valueEnums. Mirror the label maps above so search
+// options match the rendered tags/text. Exported for pages that need to
+// augment with remote data (e.g. the group options endpoint).
+export const EPG_STATUS_VALUE_ENUM = {
+  matched_auto: { text: "自动匹配" },
+  matched_manual: { text: "手动匹配" },
+  unmatched: { text: "未匹配" },
+  conflict: { text: "冲突" },
+};
+
+export const OUTPUT_STATUS_VALUE_ENUM = {
+  active: { text: "正常" },
+  degraded: { text: "降级" },
+  unavailable: { text: "不可用" },
+  inactive: { text: "停用" },
+  unknown: { text: "未知" },
 };
 
 interface ColumnContext {
   onEdit?: (channel: CanonicalChannelVo) => void;
   onToggleHidden?: (channel: CanonicalChannelVo) => void;
+  /** Trash tab shows purgeAfter instead of the hide toggle (T060). */
+  trashView?: boolean;
+  /** Remote group options for the standardGroup search dropdown (T059). */
+  groupOptions?: { value: string; label: string }[];
 }
 
-export function getChannelColumns(ctx?: ColumnContext): ColumnDef<CanonicalChannelVo>[] {
-  return [
+export function getChannelColumns(
+  ctx?: ColumnContext,
+): ProColumns<CanonicalChannelVo>[] {
+  const columns: ProColumns<CanonicalChannelVo>[] = [
     {
-      id: "select",
-      header: ({ table }) => (
-        <Checkbox
-          checked={table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && "indeterminate")}
-          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-          aria-label="全选"
-        />
-      ),
-      cell: ({ row }) => (
-        <Checkbox
-          checked={row.getIsSelected()}
-          onCheckedChange={(value) => row.toggleSelected(!!value)}
-          onClick={(e) => e.stopPropagation()}
-          aria-label="选择"
-        />
-      ),
-      enableSorting: false,
-      enableHiding: false,
+      title: "频道名称",
+      dataIndex: "standardName",
+      search: false,
+      ellipsis: true,
+      render: (_, record) => <ChannelNameCell channel={record} />,
     },
     {
-      accessorKey: "standardName",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="频道名称" />,
-      cell: ({ row }) => (
-        <div className="flex items-center gap-2">
-          {row.original.starred && <span className="text-yellow-500" aria-label="已收藏">&#9733;</span>}
-          {row.original.standardLogo ? (
-            <img
-              src={row.original.standardLogo}
-              alt=""
-              className="h-5 w-5 rounded object-contain"
-              loading="lazy"
-            />
-          ) : (
-            <div className="h-5 w-5 rounded bg-muted" />
-          )}
-          <Link
-            to="/dashboard/channels/$channelId"
-            params={{ channelId: row.original.id }}
-            className="font-medium hover:underline"
-          >
-            {row.original.standardName}
-          </Link>
-        </div>
-      ),
+      title: "分组",
+      dataIndex: "standardGroup",
+      valueType: "select",
+      ellipsis: true,
+      fieldProps: { options: ctx?.groupOptions },
+      render: (_, record) => record.standardGroup ?? "-",
     },
     {
-      accessorKey: "standardGroup",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="分组" />,
-      cell: ({ row }) => row.original.standardGroup ?? "-",
-    },
-    {
-      accessorKey: "epgStatus",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="EPG" />,
-      cell: ({ row }) => {
-        const s = epgStatusMap[row.original.epgStatus] ?? { label: row.original.epgStatus, variant: "outline" as const };
-        return <Badge variant={s.variant}>{s.label}</Badge>;
+      title: "绑定状态",
+      dataIndex: "epgStatus",
+      valueType: "select",
+      valueEnum: EPG_STATUS_VALUE_ENUM,
+      render: (_, record) => {
+        const s = epgStatusMap[record.epgStatus] ?? { label: record.epgStatus };
+        return <Tag color={s.color}>{s.label}</Tag>;
       },
     },
     {
-      accessorKey: "outputStatus",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="输出" />,
-      cell: ({ row }) => {
-        const s = outputStatusMap[row.original.outputStatus] ?? { label: row.original.outputStatus, variant: "outline" as const };
-        return <Badge variant={s.variant}>{s.label}</Badge>;
+      title: "EPG 来源",
+      dataIndex: ["epgBinding", "xmltvSourceName"],
+      search: false,
+      render: (_, record) =>
+        record.epgBinding?.xmltvSourceName ??
+        record.epgBinding?.xmltvSourceId ??
+        "-",
+    },
+    {
+      title: "EPG Channel",
+      dataIndex: ["epgBinding", "xmltvChannelId"],
+      search: false,
+      render: (_, record) => (
+        <Flex gap={4} align="center">
+          <span style={{ fontFamily: "monospace", fontSize: 12 }}>
+            {record.epgBinding?.xmltvChannelId ?? "-"}
+          </span>
+          {record.epgBinding?.locked && <Tag color="gold">锁定</Tag>}
+        </Flex>
+      ),
+    },
+    {
+      title: "输出",
+      dataIndex: "outputStatus",
+      valueType: "select",
+      valueEnum: OUTPUT_STATUS_VALUE_ENUM,
+      render: (_, record) => {
+        const s = outputStatusMap[record.outputStatus] ?? {
+          label: record.outputStatus,
+        };
+        return <Tag color={s.color}>{s.label}</Tag>;
       },
     },
     {
-      accessorKey: "epgChannelId",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="tvg-id" />,
-      cell: ({ row }) => (
-        <span className="font-mono text-xs">{row.original.epgChannelId ?? "-"}</span>
-      ),
+      title: "状态",
+      dataIndex: "lifecycle",
+      search: false,
+      render: (_, record) => {
+        const s = lifecycleMap[record.lifecycle ?? "active"];
+        return <Tag color={s.color}>{s.label}</Tag>;
+      },
     },
     {
-      accessorKey: "channelNumber",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="频道号" />,
-      cell: ({ row }) => row.original.channelNumber ?? "-",
-    },
-    {
-      accessorKey: "hidden",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="隐藏" />,
-      cell: ({ row }) => (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          onClick={(e) => { e.stopPropagation(); ctx?.onToggleHidden?.(row.original); }}
-          aria-label={row.original.hidden ? "显示" : "隐藏"}
-        >
-          {row.original.hidden ? (
-            <EyeOffIcon className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <EyeIcon className="h-4 w-4" />
-          )}
-        </Button>
-      ),
-    },
-    {
-      id: "actions",
-      header: () => null,
-      cell: ({ row }) => (
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" asChild>
-            <Link to="/dashboard/channels/$channelId" params={{ channelId: row.original.id }} aria-label="详情">
-              <ExternalLinkIcon className="h-4 w-4" />
-            </Link>
-          </Button>
-          {ctx?.onEdit && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={(e) => { e.stopPropagation(); ctx.onEdit!(row.original); }}
-              aria-label="编辑"
-            >
-              <PencilIcon className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
-      ),
+      title: "频道号",
+      dataIndex: "channelNumber",
+      search: false,
+      render: (_, record) => record.channelNumber ?? "-",
     },
   ];
+
+  // Conditional column: trash view shows purgeAfter, otherwise hide toggle.
+  if (ctx?.trashView) {
+    columns.push({
+      title: "可清除时间",
+      dataIndex: "purgeAfter",
+      search: false,
+      render: (_, record) => formatPurgeAfter(record.purgeAfter),
+    });
+  } else {
+    columns.push({
+      title: "隐藏",
+      dataIndex: "hidden",
+      search: false,
+      render: (_, record) => (
+        <Button
+          type="text"
+          size="small"
+          icon={record.hidden ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+          onClick={(e) => {
+            e.stopPropagation();
+            ctx?.onToggleHidden?.(record);
+          }}
+          aria-label={record.hidden ? "显示" : "隐藏"}
+        />
+      ),
+    });
+  }
+
+  // Action column (always last, fixed right).
+  columns.push({
+    title: "操作",
+    valueType: "option",
+    hideInSetting: true,
+    fixed: "right",
+    width: 100,
+    render: (_, record) => [
+      <Link
+        key="detail"
+        to="/dashboard/channels/$channelId"
+        params={{ channelId: record.id }}
+      >
+        <Button type="text" size="small" icon={<ExportOutlined />} aria-label="详情" />
+      </Link>,
+      ...(ctx?.onEdit
+        ? [
+            <Button
+              key="edit"
+              type="text"
+              size="small"
+              icon={<EditOutlined />}
+              onClick={(e) => {
+                e.stopPropagation();
+                ctx.onEdit!(record);
+              }}
+              aria-label="编辑"
+            />,
+          ]
+        : []),
+    ],
+  });
+
+  return columns;
+}
+
+function ChannelNameCell({ channel }: { channel: CanonicalChannelVo }) {
+  const { token } = theme.useToken();
+
+  return (
+    <Flex align="center" gap={token.marginXS}>
+      {channel.starred && (
+        <StarFilled style={{ color: token.colorWarning }} aria-label="已收藏" />
+      )}
+      {channel.standardLogo ? (
+        <img
+          src={channel.standardLogo}
+          alt=""
+          style={{
+            width: 20,
+            height: 20,
+            borderRadius: token.borderRadiusSM,
+            objectFit: "contain",
+          }}
+          loading="lazy"
+        />
+      ) : (
+        <div
+          style={{
+            width: 20,
+            height: 20,
+            borderRadius: token.borderRadiusSM,
+            background: token.colorFillSecondary,
+          }}
+        />
+      )}
+      <Link
+        to="/dashboard/channels/$channelId"
+        params={{ channelId: channel.id }}
+        style={{ fontWeight: 600 }}
+      >
+        {channel.standardName}
+      </Link>
+    </Flex>
+  );
 }
