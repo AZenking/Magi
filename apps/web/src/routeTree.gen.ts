@@ -16,6 +16,8 @@ import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
 import { Route as DashboardEpgMatchingRouteImport } from './routes/dashboard/epg-matching'
 import { Route as DashboardTasksIndexRouteImport } from './routes/dashboard/tasks/index'
 import { Route as DashboardChannelsIndexRouteImport } from './routes/dashboard/channels/index'
+import { Route as DashboardBackupsIndexRouteImport } from './routes/dashboard/backups/index'
+import { Route as DashboardAuditIndexRouteImport } from './routes/dashboard/audit/index'
 import { Route as DashboardTasksTaskIdRouteImport } from './routes/dashboard/tasks/$taskId'
 import { Route as DashboardSourcesXmltvRouteImport } from './routes/dashboard/sources/xmltv'
 import { Route as DashboardSourcesProgrammesRouteImport } from './routes/dashboard/sources/programmes'
@@ -56,6 +58,16 @@ const DashboardTasksIndexRoute = DashboardTasksIndexRouteImport.update({
 const DashboardChannelsIndexRoute = DashboardChannelsIndexRouteImport.update({
   id: '/channels/',
   path: '/channels/',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardBackupsIndexRoute = DashboardBackupsIndexRouteImport.update({
+  id: '/backups/',
+  path: '/backups/',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardAuditIndexRoute = DashboardAuditIndexRouteImport.update({
+  id: '/audit/',
+  path: '/audit/',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardTasksTaskIdRoute = DashboardTasksTaskIdRouteImport.update({
@@ -104,6 +116,8 @@ export interface FileRoutesByFullPath {
   '/dashboard/sources/programmes': typeof DashboardSourcesProgrammesRoute
   '/dashboard/sources/xmltv': typeof DashboardSourcesXmltvRoute
   '/dashboard/tasks/$taskId': typeof DashboardTasksTaskIdRoute
+  '/dashboard/audit/': typeof DashboardAuditIndexRoute
+  '/dashboard/backups/': typeof DashboardBackupsIndexRoute
   '/dashboard/channels/': typeof DashboardChannelsIndexRoute
   '/dashboard/tasks/': typeof DashboardTasksIndexRoute
 }
@@ -118,6 +132,8 @@ export interface FileRoutesByTo {
   '/dashboard/sources/programmes': typeof DashboardSourcesProgrammesRoute
   '/dashboard/sources/xmltv': typeof DashboardSourcesXmltvRoute
   '/dashboard/tasks/$taskId': typeof DashboardTasksTaskIdRoute
+  '/dashboard/audit': typeof DashboardAuditIndexRoute
+  '/dashboard/backups': typeof DashboardBackupsIndexRoute
   '/dashboard/channels': typeof DashboardChannelsIndexRoute
   '/dashboard/tasks': typeof DashboardTasksIndexRoute
 }
@@ -134,6 +150,8 @@ export interface FileRoutesById {
   '/dashboard/sources/programmes': typeof DashboardSourcesProgrammesRoute
   '/dashboard/sources/xmltv': typeof DashboardSourcesXmltvRoute
   '/dashboard/tasks/$taskId': typeof DashboardTasksTaskIdRoute
+  '/dashboard/audit/': typeof DashboardAuditIndexRoute
+  '/dashboard/backups/': typeof DashboardBackupsIndexRoute
   '/dashboard/channels/': typeof DashboardChannelsIndexRoute
   '/dashboard/tasks/': typeof DashboardTasksIndexRoute
 }
@@ -151,6 +169,8 @@ export interface FileRouteTypes {
     | '/dashboard/sources/programmes'
     | '/dashboard/sources/xmltv'
     | '/dashboard/tasks/$taskId'
+    | '/dashboard/audit/'
+    | '/dashboard/backups/'
     | '/dashboard/channels/'
     | '/dashboard/tasks/'
   fileRoutesByTo: FileRoutesByTo
@@ -165,6 +185,8 @@ export interface FileRouteTypes {
     | '/dashboard/sources/programmes'
     | '/dashboard/sources/xmltv'
     | '/dashboard/tasks/$taskId'
+    | '/dashboard/audit'
+    | '/dashboard/backups'
     | '/dashboard/channels'
     | '/dashboard/tasks'
   id:
@@ -180,6 +202,8 @@ export interface FileRouteTypes {
     | '/dashboard/sources/programmes'
     | '/dashboard/sources/xmltv'
     | '/dashboard/tasks/$taskId'
+    | '/dashboard/audit/'
+    | '/dashboard/backups/'
     | '/dashboard/channels/'
     | '/dashboard/tasks/'
   fileRoutesById: FileRoutesById
@@ -241,6 +265,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardChannelsIndexRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/backups/': {
+      id: '/dashboard/backups/'
+      path: '/backups'
+      fullPath: '/dashboard/backups/'
+      preLoaderRoute: typeof DashboardBackupsIndexRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/audit/': {
+      id: '/dashboard/audit/'
+      path: '/audit'
+      fullPath: '/dashboard/audit/'
+      preLoaderRoute: typeof DashboardAuditIndexRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/tasks/$taskId': {
       id: '/dashboard/tasks/$taskId'
       path: '/tasks/$taskId'
@@ -295,6 +333,8 @@ interface DashboardRouteChildren {
   DashboardSourcesProgrammesRoute: typeof DashboardSourcesProgrammesRoute
   DashboardSourcesXmltvRoute: typeof DashboardSourcesXmltvRoute
   DashboardTasksTaskIdRoute: typeof DashboardTasksTaskIdRoute
+  DashboardAuditIndexRoute: typeof DashboardAuditIndexRoute
+  DashboardBackupsIndexRoute: typeof DashboardBackupsIndexRoute
   DashboardChannelsIndexRoute: typeof DashboardChannelsIndexRoute
   DashboardTasksIndexRoute: typeof DashboardTasksIndexRoute
 }
@@ -308,6 +348,8 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardSourcesProgrammesRoute: DashboardSourcesProgrammesRoute,
   DashboardSourcesXmltvRoute: DashboardSourcesXmltvRoute,
   DashboardTasksTaskIdRoute: DashboardTasksTaskIdRoute,
+  DashboardAuditIndexRoute: DashboardAuditIndexRoute,
+  DashboardBackupsIndexRoute: DashboardBackupsIndexRoute,
   DashboardChannelsIndexRoute: DashboardChannelsIndexRoute,
   DashboardTasksIndexRoute: DashboardTasksIndexRoute,
 }
