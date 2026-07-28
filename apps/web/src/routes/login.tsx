@@ -1,9 +1,18 @@
-import { Typography, theme as antdTheme } from "antd";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import type { ProFormInstance } from "@ant-design/pro-components";
+import type { FormInstance } from "antd";
+import { Card, Flex, Layout, Tag, Typography, theme } from "antd";
+import {
+  AppstoreOutlined,
+  CheckCircleFilled,
+  CloudServerOutlined,
+  ScheduleOutlined,
+} from "@ant-design/icons";
 import { signIn, useSession } from "@/lib/auth-client";
 import { LoginForm, type LoginFormValues } from "@/components/login-form";
+import "@/styles/login.css";
+
+const { Sider, Content } = Layout;
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
@@ -15,8 +24,8 @@ export const Route = createFileRoute("/login")({
 function LoginPage() {
   const navigate = useNavigate();
   const { data: session, isPending: sessionPending } = useSession();
-  const { token } = antdTheme.useToken();
-  const formRef = useRef<ProFormInstance<LoginFormValues>>(undefined);
+  const { token } = theme.useToken();
+  const formRef = useRef<FormInstance<LoginFormValues>>(undefined);
   const [pending, setPending] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -58,70 +67,157 @@ function LoginPage() {
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100svh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: token.paddingLG,
-        background: token.colorBgLayout,
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 400,
-          padding: token.paddingXL,
-          background: token.colorBgContainer,
-          borderRadius: token.borderRadiusLG,
-          boxShadow: token.boxShadowTertiary,
-        }}
+    <Layout className="magi-auth-layout" hasSider>
+      <Sider className="magi-auth-sider" width={320} theme="dark">
+        <Flex vertical className="magi-auth-sider__inner">
+          <Flex align="center" gap={token.marginSM}>
+            <div
+              className="magi-auth-logo"
+              style={{
+                background: token.colorPrimary,
+                borderRadius: token.borderRadiusLG,
+                boxShadow: token.boxShadowTertiary,
+              }}
+            >
+              M
+            </div>
+            <div>
+              <Typography.Title
+                level={4}
+                style={{ margin: 0, color: token.colorWhite }}
+              >
+                MAGI
+              </Typography.Title>
+              <Typography.Text style={{ color: token.colorTextLightSolid, opacity: 0.65 }}>
+                EPG 管理平台
+              </Typography.Text>
+            </div>
+          </Flex>
+
+          <div className="magi-auth-sider__content">
+            <Tag color="blue" variant="filled">
+              Personal EPG + Live TV
+            </Tag>
+            <Typography.Title
+              level={2}
+              style={{
+                margin: `${token.marginLG}px 0 ${token.marginSM}px`,
+                color: token.colorWhite,
+                lineHeight: 1.35,
+              }}
+            >
+              统一管理节目单
+              <br />
+              与直播源
+            </Typography.Title>
+            <Typography.Paragraph
+              style={{
+                marginBottom: token.marginXL,
+                color: token.colorTextLightSolid,
+                opacity: 0.65,
+                lineHeight: 1.8,
+              }}
+            >
+              聚合频道数据、维护 EPG 匹配关系，
+              <br />
+              持续掌握输出健康状态。
+            </Typography.Paragraph>
+
+            <Flex vertical gap={token.marginMD}>
+              {[
+                [<CloudServerOutlined key="source" />, "直播源集中管理"],
+                [<ScheduleOutlined key="epg" />, "EPG 节目单编排"],
+                [<AppstoreOutlined key="channel" />, "频道与输出监控"],
+              ].map(([icon, label]) => (
+                <Flex
+                  key={String(label)}
+                  align="center"
+                  gap={token.marginSM}
+                  style={{ color: token.colorTextLightSolid }}
+                >
+                  <div
+                    className="magi-auth-feature-icon"
+                    style={{ borderRadius: token.borderRadius }}
+                  >
+                    {icon}
+                  </div>
+                  <span>{label}</span>
+                </Flex>
+              ))}
+            </Flex>
+          </div>
+
+          <Typography.Text
+            className="magi-auth-sider__footer"
+            style={{ color: token.colorTextLightSolid, opacity: 0.45 }}
+          >
+            MAGI · IPTV/EPG MANAGEMENT SYSTEM
+          </Typography.Text>
+        </Flex>
+      </Sider>
+
+      <Content
+        className="magi-auth-content"
+        style={{ padding: token.paddingLG, background: token.colorBgLayout }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: token.marginSM,
-            marginBottom: token.marginMD,
-            fontWeight: token.fontWeightStrong,
-          }}
-        >
+        <div className="magi-auth-mobile-brand">
           <div
+            className="magi-auth-logo"
             style={{
-              width: 24,
-              height: 24,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: token.borderRadius,
               background: token.colorPrimary,
-              color: token.colorBgContainer,
-              fontSize: token.fontSizeSM,
-              fontWeight: token.fontWeightStrong,
+              borderRadius: token.borderRadiusLG,
             }}
           >
             M
           </div>
-          <span>MAGI</span>
+          <div>
+            <Typography.Text strong>MAGI</Typography.Text>
+            <Typography.Text type="secondary">EPG 管理平台</Typography.Text>
+          </div>
         </div>
 
-        <Typography.Title level={2} style={{ marginBottom: token.marginXS }}>
-          登录到 MAGI
-        </Typography.Title>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: token.marginLG }}>
-          输入用户名和密码以进入管理后台
-        </Typography.Paragraph>
+        <Card
+          className="magi-auth-card"
+          styles={{ body: { padding: token.paddingXL } }}
+          style={{
+            borderRadius: token.borderRadiusLG,
+            boxShadow: token.boxShadowTertiary,
+          }}
+        >
+          <Flex vertical gap={token.marginXL}>
+            <Flex vertical gap={token.marginXS}>
+              <Flex align="center" justify="space-between" gap={token.marginSM}>
+                <Typography.Title level={2} style={{ margin: 0 }}>
+                  登录
+                </Typography.Title>
+                <Typography.Text type="success" style={{ fontSize: token.fontSizeSM }}>
+                  <CheckCircleFilled style={{ marginRight: token.marginXXS }} />
+                  服务正常
+                </Typography.Text>
+              </Flex>
+              <Typography.Text type="secondary">
+                使用管理员账号登录 MAGI 管理控制台
+              </Typography.Text>
+            </Flex>
 
-        <LoginForm
-          onFinish={handleSubmit}
-          pending={pending}
-          errorMessage={errorMessage}
-          formRef={formRef}
-          onValuesChange={() => setErrorMessage(null)}
-        />
-      </div>
-    </div>
+            <LoginForm
+              onFinish={handleSubmit}
+              pending={pending}
+              errorMessage={errorMessage}
+              formRef={formRef}
+              onValuesChange={() => setErrorMessage(null)}
+            />
+          </Flex>
+        </Card>
+
+        <Typography.Text
+          className="magi-auth-copyright"
+          type="secondary"
+          style={{ fontSize: token.fontSizeSM }}
+        >
+          © 2026 MAGI · IPTV/EPG Management System
+        </Typography.Text>
+      </Content>
+    </Layout>
   );
 }

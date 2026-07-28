@@ -1,5 +1,6 @@
-import { LoginForm as ProLoginForm, ProFormText } from "@ant-design/pro-components";
-import type { ProFormInstance } from "@ant-design/pro-components";
+import { Alert, Button, Form, Input } from "antd";
+import type { FormInstance } from "antd";
+import { LockOutlined, UserOutlined } from "@ant-design/icons";
 
 export type LoginFormValues = {
   username: string;
@@ -10,7 +11,7 @@ type LoginFormProps = {
   onFinish: (values: LoginFormValues) => Promise<void> | void;
   pending: boolean;
   errorMessage?: string | null;
-  formRef?: React.MutableRefObject<ProFormInstance<LoginFormValues> | undefined>;
+  formRef?: React.MutableRefObject<FormInstance<LoginFormValues> | undefined>;
   onValuesChange?: (changed: Partial<LoginFormValues>, all: LoginFormValues) => void;
 };
 
@@ -22,34 +23,56 @@ export function LoginForm({
   onValuesChange,
 }: LoginFormProps) {
   return (
-    <ProLoginForm<LoginFormValues>
-      formRef={formRef as never}
-      onFinish={async (values) => {
-        await onFinish(values);
-        // Login errors are surfaced via `errorMessage`; never auto-close.
-        return false;
-      }}
-      onValuesChange={onValuesChange as never}
-      submitter={{
-        searchConfig: { submitText: "登录" },
-        submitButtonProps: { loading: pending, block: true },
-      }}
-      message={errorMessage ? errorMessage : false}
-      title={false}
-      subTitle={false}
+    <Form<LoginFormValues>
+      className="magi-login-form"
+      ref={formRef as never}
+      layout="vertical"
+      autoComplete="off"
+      onFinish={onFinish}
+      onValuesChange={onValuesChange}
     >
-      <ProFormText
+      {errorMessage && (
+        <Alert
+          className="magi-login-alert"
+          type="error"
+          title={errorMessage}
+          showIcon
+        />
+      )}
+      <Form.Item<LoginFormValues>
         name="username"
-        placeholder="admin"
-        fieldProps={{ autoComplete: "username" }}
+        label="用户名"
         rules={[{ required: true, message: "请输入用户名" }]}
-      />
-      <ProFormText.Password
+      >
+        <Input
+          autoComplete="username"
+          size="large"
+          prefix={<UserOutlined />}
+          placeholder="输入管理员用户名"
+        />
+      </Form.Item>
+      <Form.Item<LoginFormValues>
         name="password"
-        placeholder="密码"
-        fieldProps={{ autoComplete: "current-password" }}
+        label="密码"
         rules={[{ required: true, message: "请输入密码" }]}
-      />
-    </ProLoginForm>
+      >
+        <Input.Password
+          autoComplete="current-password"
+          size="large"
+          prefix={<LockOutlined />}
+          placeholder="输入登录密码"
+        />
+      </Form.Item>
+      <Button
+        className="magi-login-submit"
+        type="primary"
+        htmlType="submit"
+        loading={pending}
+        block
+        size="large"
+      >
+        登录
+      </Button>
+    </Form>
   );
 }
