@@ -32,9 +32,9 @@ import {
 } from "@ant-design/icons";
 import type {
   ChannelStreamVo,
+  EpgBindingVo,
   OutputChannelDetailVo,
-  PaginatedResponse,
-  ProgrammeVo,
+  OutputGuideVo,
 } from "@magi/types";
 import { useFeedback } from "@/lib/feedback";
 import { apiClient } from "@/services/api";
@@ -148,27 +148,36 @@ function ChannelDetailPage() {
   });
   const channel = detail?.data?.channel;
   const streams = detail?.data?.streams ?? [];
+  const guideRange = (() => {
+    const from = new Date();
+    from.setHours(0, 0, 0, 0);
+    const to = new Date(from);
+    to.setDate(to.getDate() + 1);
+    return { from: from.toISOString(), to: to.toISOString() };
+  })();
 
   const {
     data: progData,
     isError: programmesError,
     refetch: refetchProgrammes,
   } = useQuery({
-    queryKey: ["programmes", channel?.epgChannelId],
+    queryKey: ["output-guide", channelId, guideRange.from],
     queryFn: () =>
-      apiClient<{ success: boolean; data: PaginatedResponse<ProgrammeVo> }>(
-        "/programmes",
+      apiClient<{ success: boolean; data: OutputGuideVo }>(
+        "/output/guide",
         {
           params: {
-            xmltvChannelId: channel!.epgChannelId ?? undefined,
+            from: guideRange.from,
+            to: guideRange.to,
+            channelId,
             page: 1,
-            pageSize: 10,
+            pageSize: 1,
           },
         },
       ),
-    enabled: !!channel?.epgChannelId,
+    enabled: !!channel,
   });
-  const programmes = progData?.data?.items ?? [];
+  const programmes = progData?.data?.items[0]?.programmes ?? [];
 
   const invalidateChannel = () => {
     void queryClient.invalidateQueries({
@@ -181,6 +190,29 @@ function ChannelDetailPage() {
       apiClient(`/output/channels/${channelId}`, { method: "PUT", body }),
     onSuccess: invalidateChannel,
     onError: (error) => message.error(`保存失败：${error.message}`),
+  });
+  const epgBindingMutation = useMutation({
+    mutationFn: async (body: {
+      xmltvSourceId: string | null;
+      epgChannelId: string | null;
+      locked: boolean;
+      reason?: string;
+    }) =>
+      apiClient<{ success: boolean; data: EpgBindingVo }>(
+        `/output/channels/${channelId}/epg-binding`,
+        {
+          method: "PATCH",
+          headers: {
+            "If-Match": String(channel?.epgBinding?.version ?? 0),
+          },
+          body,
+        },
+      ),
+    onSuccess: () => {
+      invalidateChannel();
+      void queryClient.invalidateQueries({ queryKey: ["output-guide"] });
+    },
+    onError: (error) => message.error(`EPG 绑定失败：${error.message}`),
   });
   const createStreamMutation = useMutation({
     mutationFn: async (data: {
@@ -361,11 +393,19 @@ function ChannelDetailPage() {
             dataSource={channel}
             columns={[
               {
-                dataIndex: "epgChannelId",
-                title: "频道 ID (tvg-id)",
+                dataIndex: "epgBinding",
+                title: "XMLTV 来源",
+                render: (_, entity) =>
+                  entity.epgBinding?.xmltvSourceName ??
+                  entity.epgBinding?.xmltvSourceId ??
+                  "未绑定",
+              },
+              {
+                dataIndex: "epgBinding",
+                title: "EPG Channel",
                 render: (_, entity) => (
                   <Typography.Text code>
-                    {entity.epgChannelId ?? "未绑定"}
+                    {entity.epgBinding?.xmltvChannelId ?? "未绑定"}
                   </Typography.Text>
                 ),
               },
@@ -383,7 +423,7 @@ function ChannelDetailPage() {
           />
         </Card>
 
-        <Card title="节目单">
+        <Card title="输出节目单（今日有效投影）">
           {programmesError ? (
             <Result
               status="error"
@@ -392,7 +432,7 @@ function ChannelDetailPage() {
                 <Button onClick={() => void refetchProgrammes()}>重试</Button>
               }
             />
-          ) : !channel.epgChannelId ? (
+          ) : !channel.epgBinding?.xmltvChannelId ? (
             <Empty description="未绑定 EPG，暂无节目单" />
           ) : programmes.length === 0 ? (
             <Empty description="暂无节目数据" />
@@ -615,16 +655,31 @@ function ChannelDetailPage() {
       <EpgMatchDialog
         open={epgOpen}
         onOpenChange={setEpgOpen}
-        currentEpgChannelId={channel.epgChannelId}
-        onSelect={async (xmltvChannelId) => {
-          await updateMutation.mutateAsync({ epgChannelId: xmltvChannelId });
+        currentEpgChannelId={channel.epgBinding?.xmltvChannelId ?? null}
+        manualLocked={channel.epgBinding?.locked}
+        xmltvSourceId={
+          channel.epgBinding?.xmltvSourceName ??
+          channel.epgBinding?.xmltvSourceId
+        }
+        onSelect={async (candidate, locked) => {
+          await epgBindingMutation.mutateAsync({
+            xmltvSourceId: candidate.sourceId,
+            epgChannelId: candidate.xmltvId,
+            locked,
+            reason: "Admin manual binding",
+          });
           setEpgOpen(false);
         }}
         onClear={async () => {
-          await updateMutation.mutateAsync({ epgChannelId: null });
+          await epgBindingMutation.mutateAsync({
+            xmltvSourceId: null,
+            epgChannelId: null,
+            locked: false,
+            reason: "Admin cleared binding",
+          });
           setEpgOpen(false);
         }}
-        pending={updateMutation.isPending}
+        pending={epgBindingMutation.isPending}
       />
       {streamDialogOpen && (
         <ChannelStreamDialog

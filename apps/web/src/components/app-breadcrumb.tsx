@@ -3,12 +3,14 @@ import { Link, useLocation } from "@tanstack/react-router";
 
 const LABELS: Record<string, string> = {
   dashboard: "仪表盘",
-  sources: "源",
-  m3u: "M3U",
-  xmltv: "EPG/XMLTV",
+  sources: "数据源",
+  m3u: "M3U 来源",
+  xmltv: "XMLTV 来源",
   channels: "频道",
-  programmes: "节目单",
+  programmes: "源节目数据",
   "epg-matching": "EPG 匹配",
+  "output-guide": "输出节目单",
+  "output-addresses": "输出地址",
   tasks: "任务",
 };
 

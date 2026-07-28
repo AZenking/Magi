@@ -64,18 +64,19 @@ export function getChannelColumns(
       title: "频道名称",
       dataIndex: "standardName",
       search: false,
+      ellipsis: true,
       render: (_, record) => <ChannelNameCell channel={record} />,
     },
     {
       title: "分组",
       dataIndex: "standardGroup",
       valueType: "select",
-      // Remote group list (with counts) drives the dropdown options.
+      ellipsis: true,
       fieldProps: { options: ctx?.groupOptions },
       render: (_, record) => record.standardGroup ?? "-",
     },
     {
-      title: "EPG",
+      title: "绑定状态",
       dataIndex: "epgStatus",
       valueType: "select",
       valueEnum: EPG_STATUS_VALUE_ENUM,
@@ -83,6 +84,28 @@ export function getChannelColumns(
         const s = epgStatusMap[record.epgStatus] ?? { label: record.epgStatus };
         return <Tag color={s.color}>{s.label}</Tag>;
       },
+    },
+    {
+      title: "EPG 来源",
+      dataIndex: ["epgBinding", "xmltvSourceName"],
+      search: false,
+      render: (_, record) =>
+        record.epgBinding?.xmltvSourceName ??
+        record.epgBinding?.xmltvSourceId ??
+        "-",
+    },
+    {
+      title: "EPG Channel",
+      dataIndex: ["epgBinding", "xmltvChannelId"],
+      search: false,
+      render: (_, record) => (
+        <Flex gap={4} align="center">
+          <span style={{ fontFamily: "monospace", fontSize: 12 }}>
+            {record.epgBinding?.xmltvChannelId ?? "-"}
+          </span>
+          {record.epgBinding?.locked && <Tag color="gold">锁定</Tag>}
+        </Flex>
+      ),
     },
     {
       title: "输出",
@@ -104,16 +127,6 @@ export function getChannelColumns(
         const s = lifecycleMap[record.lifecycle ?? "active"];
         return <Tag color={s.color}>{s.label}</Tag>;
       },
-    },
-    {
-      title: "tvg-id",
-      dataIndex: "epgChannelId",
-      search: false,
-      render: (_, record) => (
-        <span style={{ fontFamily: "monospace", fontSize: 12 }}>
-          {record.epgChannelId ?? "-"}
-        </span>
-      ),
     },
     {
       title: "频道号",

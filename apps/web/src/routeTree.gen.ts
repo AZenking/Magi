@@ -13,6 +13,8 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
+import { Route as DashboardOutputGuideRouteImport } from './routes/dashboard/output-guide'
+import { Route as DashboardOutputAddressesRouteImport } from './routes/dashboard/output-addresses'
 import { Route as DashboardEpgMatchingRouteImport } from './routes/dashboard/epg-matching'
 import { Route as DashboardTasksIndexRouteImport } from './routes/dashboard/tasks/index'
 import { Route as DashboardChannelsIndexRouteImport } from './routes/dashboard/channels/index'
@@ -45,6 +47,17 @@ const DashboardIndexRoute = DashboardIndexRouteImport.update({
   path: '/',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardOutputGuideRoute = DashboardOutputGuideRouteImport.update({
+  id: '/output-guide',
+  path: '/output-guide',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardOutputAddressesRoute =
+  DashboardOutputAddressesRouteImport.update({
+    id: '/output-addresses',
+    path: '/output-addresses',
+    getParentRoute: () => DashboardRoute,
+  } as any)
 const DashboardEpgMatchingRoute = DashboardEpgMatchingRouteImport.update({
   id: '/epg-matching',
   path: '/epg-matching',
@@ -109,6 +122,8 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRouteWithChildren
   '/login': typeof LoginRoute
   '/dashboard/epg-matching': typeof DashboardEpgMatchingRoute
+  '/dashboard/output-addresses': typeof DashboardOutputAddressesRoute
+  '/dashboard/output-guide': typeof DashboardOutputGuideRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/dashboard/channels/$channelId': typeof DashboardChannelsChannelIdRoute
   '/dashboard/sources/channels': typeof DashboardSourcesChannelsRoute
@@ -125,6 +140,8 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/dashboard/epg-matching': typeof DashboardEpgMatchingRoute
+  '/dashboard/output-addresses': typeof DashboardOutputAddressesRoute
+  '/dashboard/output-guide': typeof DashboardOutputGuideRoute
   '/dashboard': typeof DashboardIndexRoute
   '/dashboard/channels/$channelId': typeof DashboardChannelsChannelIdRoute
   '/dashboard/sources/channels': typeof DashboardSourcesChannelsRoute
@@ -143,6 +160,8 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRouteWithChildren
   '/login': typeof LoginRoute
   '/dashboard/epg-matching': typeof DashboardEpgMatchingRoute
+  '/dashboard/output-addresses': typeof DashboardOutputAddressesRoute
+  '/dashboard/output-guide': typeof DashboardOutputGuideRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/dashboard/channels/$channelId': typeof DashboardChannelsChannelIdRoute
   '/dashboard/sources/channels': typeof DashboardSourcesChannelsRoute
@@ -162,6 +181,8 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/dashboard/epg-matching'
+    | '/dashboard/output-addresses'
+    | '/dashboard/output-guide'
     | '/dashboard/'
     | '/dashboard/channels/$channelId'
     | '/dashboard/sources/channels'
@@ -178,6 +199,8 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/dashboard/epg-matching'
+    | '/dashboard/output-addresses'
+    | '/dashboard/output-guide'
     | '/dashboard'
     | '/dashboard/channels/$channelId'
     | '/dashboard/sources/channels'
@@ -195,6 +218,8 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/dashboard/epg-matching'
+    | '/dashboard/output-addresses'
+    | '/dashboard/output-guide'
     | '/dashboard/'
     | '/dashboard/channels/$channelId'
     | '/dashboard/sources/channels'
@@ -242,6 +267,20 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/dashboard/'
       preLoaderRoute: typeof DashboardIndexRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/output-guide': {
+      id: '/dashboard/output-guide'
+      path: '/output-guide'
+      fullPath: '/dashboard/output-guide'
+      preLoaderRoute: typeof DashboardOutputGuideRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/output-addresses': {
+      id: '/dashboard/output-addresses'
+      path: '/output-addresses'
+      fullPath: '/dashboard/output-addresses'
+      preLoaderRoute: typeof DashboardOutputAddressesRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/epg-matching': {
@@ -326,6 +365,8 @@ declare module '@tanstack/react-router' {
 
 interface DashboardRouteChildren {
   DashboardEpgMatchingRoute: typeof DashboardEpgMatchingRoute
+  DashboardOutputAddressesRoute: typeof DashboardOutputAddressesRoute
+  DashboardOutputGuideRoute: typeof DashboardOutputGuideRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
   DashboardChannelsChannelIdRoute: typeof DashboardChannelsChannelIdRoute
   DashboardSourcesChannelsRoute: typeof DashboardSourcesChannelsRoute
@@ -341,6 +382,8 @@ interface DashboardRouteChildren {
 
 const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardEpgMatchingRoute: DashboardEpgMatchingRoute,
+  DashboardOutputAddressesRoute: DashboardOutputAddressesRoute,
+  DashboardOutputGuideRoute: DashboardOutputGuideRoute,
   DashboardIndexRoute: DashboardIndexRoute,
   DashboardChannelsChannelIdRoute: DashboardChannelsChannelIdRoute,
   DashboardSourcesChannelsRoute: DashboardSourcesChannelsRoute,

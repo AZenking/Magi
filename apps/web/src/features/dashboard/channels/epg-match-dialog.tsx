@@ -26,7 +26,7 @@ interface EpgMatchDialogProps {
   manualLocked?: boolean;
   /** XMLTV source id bound to this channel (for display + binding context). */
   xmltvSourceId?: string | null;
-  onSelect: (xmltvChannelId: string) => Promise<void>;
+  onSelect: (candidate: RawXmltvChannelVo, locked: boolean) => Promise<void>;
   onClear: () => Promise<void>;
   pending?: boolean;
 }
@@ -146,7 +146,7 @@ export function EpgMatchDialog({
                     key="select"
                     type="link"
                     loading={pending}
-                    onClick={() => onSelect(candidate.xmltvId)}
+                    onClick={() => onSelect(candidate, lockManual)}
                   >
                     选择
                   </Button>,
