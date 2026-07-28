@@ -32,7 +32,6 @@ import {
   Grid,
   Space,
   Tag,
-  Tooltip,
   Typography,
   theme,
 } from "antd";
@@ -182,6 +181,7 @@ export function AuditList() {
         dataIndex: "displayName",
         title: "目标",
         search: false,
+        ellipsis: true,
         render: (_, record) => {
           const name = record.displayName;
           return (
@@ -227,12 +227,11 @@ export function AuditList() {
         dataIndex: "reason",
         title: "原因",
         search: false,
+        ellipsis: true,
         render: (_, record) => {
           const reason = record.reason;
           return reason ? (
-            <Tooltip title={reason}>
-              <Typography.Text type="secondary">{reason}</Typography.Text>
-            </Tooltip>
+            <Typography.Text type="secondary" ellipsis={{ tooltip: reason }}>{reason}</Typography.Text>
           ) : (
             <Typography.Text type="secondary">—</Typography.Text>
           );

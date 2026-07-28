@@ -75,6 +75,7 @@ export function getTaskColumns(ctx?: ColumnContext): ProColumns<TaskVo>[] {
     {
       title: "任务类型",
       dataIndex: "taskType",
+      ellipsis: true,
       render: (_, record) => taskTypeMap[record.taskType] ?? record.taskType,
     },
     {
@@ -141,6 +142,8 @@ export function getTaskColumns(ctx?: ColumnContext): ProColumns<TaskVo>[] {
     {
       title: "错误",
       dataIndex: "error",
+      ellipsis: true,
+      width: 200,
       render: (_, record) => {
         if (!record.error) return "-";
         return (

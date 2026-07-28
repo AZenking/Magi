@@ -38,24 +38,13 @@ export function getSourceColumns({
     {
       title: "名称",
       dataIndex: "name",
+      ellipsis: true,
     },
     {
       title: "URL",
       dataIndex: "url",
-      render: (_, record) => (
-        <span
-          style={{
-            maxWidth: 300,
-            display: "block",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-          title={record.url}
-        >
-          {record.url}
-        </span>
-      ),
+      ellipsis: true,
+      width: 300,
     },
     {
       title: "状态",

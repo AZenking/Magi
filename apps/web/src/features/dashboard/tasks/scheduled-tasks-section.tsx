@@ -252,7 +252,7 @@ export function ScheduledTasksSection() {
               </Button>
             }
           >
-            <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
+            <Typography.Paragraph type="secondary" ellipsis={{ rows: 2, tooltip: job.description }} style={{ margin: 0 }}>
               {job.description}
             </Typography.Paragraph>
 

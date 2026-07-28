@@ -120,7 +120,8 @@ function ProgrammesPreviewPage() {
   return (
     <PageStack>
       <PageHeader
-        title="节目单预览"
+        title="源节目数据"
+        description="按 XMLTV 来源检查原始节目数据；此处不代表最终对外输出"
         actions={
           <Button
             shape="circle"
