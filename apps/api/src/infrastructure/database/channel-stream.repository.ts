@@ -37,6 +37,37 @@ export class ChannelStreamRepository implements IChannelStreamRepository {
     }));
   }
 
+  async findByCanonicalChannelIdsWithSource(
+    canonicalChannelIds: readonly string[],
+  ): Promise<Map<string, StreamWithSource[]>> {
+    const result = new Map<string, StreamWithSource[]>();
+    if (canonicalChannelIds.length === 0) return result;
+    const rows = await db
+      .select({
+        stream: channelStreams,
+        sourcePriority: m3uSources.priority,
+        sourceParticipateInOutput: m3uSources.participateInOutput,
+        sourceAllowFallback: m3uSources.allowFallback,
+      })
+      .from(channelStreams)
+      .leftJoin(m3uSources, eq(channelStreams.m3uSourceId, m3uSources.id))
+      .where(
+        inArray(channelStreams.canonicalChannelId, [...canonicalChannelIds]),
+      );
+    for (const row of rows) {
+      const stream: StreamWithSource = {
+        ...toDomain(row.stream),
+        sourcePriority: row.sourcePriority ?? null,
+        sourceParticipateInOutput: row.sourceParticipateInOutput ?? null,
+        sourceAllowFallback: row.sourceAllowFallback ?? null,
+      };
+      const list = result.get(stream.canonicalChannelId) ?? [];
+      list.push(stream);
+      result.set(stream.canonicalChannelId, list);
+    }
+    return result;
+  }
+
   async findById(id: string): Promise<ChannelStream | null> {
     const [row] = await db.select().from(channelStreams).where(eq(channelStreams.id, id)).limit(1);
     return row ? toDomain(row) : null;

@@ -62,6 +62,7 @@ export class OperationChangeSetRepository implements IOperationChangeSetReposito
     const [row] = await db
       .insert(operationChangeSets)
       .values({
+        id: data.id,
         kind: data.kind,
         status: data.status,
         scopeType: data.scopeType,

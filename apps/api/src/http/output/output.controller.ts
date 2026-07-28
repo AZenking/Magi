@@ -19,12 +19,17 @@ import {
   Res,
 } from "@nestjs/common";
 import multer from "multer";
-import type { ApiResponse, UpdateOutputChannel, CanonicalChannelVo, OutputChannelDetailVo, ChannelStreamVo, CreateChannelStream, UpdateChannelStream, ChannelLifecycle } from "@magi/types";
+import type { ApiResponse, UpdateOutputChannel, CanonicalChannelVo, OutputChannelDetailVo, ChannelStreamVo, CreateChannelStream, UpdateChannelStream, ChannelLifecycle, EpgBindingVo, OutputGuideVo, ProgrammeVo } from "@magi/types";
 import { AuthGuard } from "../../shared/guards/auth.guard";
 import { IfMatchRequiredGuard, parseIfMatch, etagFor } from "../../shared/http/precondition";
 import { FindCanonicalChannelsUseCase } from "../../application/output-composition/find-canonical-channels.use-case";
 import { GenerateM3uOutputUseCase } from "../../application/output-composition/generate-m3u-output.use-case";
 import { GenerateXmltvOutputUseCase } from "../../application/output-composition/generate-xmltv-output.use-case";
+import {
+  GenerateM3uV2OutputUseCase,
+  GenerateXmltvV2OutputUseCase,
+} from "../../application/output-composition/generate-v2-output.use-cases";
+import { FindOutputGuideUseCase } from "../../application/output-composition/output-guide.use-case";
 import { UpdateOutputChannelUseCase } from "../../application/output-composition/update-output-channel.use-case";
 import { FindOutputChannelDetailUseCase } from "../../application/output-composition/find-output-channel-detail.use-case";
 import { ChangeChannelLifecycleUseCase } from "../../application/output-composition/change-channel-lifecycle.use-case";
@@ -37,9 +42,36 @@ import {
 } from "../../application/output-composition/channel-failover.use-cases";
 import { FindChannelStreamsUseCase, CreateChannelStreamUseCase, UpdateChannelStreamUseCase, DeleteChannelStreamUseCase, SetPrimaryStreamUseCase } from "../../application/output-composition/channel-stream-crud.use-cases";
 import { EnqueueSyncUseCase } from "../../application/task-execution/enqueue-sync.use-case";
+import { AuditEventRepository } from "@/infrastructure/database/audit-event.repository";
 import { LogoUploadService } from "../../infrastructure/storage/logo-upload.service";
 
-function toChannelVo(ch: import("../../domain/output-composition").CanonicalChannel): CanonicalChannelVo {
+function toBindingVo(
+  channelId: string,
+  binding?: import("../../domain/output-composition").CanonicalEpgBindingWithSource | null,
+): EpgBindingVo | null {
+  if (!binding) return null;
+  const threshold = binding.sourceFreshnessThresholdMinutes ?? 24 * 60;
+  const sourceStale =
+    !!binding.xmltvSourceId &&
+    (!binding.sourceLastSyncAt ||
+      Date.now() - binding.sourceLastSyncAt.getTime() > threshold * 60 * 1000);
+  return {
+    xmltvSourceId: binding.xmltvSourceId,
+    xmltvSourceName: binding.xmltvSourceName,
+    xmltvChannelId: binding.xmltvChannelId,
+    outputChannelId: `magi:${channelId}`,
+    status: binding.status,
+    matchType: binding.matchType,
+    locked: binding.locked,
+    version: binding.version,
+    sourceStale,
+  };
+}
+
+function toChannelVo(
+  ch: import("../../domain/output-composition").CanonicalChannel,
+  binding?: import("../../domain/output-composition").CanonicalEpgBindingWithSource | null,
+): CanonicalChannelVo {
   return {
     id: ch.id,
     standardName: ch.standardName,
@@ -61,6 +93,24 @@ function toChannelVo(ch: import("../../domain/output-composition").CanonicalChan
     trashedAt: ch.trashedAt?.toISOString() ?? null,
     purgeAfter: ch.purgeAfter?.toISOString() ?? null,
     version: ch.version ?? 1,
+    epgBinding: toBindingVo(ch.id, binding),
+  };
+}
+
+function toProgrammeVo(
+  programme: import("../../domain/channel-catalog").Programme,
+): ProgrammeVo {
+  return {
+    id: programme.id,
+    sourceId: programme.sourceId,
+    xmltvChannelId: programme.xmltvChannelId,
+    title: programme.title,
+    subTitle: programme.subTitle,
+    desc: programme.desc,
+    category: programme.category,
+    startAt: programme.startAt.toISOString(),
+    stopAt: programme.stopAt.toISOString(),
+    createdAt: programme.createdAt.toISOString(),
   };
 }
 
@@ -102,6 +152,14 @@ export class OutputController {
     private readonly generateM3u: GenerateM3uOutputUseCase,
     @Inject(GenerateXmltvOutputUseCase)
     private readonly generateXmltv: GenerateXmltvOutputUseCase,
+    @Inject(GenerateM3uV2OutputUseCase)
+    private readonly generateM3uV2: GenerateM3uV2OutputUseCase,
+    @Inject(GenerateXmltvV2OutputUseCase)
+    private readonly generateXmltvV2: GenerateXmltvV2OutputUseCase,
+    @Inject(FindOutputGuideUseCase)
+    private readonly findOutputGuide: FindOutputGuideUseCase,
+    @Inject("CANONICAL_EPG_BINDING_REPOSITORY")
+    private readonly epgBindingRepo: import("../../domain/output-composition").ICanonicalEpgBindingRepository,
     @Inject(UpdateOutputChannelUseCase)
     private readonly updateChannel: UpdateOutputChannelUseCase,
     @Inject(FindOutputChannelDetailUseCase)
@@ -132,6 +190,7 @@ export class OutputController {
     private readonly enqueueSync: EnqueueSyncUseCase,
     private readonly logoUpload: LogoUploadService,
   ) {}
+  private readonly auditRepo = new AuditEventRepository();
 
   @Post("channels/:id/logo")
   async uploadLogo(
@@ -184,11 +243,16 @@ export class OutputController {
       search: query.search || undefined,
       group: query.group || undefined,
     });
+    const bindings = await this.epgBindingRepo.findByCanonicalChannelIds(
+      result.items.map((channel) => channel.id),
+    );
 
     return {
       success: true,
       data: {
-        items: result.items.map(toChannelVo),
+        items: result.items.map((channel) =>
+          toChannelVo(channel, bindings.get(channel.id)),
+        ),
         total: result.total,
         page: parseInt(query.page ?? "1", 10),
         pageSize: parseInt(query.pageSize ?? "20", 10),
@@ -207,6 +271,7 @@ export class OutputController {
   @Get("channels/:id")
   async getDetail(@Param("id") id: string, @Res({ passthrough: true }) res: import("express").Response): Promise<ApiResponse<OutputChannelDetailVo>> {
     const { channel, streams } = await this.findDetail.execute(id);
+    const binding = await this.epgBindingRepo.findByCanonicalChannelId(id);
 
     // T057: detail resources expose the version as an ETag (contracts/common.md).
     res.setHeader("ETag", etagFor(channel.version ?? 1));
@@ -214,7 +279,7 @@ export class OutputController {
       success: true,
       data: {
         channel: {
-          ...toChannelVo(channel),
+          ...toChannelVo(channel, binding),
           mergedFromIds: channel.mergedFromIds,
         },
         streams: streams.map(toStreamVo),
@@ -236,6 +301,82 @@ export class OutputController {
     return this.generateXmltv.execute();
   }
 
+  @Get("v2/m3u")
+  @Header("Content-Type", "audio/mpegurl")
+  @Header("Content-Disposition", "attachment; filename=magi-v2.m3u")
+  async m3uV2(@Query("mode") mode?: string): Promise<string> {
+    return this.generateM3uV2.execute(mode === "all" ? "all" : "primary");
+  }
+
+  @Get("v2/xmltv")
+  @Header("Content-Type", "application/xml")
+  @Header("Content-Disposition", "attachment; filename=magi-v2.xml")
+  async xmltvV2(): Promise<string> {
+    return this.generateXmltvV2.execute();
+  }
+
+  @Get("guide")
+  async guide(
+    @Query()
+    query: {
+      from?: string;
+      to?: string;
+      channelId?: string;
+      group?: string;
+      search?: string;
+      status?: string;
+      page?: string;
+      pageSize?: string;
+    },
+  ): Promise<ApiResponse<OutputGuideVo>> {
+    if (!query.from || !query.to) {
+      throw new BadRequestException("from and to are required");
+    }
+    const from = new Date(query.from);
+    const to = new Date(query.to);
+    if (
+      Number.isNaN(from.getTime()) ||
+      Number.isNaN(to.getTime()) ||
+      to <= from
+    ) {
+      throw new BadRequestException("Invalid guide time range");
+    }
+    if (to.getTime() - from.getTime() > 7 * 24 * 60 * 60 * 1000) {
+      throw new BadRequestException("Guide range cannot exceed 7 days");
+    }
+    const page = Math.max(1, parseInt(query.page ?? "1", 10) || 1);
+    const pageSize = Math.min(
+      100,
+      Math.max(1, parseInt(query.pageSize ?? "20", 10) || 20),
+    );
+    const result = await this.findOutputGuide.execute({
+      from,
+      to,
+      channelId: query.channelId || undefined,
+      group: query.group || undefined,
+      search: query.search || undefined,
+      status: query.status || undefined,
+      page,
+      pageSize,
+    });
+    return {
+      success: true,
+      data: {
+        items: result.items.map((item) => ({
+          channel: toChannelVo(item.channel, item.binding),
+          programmes: item.programmes.map(toProgrammeVo),
+          anomalies: item.anomalies,
+        })),
+        total: result.total,
+        page,
+        pageSize,
+        totalPages: Math.ceil(result.total / pageSize),
+        from: from.toISOString(),
+        to: to.toISOString(),
+      },
+    };
+  }
+
   // T057: reversible lifecycle transition with If-Match (contracts/channels.md).
   @Post("channels/:id/lifecycle")
   @UseGuards(IfMatchRequiredGuard)
@@ -252,6 +393,22 @@ export class OutputController {
       reason: body.reason,
       expectedVersion,
     });
+    await this.auditRepo.append({
+      actorType: "user",
+      actorId: "system",
+      action: `channel.lifecycle.${body.target}`,
+      targetType: "canonical-channel",
+      targetId: id,
+      displayName: null,
+      result: "succeeded",
+      requestId: null,
+      taskId: null,
+      parentTaskId: null,
+      changeSetId: null,
+      recoveryPointId: null,
+      summary: { from: result.previous, to: result.lifecycle, reason: body.reason ?? null },
+      reason: body.reason ?? null,
+    }).catch(() => undefined);
     return {
       success: true,
       data: {
@@ -279,7 +436,7 @@ export class OutputController {
     @Param("id") id: string,
     @Body() body: { xmltvSourceId: string | null; epgChannelId: string | null; locked: boolean; reason?: string },
     @Headers("if-match") ifMatch: string,
-  ): Promise<ApiResponse<{ locked: boolean; version: number }>> {
+  ): Promise<ApiResponse<EpgBindingVo>> {
     const expectedVersion = parseIfMatch(ifMatch);
     if (expectedVersion === null) throw new BadRequestException("Invalid If-Match header");
     const result = await this.updateEpgBinding.execute({
@@ -290,7 +447,11 @@ export class OutputController {
       reason: body.reason,
       expectedVersion,
     });
-    return { success: true, data: { locked: result.locked, version: expectedVersion } };
+    const enriched = await this.epgBindingRepo.findByCanonicalChannelId(id);
+    return {
+      success: true,
+      data: toBindingVo(id, enriched ?? { ...result, xmltvSourceName: null, sourceEnabled: null, sourceLastSyncAt: null, sourceFreshnessThresholdMinutes: null })!,
+    };
   }
 
   @Post("channels/batch")

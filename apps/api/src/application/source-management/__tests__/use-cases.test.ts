@@ -6,6 +6,7 @@ import { CreateSourceUseCase } from "../create-source.use-case";
 import { UpdateSourceUseCase } from "../update-source.use-case";
 import { DeleteSourceUseCase } from "../delete-source.use-case";
 import { NotFoundException } from "@nestjs/common";
+import type { ICanonicalEpgBindingRepository } from "../../../domain/output-composition";
 
 function createM3uSource(overrides: Partial<M3uSource> = {}): M3uSource {
   return {
@@ -86,6 +87,17 @@ function createMockXmltvRepo(overrides: Partial<IXmltvSourceRepository> = {}): I
     clearProgrammeBindings: async () => {},
     updateIfVersion: async () => null,
     ...overrides,
+  };
+}
+
+function createMockBindingRepo(
+  hasBindings = false,
+): ICanonicalEpgBindingRepository {
+  return {
+    findByCanonicalChannelId: async () => null,
+    findByCanonicalChannelIds: async () => new Map(),
+    hasBindingsForXmltvSource: async () => hasBindings,
+    upsert: async () => null,
   };
 }
 
@@ -251,6 +263,7 @@ describe("DeleteSourceUseCase", () => {
     const useCase = new DeleteSourceUseCase(
       createMockM3uRepo({ delete: async () => true }),
       createMockXmltvRepo(),
+      createMockBindingRepo(),
     );
 
     await expect(useCase.execute("m3u-1", "m3u")).resolves.toBeUndefined();
@@ -264,6 +277,7 @@ describe("DeleteSourceUseCase", () => {
         clearProgrammeBindings: async () => { programmesCleared = true; },
         delete: async () => true,
       }),
+      createMockBindingRepo(),
     );
 
     await useCase.execute("xmltv-1", "xmltv");
@@ -274,8 +288,27 @@ describe("DeleteSourceUseCase", () => {
     const useCase = new DeleteSourceUseCase(
       createMockM3uRepo({ delete: async () => false }),
       createMockXmltvRepo(),
+      createMockBindingRepo(),
     );
 
     await expect(useCase.execute("missing", "m3u")).rejects.toThrow(NotFoundException);
+  });
+
+  it("blocks xmltv deletion while output bindings still reference it", async () => {
+    let programmesCleared = false;
+    const useCase = new DeleteSourceUseCase(
+      createMockM3uRepo(),
+      createMockXmltvRepo({
+        clearProgrammeBindings: async () => {
+          programmesCleared = true;
+        },
+      }),
+      createMockBindingRepo(true),
+    );
+
+    await expect(useCase.execute("xmltv-1", "xmltv")).rejects.toMatchObject({
+      status: 409,
+    });
+    expect(programmesCleared).toBe(false);
   });
 });

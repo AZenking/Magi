@@ -82,6 +82,13 @@ function makeController(opts: {
     findChannels as never,
     none, // generateM3u
     none, // generateXmltv
+    none, // generateM3uV2
+    none, // generateXmltvV2
+    none, // findOutputGuide
+    {
+      findByCanonicalChannelIds: async () => new Map(),
+      findByCanonicalChannelId: async () => null,
+    } as never, // epgBindingRepo
     none, // updateChannel
     none, // findDetail
     new ChangeChannelLifecycleUseCase(repo),

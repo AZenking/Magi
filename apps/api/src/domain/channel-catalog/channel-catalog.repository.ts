@@ -12,6 +12,10 @@ export interface IRawM3uChannelRepository {
 
 export interface IRawXmltvChannelRepository {
   findBySourceId(sourceId: string): Promise<import("./raw-channel.model").RawXmltvChannel[]>;
+  findBySourceAndXmltvId(
+    sourceId: string,
+    xmltvId: string,
+  ): Promise<import("./raw-channel.model").RawXmltvChannel | null>;
   findCandidates(params: { sourceId?: string; search?: string; page: number; pageSize: number }): Promise<{ items: import("./raw-channel.model").RawXmltvChannel[]; total: number }>;
   createBatch(channels: Omit<import("./raw-channel.model").RawXmltvChannel, "id" | "createdAt" | "updatedAt">[]): Promise<import("./raw-channel.model").RawXmltvChannel[]>;
   deleteBySourceId(sourceId: string): Promise<number>;
@@ -49,6 +53,11 @@ export interface IProgrammeRepository {
     page: number;
     pageSize: number;
   }): Promise<{ items: Programme[]; total: number }>;
+  findBySourceChannelAndRange(
+    bindings: readonly { sourceId: string; xmltvChannelId: string }[],
+    startAt?: Date,
+    stopAt?: Date,
+  ): Promise<Programme[]>;
   createBatch(programmes: Omit<Programme, "id" | "createdAt">[]): Promise<Programme[]>;
   deleteBySourceId(sourceId: string): Promise<number>;
 }

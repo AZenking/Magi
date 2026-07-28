@@ -17,6 +17,23 @@ export class RawXmltvChannelRepository implements IRawXmltvChannelRepository {
     return rows.map(toDomain);
   }
 
+  async findBySourceAndXmltvId(
+    sourceId: string,
+    xmltvId: string,
+  ): Promise<RawXmltvChannel | null> {
+    const [row] = await db
+      .select()
+      .from(rawXmltvChannels)
+      .where(
+        and(
+          eq(rawXmltvChannels.sourceId, sourceId),
+          eq(rawXmltvChannels.xmltvId, xmltvId),
+        ),
+      )
+      .limit(1);
+    return row ? toDomain(row) : null;
+  }
+
   async findCandidates(params: { sourceId?: string; search?: string; page: number; pageSize: number }): Promise<{ items: RawXmltvChannel[]; total: number }> {
     const conditions = [];
     if (params.sourceId) conditions.push(eq(rawXmltvChannels.sourceId, params.sourceId));

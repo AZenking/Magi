@@ -9,6 +9,7 @@ import type { IEpgSyncRepository } from "@/domain/source-sync/epg-sync.repositor
 
 export interface ApprovedBinding {
   readonly canonicalChannelId: string;
+  readonly xmltvSourceId: string;
   readonly epgChannelId: string;
   readonly matchType: string;
   readonly expectedVersion: number;
@@ -46,6 +47,7 @@ export class ApplyEpgMatchUseCase {
       }
       const ok = await this.repo.applyEpgBinding(
         binding.canonicalChannelId,
+        binding.xmltvSourceId,
         binding.epgChannelId,
         binding.matchType,
         binding.expectedVersion,

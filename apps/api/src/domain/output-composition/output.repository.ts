@@ -1,4 +1,8 @@
 import type { CanonicalChannel } from "./canonical-channel.model";
+import type {
+  CanonicalEpgBinding,
+  CanonicalEpgBindingWithSource,
+} from "./canonical-epg-binding.model";
 import type { ChannelOverride } from "./channel-override.model";
 import type { ChannelStream, StreamWithSource } from "./channel-stream.model";
 
@@ -34,6 +38,29 @@ export interface ICanonicalChannelRepository {
   countByLifecycle(): Promise<Record<string, number>>;
 }
 
+export interface ICanonicalEpgBindingRepository {
+  findByCanonicalChannelId(
+    canonicalChannelId: string,
+  ): Promise<CanonicalEpgBindingWithSource | null>;
+  findByCanonicalChannelIds(
+    canonicalChannelIds: readonly string[],
+  ): Promise<Map<string, CanonicalEpgBindingWithSource>>;
+  hasBindingsForXmltvSource(xmltvSourceId: string): Promise<boolean>;
+  upsert(
+    canonicalChannelId: string,
+    data: Pick<
+      CanonicalEpgBinding,
+      | "xmltvSourceId"
+      | "xmltvChannelId"
+      | "status"
+      | "matchType"
+      | "locked"
+      | "decisionReason"
+    >,
+    expectedVersion?: number,
+  ): Promise<CanonicalEpgBinding | null>;
+}
+
 export interface IStreamEnrichmentService {
   getSourceNames(ids: string[]): Promise<Map<string, string>>;
   getChannelNames(ids: string[]): Promise<Map<string, string>>;
@@ -65,6 +92,9 @@ export interface IChannelOverrideRepository {
 export interface IChannelStreamRepository {
   findByCanonicalChannelId(canonicalChannelId: string): Promise<ChannelStream[]>;
   findByCanonicalChannelIdWithSource(canonicalChannelId: string): Promise<StreamWithSource[]>;
+  findByCanonicalChannelIdsWithSource?(
+    canonicalChannelIds: readonly string[],
+  ): Promise<Map<string, StreamWithSource[]>>;
   findById(id: string): Promise<ChannelStream | null>;
   create(data: Omit<ChannelStream, "id" | "createdAt" | "updatedAt">): Promise<ChannelStream>;
   createBatch(streams: Omit<ChannelStream, "id" | "createdAt" | "updatedAt">[]): Promise<ChannelStream[]>;

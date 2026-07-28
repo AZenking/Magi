@@ -26,7 +26,13 @@ export interface IEpgSyncRepository {
   loadCanonicalChannelsForEpg(): Promise<CanonicalForEpg[]>;
 
   /** Apply an approved EPG binding to a canonical channel (preserves manual lock). */
-  applyEpgBinding(canonicalChannelId: string, epgChannelId: string, matchType: string, expectedVersion: number): Promise<boolean>;
+  applyEpgBinding(
+    canonicalChannelId: string,
+    xmltvSourceId: string,
+    epgChannelId: string,
+    matchType: string,
+    expectedVersion: number,
+  ): Promise<boolean>;
 
   /** Is the XMLTV source enabled + successfully synced + non-empty + fresh? */
   isXmltvReady(sourceId: string): Promise<{ ready: boolean; blockerCode: string | null }>;

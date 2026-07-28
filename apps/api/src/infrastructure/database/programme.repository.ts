@@ -1,4 +1,4 @@
-import { eq, and, gte, lte, sql } from "drizzle-orm";
+import { eq, and, gt, gte, lt, lte, sql, or } from "drizzle-orm";
 import type { IProgrammeRepository, Programme } from "@/domain/channel-catalog";
 import { db } from "./connection";
 import { programmes } from "./schema";
@@ -56,6 +56,29 @@ export class ProgrammeRepository implements IProgrammeRepository {
     ]);
 
     return { items: items.map(toDomain), total: countResult[0]?.count ?? 0 };
+  }
+
+  async findBySourceChannelAndRange(
+    bindings: readonly { sourceId: string; xmltvChannelId: string }[],
+    startAt?: Date,
+    stopAt?: Date,
+  ): Promise<Programme[]> {
+    if (bindings.length === 0) return [];
+    const pairs = bindings.map((binding) =>
+      and(
+        eq(programmes.sourceId, binding.sourceId),
+        eq(programmes.xmltvChannelId, binding.xmltvChannelId),
+      ),
+    );
+    const conditions = [or(...pairs)!];
+    if (startAt) conditions.push(gt(programmes.stopAt, startAt));
+    if (stopAt) conditions.push(lt(programmes.startAt, stopAt));
+    const rows = await db
+      .select()
+      .from(programmes)
+      .where(and(...conditions))
+      .orderBy(programmes.startAt);
+    return rows.map(toDomain);
   }
 
   async createBatch(programmeData: Omit<Programme, "id" | "createdAt">[]): Promise<Programme[]> {

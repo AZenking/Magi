@@ -7,6 +7,7 @@ export {
   rawXmltvChannels,
   programmes,
   canonicalChannels,
+  canonicalEpgBindings,
   channelOverrides,
   channelStreams,
   // Safe Operations (T015–T018)

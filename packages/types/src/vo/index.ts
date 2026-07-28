@@ -65,6 +65,19 @@ export interface CanonicalChannelVo {
   trashedAt?: string | null;
   purgeAfter?: string | null;
   version?: number;
+  epgBinding?: EpgBindingVo | null;
+}
+
+export interface EpgBindingVo {
+  xmltvSourceId: string | null;
+  xmltvSourceName: string | null;
+  xmltvChannelId: string | null;
+  outputChannelId: string;
+  status: "matched_manual" | "matched_auto" | "unmatched" | "conflict";
+  matchType: string | null;
+  locked: boolean;
+  version: number;
+  sourceStale: boolean;
 }
 
 export interface UpdateOutputChannel {
@@ -137,6 +150,30 @@ export interface ProgrammeVo {
   startAt: string;
   stopAt: string;
   createdAt: string;
+}
+
+export type OutputGuideAnomaly =
+  | "unmatched"
+  | "conflict"
+  | "source_stale"
+  | "empty"
+  | "gap"
+  | "overlap";
+
+export interface OutputGuideChannelVo {
+  channel: CanonicalChannelVo;
+  programmes: ProgrammeVo[];
+  anomalies: OutputGuideAnomaly[];
+}
+
+export interface OutputGuideVo {
+  items: OutputGuideChannelVo[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  from: string;
+  to: string;
 }
 
 export interface TaskJobDetailVo {

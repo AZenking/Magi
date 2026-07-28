@@ -22,6 +22,7 @@ const sharedSchemaTables = [
   "programmes",
   "sync-logs",
   "canonical-channels",
+  "canonical-epg-bindings",
   "channel-overrides",
   "channel-streams",
   "helpers",

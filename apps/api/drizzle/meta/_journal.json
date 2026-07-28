@@ -15,6 +15,13 @@
       "when": 1785140789165,
       "tag": "0001_amazing_xorn",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785227366939,
+      "tag": "0002_tense_zodiak",
+      "breakpoints": true
     }
   ]
 }

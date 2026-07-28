@@ -22,6 +22,7 @@ export {
   programmes,
   syncLogs,
   canonicalChannels,
+  canonicalEpgBindings,
   channelOverrides,
   channelStreams,
   timestamps,

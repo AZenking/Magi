@@ -19,7 +19,7 @@ import {
   type FailoverMode,
   type FailoverPolicyData,
 } from "@/domain/output-composition/channel-failover-policy.model";
-import type { ChannelFailoverPolicyRepository } from "@/infrastructure/database/channel-failover-policy.repository";
+import { ChannelFailoverPolicyRepository } from "@/infrastructure/database/channel-failover-policy.repository";
 
 /** Default policy when none is persisted yet (data-model.md). */
 const DEFAULT_POLICY: Omit<FailoverPolicyData, "canonicalChannelId"> = {
@@ -117,6 +117,7 @@ export class UpdateFailoverPolicyUseCase {
   constructor(
     @Inject("CANONICAL_CHANNEL_REPOSITORY")
     private readonly canonicalRepo: ICanonicalChannelRepository,
+    @Inject(ChannelFailoverPolicyRepository)
     private readonly policyRepo: ChannelFailoverPolicyRepository,
   ) {}
 
@@ -187,6 +188,7 @@ export class EvaluateStreamFailoverUseCase {
   constructor(
     @Inject("CHANNEL_STREAM_REPOSITORY")
     private readonly streamRepo: IChannelStreamRepository,
+    @Inject(ChannelFailoverPolicyRepository)
     private readonly policyRepo: ChannelFailoverPolicyRepository,
   ) {}
 

@@ -6,6 +6,7 @@ import { RawM3uChannelRepository } from "../../infrastructure/database/raw-m3u-c
 import { RawXmltvChannelRepository } from "../../infrastructure/database/raw-xmltv-channel.repository";
 import { ChannelRepository } from "../../infrastructure/database/channel.repository";
 import { ProgrammeRepository } from "../../infrastructure/database/programme.repository";
+import { CanonicalEpgBindingRepository } from "../../infrastructure/database/canonical-epg-binding.repository";
 import { HttpSourceDownloader } from "../../infrastructure/parsers/http-downloader.adapter";
 import { M3uParserAdapter } from "../../infrastructure/parsers/m3u-parser.adapter";
 import { XmltvParserAdapter } from "../../infrastructure/parsers/xmltv-parser.adapter";
@@ -33,6 +34,10 @@ import { TaskModule } from "../task/task.module";
     { provide: "RAW_XMLTV_CHANNEL_REPOSITORY", useClass: RawXmltvChannelRepository },
     { provide: "CHANNEL_REPOSITORY", useClass: ChannelRepository },
     { provide: "PROGRAMME_REPOSITORY", useClass: ProgrammeRepository },
+    {
+      provide: "CANONICAL_EPG_BINDING_REPOSITORY",
+      useClass: CanonicalEpgBindingRepository,
+    },
     { provide: "SOURCE_DOWNLOADER", useClass: HttpSourceDownloader },
     { provide: "M3U_PARSER", useClass: M3uParserAdapter },
     { provide: "XMLTV_PARSER", useClass: XmltvParserAdapter },
