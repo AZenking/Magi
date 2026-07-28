@@ -4,10 +4,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ProColumns } from "@ant-design/pro-components";
 import type { ChannelVo, PaginatedResponse, SourceVo } from "@magi/types";
 import { apiClient } from "@/services/api";
-import { Avatar, Button, Select, Tag } from "antd";
+import { Avatar, Button, Tag } from "antd";
 import { ProTableWrapper } from "@/components/pro-table-wrapper";
 import { ReloadOutlined } from "@ant-design/icons";
-import { FilterBar, PageHeader, PageStack } from "@/components/page-layout";
+import { PageHeader, PageStack } from "@/components/page-layout";
 
 export const Route = createFileRoute("/dashboard/sources/channels")({
   component: RawChannelsPage,
@@ -20,11 +20,20 @@ const streamStatusMap: Record<string, { label: string; color?: string }> = {
   unknown: { label: "未知" },
 };
 
-function getColumns(): ProColumns<ChannelVo>[] {
+function getColumns(m3uSourceOptions?: { value: string; label: string }[]): ProColumns<ChannelVo>[] {
   return [
+    // Virtual column: M3U source filter, lives only in the search form.
+    {
+      title: "M3U 源",
+      dataIndex: "sourceId",
+      valueType: "select",
+      hideInTable: true,
+      fieldProps: { options: m3uSourceOptions, allowClear: true, placeholder: "全部 M3U 源" },
+    },
     {
       dataIndex: "displayName",
       title: "频道名",
+      search: false,
       render: (_, record) => (
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Avatar
@@ -41,11 +50,13 @@ function getColumns(): ProColumns<ChannelVo>[] {
     {
       dataIndex: "groupTitle",
       title: "分组",
+      search: false,
       render: (_, record) => record.groupTitle ?? "-",
     },
     {
       dataIndex: "tvgId",
       title: "tvgId",
+      search: false,
       render: (_, record) => (
         <span style={{ fontFamily: "monospace", fontSize: 12 }}>
           {record.tvgId ?? "-"}
@@ -55,6 +66,7 @@ function getColumns(): ProColumns<ChannelVo>[] {
     {
       dataIndex: "epgChannelId",
       title: "EPG 绑定",
+      search: false,
       render: (_, record) => (
         <span style={{ fontFamily: "monospace", fontSize: 12 }}>
           {record.epgChannelId ?? "-"}
@@ -64,11 +76,13 @@ function getColumns(): ProColumns<ChannelVo>[] {
     {
       dataIndex: "epgMatchType",
       title: "匹配方式",
+      search: false,
       render: (_, record) => record.epgMatchType ?? "-",
     },
     {
       dataIndex: "active",
       title: "激活",
+      search: false,
       render: (_, record) => (
         <Tag color={record.active ? "blue" : undefined}>
           {record.active ? "是" : "否"}
@@ -78,6 +92,7 @@ function getColumns(): ProColumns<ChannelVo>[] {
     {
       dataIndex: "streamStatus",
       title: "流状态",
+      search: false,
       render: (_, record) => {
         const s = streamStatusMap[record.streamStatus ?? "unknown"] ?? {
           label: record.streamStatus ?? "未知",
@@ -88,6 +103,7 @@ function getColumns(): ProColumns<ChannelVo>[] {
     {
       dataIndex: "updatedAt",
       title: "更新时间",
+      search: false,
       render: (_, record) =>
         new Date(record.updatedAt).toLocaleString("zh-CN"),
     },
@@ -135,40 +151,21 @@ function RawChannelsPage() {
     queryClient.invalidateQueries({ queryKey: ["raw-channels"] });
   }, [queryClient]);
 
-  const columns = useMemo(() => getColumns(), []);
+  const m3uSourceOptions = useMemo(
+    () => m3uSources.map((source) => ({ value: source.id, label: source.name })),
+    [m3uSources],
+  );
+
+  const columns = useMemo(() => getColumns(m3uSourceOptions), [m3uSourceOptions]);
+
+  const handleSearch = useCallback((params: Record<string, unknown>) => {
+    setSourceId((params.sourceId as string) ?? "");
+    setPage(1);
+  }, []);
 
   return (
     <PageStack>
-      <PageHeader
-        title="原始频道"
-        actions={
-          <Button
-            shape="circle"
-            icon={<ReloadOutlined />}
-            onClick={refresh}
-            aria-label="刷新"
-          />
-        }
-      />
-
-      <FilterBar>
-        <Select
-          value={sourceId || "all"}
-          onChange={(v) => {
-            setSourceId(v === "all" ? "" : v);
-            setPage(1);
-          }}
-          aria-label="M3U 源筛选"
-          options={[
-            { value: "all", label: "全部 M3U 源" },
-            ...m3uSources.map((source) => ({
-              value: source.id,
-              label: source.name,
-            })),
-          ]}
-          style={{ width: 200 }}
-        />
-      </FilterBar>
+      <PageHeader title="原始频道" />
 
       <ProTableWrapper<ChannelVo>
         columns={columns}
@@ -177,6 +174,18 @@ function RawChannelsPage() {
         loading={isLoading}
         error={error}
         onRetry={() => void refetch()}
+        search={true}
+        onSearch={handleSearch}
+        toolBarRender={() => [
+          <Button
+            key="refresh"
+            icon={<ReloadOutlined />}
+            onClick={refresh}
+            aria-label="刷新"
+          >
+            刷新
+          </Button>,
+        ]}
         columnsStateKey="raw-channels-columns"
         pagination={{
           current: page,

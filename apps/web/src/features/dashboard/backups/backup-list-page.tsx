@@ -24,7 +24,7 @@ import {
   UndoOutlined,
 } from "@ant-design/icons";
 import { ProTableWrapper } from "@/components/pro-table-wrapper";
-import { FilterBar, PageHeader, PageStack } from "@/components/page-layout";
+import { PageHeader, PageStack } from "@/components/page-layout";
 import { BackupRestore } from "./backup-restore";
 
 interface Envelope<T> {
@@ -230,31 +230,7 @@ export function BackupListPage() {
       <PageHeader
         title="备份管理"
         description="创建配置快照，下载或恢复到任意就绪备份"
-        actions={
-          <Space size={token.marginSM} wrap>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              loading={createMutation.isPending}
-              onClick={() => createMutation.mutate()}
-            >
-              创建备份
-            </Button>
-            <Button
-              shape="circle"
-              icon={<ReloadOutlined />}
-              onClick={refresh}
-              aria-label="刷新"
-            />
-          </Space>
-        }
       />
-
-      <FilterBar>
-        <Typography.Text type="secondary">
-          保留期默认 30 天，可由部署配置延长。
-        </Typography.Text>
-      </FilterBar>
 
       <ProTableWrapper<ConfigBackupVo>
         columns={columns}
@@ -263,6 +239,25 @@ export function BackupListPage() {
         loading={isLoading}
         error={error}
         onRetry={() => void refetch()}
+        toolBarRender={() => [
+          <Button
+            key="create"
+            type="primary"
+            icon={<PlusOutlined />}
+            loading={createMutation.isPending}
+            onClick={() => createMutation.mutate()}
+          >
+            创建备份
+          </Button>,
+          <Button
+            key="refresh"
+            icon={<ReloadOutlined />}
+            onClick={refresh}
+            aria-label="刷新"
+          >
+            刷新
+          </Button>,
+        ]}
         columnsStateKey="backups-columns"
         pagination={{
           current: page,

@@ -19,6 +19,7 @@ import { useNavigate } from "@tanstack/react-router";
 import type { ProColumns } from "@ant-design/pro-components";
 import { ProDescriptions } from "@ant-design/pro-components";
 import {
+  AUDIT_ACTION_LABELS,
   AUDIT_ACTOR_LABELS,
   AUDIT_RESULT_META,
 } from "./audit-meta";
@@ -57,21 +58,19 @@ const RESULT_VALUE_ENUM = {
 const TARGET_TYPE_VALUE_ENUM = {
   source: { text: "数据源" },
   channel: { text: "频道" },
+  stream: { text: "流地址" },
+  task: { text: "任务" },
   backup: { text: "备份" },
   schedule: { text: "调度" },
   operation: { text: "操作" },
+  change_set: { text: "变更集" },
+  channel_batch: { text: "频道批次" },
+  stream_collection: { text: "流集合" },
 };
 
-const ACTION_VALUE_ENUM = {
-  "source.sync": { text: "源同步" },
-  "source.delete": { text: "源删除" },
-  "epg.match": { text: "EPG 匹配" },
-  "channel.lifecycle": { text: "频道生命周期" },
-  "channel.purge": { text: "频道清理" },
-  "backup.create": { text: "创建备份" },
-  "backup.restore": { text: "恢复备份" },
-  "recovery.restore": { text: "恢复点恢复" },
-};
+const ACTION_VALUE_ENUM = Object.fromEntries(
+  Object.entries(AUDIT_ACTION_LABELS).map(([value, text]) => [value, { text }]),
+);
 
 function formatDatetime(iso: string): string {
   try {
@@ -82,7 +81,6 @@ function formatDatetime(iso: string): string {
 }
 
 export function AuditList() {
-  const { token } = theme.useToken();
   const screens = Grid.useBreakpoint();
   const { message } = useFeedback();
   const navigate = useNavigate();
@@ -175,7 +173,9 @@ export function AuditList() {
         width: 160,
         valueType: "select",
         valueEnum: ACTION_VALUE_ENUM,
-        render: (_, record) => <Tag>{record.action}</Tag>,
+        render: (_, record) => (
+          <Tag>{AUDIT_ACTION_LABELS[record.action] ?? record.action}</Tag>
+        ),
       },
       {
         dataIndex: "displayName",
@@ -274,14 +274,6 @@ export function AuditList() {
       <PageHeader
         title="审计日志"
         description="追溯每个高风险操作的发起方、影响与恢复点"
-        actions={
-          <Button
-            shape="circle"
-            icon={<ReloadOutlined />}
-            onClick={refresh}
-            aria-label="刷新"
-          />
-        }
       />
 
       <ProTableWrapper<AuditEventVo>
@@ -295,6 +287,16 @@ export function AuditList() {
         columnsStateKey="audit-events-columns"
         search={true}
         onSearch={handleSearch}
+        toolBarRender={() => [
+          <Button
+            key="refresh"
+            icon={<ReloadOutlined />}
+            onClick={refresh}
+            aria-label="刷新"
+          >
+            刷新
+          </Button>,
+        ]}
         pagination={{
           current: page,
           pageSize,
@@ -388,7 +390,9 @@ function AuditEventDetail({
           {
             dataIndex: "action",
             title: "动作",
-            render: (_, entity) => <Tag>{entity.action}</Tag>,
+            render: (_, entity) => (
+              <Tag>{AUDIT_ACTION_LABELS[entity.action] ?? entity.action}</Tag>
+            ),
           },
           {
             dataIndex: "actorType",

@@ -474,12 +474,13 @@ function ChannelDetailPage() {
           )}
         </Card>
 
-        <Card
-          title="播放源"
-          extra={
+        <ProList<ChannelStreamVo>
+          rowKey="id"
+          headerTitle="播放源"
+          toolBarRender={() => [
             <Button
+              key="add"
               type="primary"
-              size="small"
               icon={<PlusOutlined />}
               onClick={() => {
                 setEditingStream(null);
@@ -487,18 +488,12 @@ function ChannelDetailPage() {
               }}
             >
               新增
-            </Button>
-          }
-        >
-          {streams.length === 0 ? (
-            <Empty description="暂无播放源" />
-          ) : (
-            <>
-            <ProList<ChannelStreamVo>
-              rowKey="id"
-              dataSource={streams}
-              split
-              metas={{
+            </Button>,
+          ]}
+          dataSource={streams}
+          split
+          locale={{ emptyText: <Empty description="暂无播放源" /> }}
+          metas={{
                 title: {
                   render: (_, stream) => {
                     const healthStatus = healthStatusMap[stream.healthStatus] ?? {
@@ -595,29 +590,20 @@ function ChannelDetailPage() {
                   },
                 },
               }}
+        />
+
+        {/* T121: reorderable list with primary/eligibility controls. Lives
+            below the per-row edit/delete actions so both surfaces stay
+            focused. Disabled channels keep their streams visible but the
+            order is still editable for when it is restored. */}
+        <Card title="顺序与故障转移">
+          <Flex vertical gap={token.marginSM}>
+            <ChannelStreamOrder
+              channel={channel}
+              streams={streams}
+              onSaved={invalidateChannel}
             />
-            {/* T121: reorderable list with primary/eligibility controls. Lives
-                below the per-row edit/delete actions so both surfaces stay
-                focused. Disabled channels keep their streams visible but the
-                order is still editable for when it is restored. */}
-            <Flex
-              vertical
-              gap={token.marginSM}
-              style={{
-                marginTop: token.marginMD,
-                paddingTop: token.paddingMD,
-                borderTop: `${token.lineWidth}px ${token.lineType} ${token.colorBorderSecondary}`,
-              }}
-            >
-              <Typography.Text strong>顺序与故障转移</Typography.Text>
-              <ChannelStreamOrder
-                channel={channel}
-                streams={streams}
-                onSaved={invalidateChannel}
-              />
-            </Flex>
-            </>
-          )}
+          </Flex>
         </Card>
 
         <Card title="故障转移策略">

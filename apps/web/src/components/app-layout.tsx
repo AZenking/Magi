@@ -1,79 +1,115 @@
-import { Grid, Layout, theme } from "antd";
-import { useState } from "react";
-import { Outlet } from "@tanstack/react-router";
-import { AppMenu } from "./app-menu";
-import { AppHeader } from "./app-header";
-
-const { Sider, Content } = Layout;
+import { Avatar, Button, Dropdown, Flex, Grid, theme } from "antd";
+import type { MenuProps } from "antd";
+import { LogoutOutlined } from "@ant-design/icons";
+import { ProLayout } from "@ant-design/pro-components";
+import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
+import { signOut } from "@/lib/auth-client";
+import { GlobalTaskStatus } from "./global-task-status";
+import { AppBreadcrumb } from "./app-breadcrumb";
+import { APP_MENU_ROUTE } from "./app-menu";
 
 type AppLayoutProps = {
   userName?: string;
 };
 
 export function AppLayout({ userName }: AppLayoutProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
   const screens = Grid.useBreakpoint();
   const { token } = theme.useToken();
+  const displayName = userName ?? "用户";
+
+  async function handleLogout() {
+    await signOut();
+    window.location.href = "/login";
+  }
+
+  const userMenuItems: MenuProps["items"] = [
+    {
+      key: "logout",
+      icon: <LogoutOutlined />,
+      label: "退出登录",
+      onClick: () => void handleLogout(),
+    },
+  ];
 
   return (
-    <Layout style={{ minHeight: "100svh" }}>
-      <Sider
-        breakpoint="lg"
-        collapsed={collapsed}
-        onCollapse={setCollapsed}
-        width={220}
-        collapsedWidth={screens.lg ? 48 : 0}
-        theme="dark"
+    <ProLayout
+      title="MAGI"
+      logo={
+        <Flex
+          align="center"
+          justify="center"
+          style={{
+            width: token.controlHeight,
+            height: token.controlHeight,
+            borderRadius: token.borderRadius,
+            color: token.colorWhite,
+            background: token.colorPrimary,
+            fontWeight: token.fontWeightStrong,
+          }}
+        >
+          M
+        </Flex>
+      }
+      layout="mix"
+      navTheme="light"
+      fixedHeader
+      fixSiderbar
+      siderWidth={220}
+      location={{ pathname }}
+      route={APP_MENU_ROUTE}
+      menu={{ locale: false }}
+      menuItemRender={(item, defaultDom) => {
+        const target =
+          typeof item.key === "string" && item.key.startsWith("/")
+            ? item.key
+            : item.path;
+        return target ? <Link to={target}>{defaultDom}</Link> : defaultDom;
+      }}
+      onMenuHeaderClick={() => void navigate({ to: "/dashboard" })}
+      pageTitleRender={false}
+      breadcrumbRender={false}
+      footerRender={false}
+      actionsRender={() => [
+        <GlobalTaskStatus key="task-status" />,
+        <Dropdown
+          key="user-menu"
+          menu={{ items: userMenuItems }}
+          placement="bottomRight"
+        >
+          <Button type="text" style={{ height: token.controlHeightLG }}>
+            <Flex align="center" gap={token.marginXS}>
+              <Avatar size={28} style={{ backgroundColor: token.colorPrimary }}>
+                {displayName.charAt(0).toUpperCase()}
+              </Avatar>
+              {screens.md ? <span>{displayName}</span> : null}
+            </Flex>
+          </Button>
+        </Dropdown>,
+      ]}
+      contentStyle={{
+        minHeight: "calc(100svh - 56px)",
+        padding: 0,
+      }}
+    >
+      <div
         style={{
-          overflow: "auto",
-          height: "100svh",
-          position: "sticky",
-          top: 0,
-          left: 0,
+          minWidth: 0,
+          padding: screens.lg ? token.paddingLG : token.paddingSM,
         }}
       >
         <div
           style={{
-            padding: "16px 0",
-            textAlign: "center",
-            color: token.colorWhite,
-            fontWeight: 600,
-            whiteSpace: "nowrap",
-            overflow: "hidden",
+            marginBottom: screens.lg ? token.marginLG : token.marginSM,
+            paddingBottom: token.paddingSM,
+            borderBottom: `${token.lineWidth}px ${token.lineType} ${token.colorBorderSecondary}`,
           }}
         >
-          {collapsed ? (
-            <span style={{ fontSize: 18 }}>M</span>
-          ) : (
-            <>
-              <div style={{ fontSize: 16, lineHeight: 1.4 }}>MAGI</div>
-              <div
-                style={{
-                  fontSize: 12,
-                  color: token.colorTextLightSolid,
-                  opacity: 0.65,
-                  fontWeight: 400,
-                }}
-              >
-                EPG 管理平台
-              </div>
-            </>
-          )}
+          <AppBreadcrumb />
         </div>
-        <AppMenu />
-      </Sider>
-      <Layout>
-        <AppHeader userName={userName} />
-        <Content
-          style={{
-            minWidth: 0,
-            padding: screens.lg ? token.paddingLG : token.paddingSM,
-            background: token.colorBgLayout,
-          }}
-        >
-          <Outlet />
-        </Content>
-      </Layout>
-    </Layout>
+        <Outlet />
+      </div>
+    </ProLayout>
   );
 }

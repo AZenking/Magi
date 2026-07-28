@@ -4,20 +4,38 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ProColumns } from "@ant-design/pro-components";
 import type { ProgrammeVo, PaginatedResponse, SourceVo } from "@magi/types";
 import { apiClient } from "@/services/api";
-import { Button, Input, Select, Typography } from "antd";
+import { Button, Typography } from "antd";
 import { ProTableWrapper } from "@/components/pro-table-wrapper";
 import { ReloadOutlined } from "@ant-design/icons";
-import { FilterBar, PageHeader, PageStack } from "@/components/page-layout";
+import { PageHeader, PageStack } from "@/components/page-layout";
 
 export const Route = createFileRoute("/dashboard/sources/programmes")({
   component: ProgrammesPreviewPage,
 });
 
-function getColumns(): ProColumns<ProgrammeVo>[] {
+function getColumns(xmltvSourceOptions?: { value: string; label: string }[]): ProColumns<ProgrammeVo>[] {
   return [
+    // Virtual column: XMLTV source filter, lives only in the search form.
+    {
+      title: "XMLTV 源",
+      dataIndex: "sourceId",
+      valueType: "select",
+      hideInTable: true,
+      fieldProps: { options: xmltvSourceOptions, allowClear: true, placeholder: "全部 XMLTV 源" },
+    },
+    // Virtual column: channel ID text filter, maps to xmltvChannelId param.
+    {
+      title: "频道 ID",
+      dataIndex: "channelId",
+      hideInTable: true,
+      search: {
+        transform: (value) => ({ xmltvChannelId: value }),
+      },
+    },
     {
       dataIndex: "xmltvChannelId",
       title: "频道 ID",
+      search: false,
       render: (_, record) => (
         <span style={{ fontFamily: "monospace", fontSize: 12 }}>
           {record.xmltvChannelId}
@@ -27,31 +45,37 @@ function getColumns(): ProColumns<ProgrammeVo>[] {
     {
       dataIndex: "title",
       title: "标题",
+      search: false,
       render: (_, record) => record.title ?? "-",
     },
     {
       dataIndex: "subTitle",
       title: "副标题",
+      search: false,
       render: (_, record) => record.subTitle ?? "-",
     },
     {
       dataIndex: "category",
       title: "分类",
+      search: false,
       render: (_, record) => record.category ?? "-",
     },
     {
       dataIndex: "startAt",
       title: "开始",
+      search: false,
       render: (_, record) => new Date(record.startAt).toLocaleString("zh-CN"),
     },
     {
       dataIndex: "stopAt",
       title: "结束",
+      search: false,
       render: (_, record) => new Date(record.stopAt).toLocaleString("zh-CN"),
     },
     {
       dataIndex: "desc",
       title: "简介",
+      search: false,
       render: (_, record) => (
         <Typography.Text
           type="secondary"
@@ -77,7 +101,6 @@ function ProgrammesPreviewPage() {
   const [pageSize, setPageSize] = useState(20);
   const [sourceId, setSourceId] = useState<string>("");
   const [channelId, setChannelId] = useState("");
-  const [channelInput, setChannelInput] = useState("");
 
   const { data: sourcesData } = useQuery({
     queryKey: ["sources", "xmltv"],
@@ -91,6 +114,10 @@ function ProgrammesPreviewPage() {
   });
 
   const xmltvSources = sourcesData?.data?.items ?? [];
+  const xmltvSourceOptions = useMemo(
+    () => xmltvSources.map((source) => ({ value: source.id, label: source.name })),
+    [xmltvSources],
+  );
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["programmes", page, pageSize, sourceId, channelId],
@@ -115,54 +142,20 @@ function ProgrammesPreviewPage() {
     queryClient.invalidateQueries({ queryKey: ["programmes"] });
   }, [queryClient]);
 
-  const columns = useMemo(() => getColumns(), []);
+  const columns = useMemo(() => getColumns(xmltvSourceOptions), [xmltvSourceOptions]);
+
+  const handleSearch = useCallback((params: Record<string, unknown>) => {
+    setSourceId((params.sourceId as string) ?? "");
+    setChannelId((params.xmltvChannelId as string) ?? "");
+    setPage(1);
+  }, []);
 
   return (
     <PageStack>
       <PageHeader
         title="源节目数据"
         description="按 XMLTV 来源检查原始节目数据；此处不代表最终对外输出"
-        actions={
-          <Button
-            shape="circle"
-            icon={<ReloadOutlined />}
-            onClick={refresh}
-            aria-label="刷新"
-          />
-        }
       />
-
-      <FilterBar>
-        <Select
-          value={sourceId || "all"}
-          onChange={(v) => {
-            setSourceId(v === "all" ? "" : v);
-            setPage(1);
-          }}
-          aria-label="XMLTV 源筛选"
-          options={[
-            { value: "all", label: "全部 XMLTV 源" },
-            ...xmltvSources.map((source) => ({
-              value: source.id,
-              label: source.name,
-            })),
-          ]}
-          style={{ width: 200 }}
-        />
-        <Input
-          placeholder="频道 ID 过滤"
-          value={channelInput}
-          onChange={(e) => setChannelInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              setChannelId(channelInput);
-              setPage(1);
-            }
-          }}
-          style={{ maxWidth: 200 }}
-          autoComplete="off"
-        />
-      </FilterBar>
 
       <ProTableWrapper<ProgrammeVo>
         columns={columns}
@@ -171,6 +164,18 @@ function ProgrammesPreviewPage() {
         loading={isLoading}
         error={error}
         onRetry={() => void refetch()}
+        search={true}
+        onSearch={handleSearch}
+        toolBarRender={() => [
+          <Button
+            key="refresh"
+            icon={<ReloadOutlined />}
+            onClick={refresh}
+            aria-label="刷新"
+          >
+            刷新
+          </Button>,
+        ]}
         columnsStateKey="programmes-columns"
         pagination={{
           current: page,

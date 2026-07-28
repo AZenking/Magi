@@ -12,6 +12,8 @@ const LABELS: Record<string, string> = {
   "output-guide": "输出节目单",
   "output-addresses": "输出地址",
   tasks: "任务",
+  backups: "备份",
+  audit: "审计",
 };
 
 type AppBreadcrumbProps = {

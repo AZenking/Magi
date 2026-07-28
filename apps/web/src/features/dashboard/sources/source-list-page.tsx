@@ -4,12 +4,12 @@ import { useNavigate } from "@tanstack/react-router";
 import type { SourceVo, PaginatedResponse } from "@magi/types";
 import { apiClient } from "@/services/api";
 import { useFeedback } from "@/lib/feedback";
-import { Button, Input, Modal, Space, Typography } from "antd";
+import { Button, Modal, Space, Typography } from "antd";
 import { ProTableWrapper } from "@/components/pro-table-wrapper";
-import { PlusOutlined, SearchOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import { getSourceColumns } from "@/features/dashboard/epg/columns";
 import { SourceFormDialog } from "@/features/dashboard/epg/source-form-dialog";
-import { FilterBar, PageHeader, PageStack } from "@/components/page-layout";
+import { PageHeader, PageStack } from "@/components/page-layout";
 import { OperationPreview } from "@/features/dashboard/operations/operation-preview";
 import { usePreparePreview } from "@/features/dashboard/operations/operation-queries";
 
@@ -25,7 +25,6 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const [searchInput, setSearchInput] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   // Server-side sort state (manual). ProTableWrapper's onSorterChange feeds
@@ -296,49 +295,16 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
 
   const deleteTarget = deletingSource;
 
+  // ProTable's QueryFilter submit/reset routes here. Map the form values to
+  // the existing filter state variables so the useQuery picks them up.
+  const handleSearch = useCallback((params: Record<string, unknown>) => {
+    setSearch((params.search as string) ?? "");
+    setPage(1);
+  }, []);
+
   return (
     <PageStack>
-      <PageHeader
-        title={title}
-        actions={
-          <Button
-            type="primary"
-            onClick={() => {
-              setEditingSource(null);
-              setDialogOpen(true);
-            }}
-            icon={<PlusOutlined />}
-          >
-            添加源
-          </Button>
-        }
-      />
-
-      <FilterBar>
-        <Input
-          placeholder="搜索名称或 URL…"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              setSearch(searchInput);
-              setPage(1);
-            }
-          }}
-          prefix={<SearchOutlined />}
-          style={{ maxWidth: 300 }}
-          aria-label="搜索源"
-        />
-        <Button
-          type="default"
-          onClick={() => {
-            setSearch(searchInput);
-            setPage(1);
-          }}
-          aria-label="搜索"
-          icon={<SearchOutlined />}
-        />
-      </FilterBar>
+      <PageHeader title={title} />
 
       <ProTableWrapper
         columns={columns}
@@ -347,6 +313,29 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
         loading={isLoading}
         error={error}
         onRetry={() => void refetch()}
+        search={true}
+        onSearch={handleSearch}
+        toolBarRender={() => [
+          <Button
+            key="add"
+            type="primary"
+            onClick={() => {
+              setEditingSource(null);
+              setDialogOpen(true);
+            }}
+            icon={<PlusOutlined />}
+          >
+            添加源
+          </Button>,
+          <Button
+            key="refresh"
+            icon={<ReloadOutlined />}
+            onClick={refresh}
+            aria-label="刷新"
+          >
+            刷新
+          </Button>,
+        ]}
         sortState={sortState}
         onSorterChange={(field, order) => {
           setSortBy(field ?? undefined);

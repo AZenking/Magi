@@ -16,7 +16,12 @@ import {
   theme,
 } from "antd";
 import { ProList } from "@ant-design/pro-components";
-import { LinkOutlined, PlusOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import {
+  LinkOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  ThunderboltOutlined,
+} from "@ant-design/icons";
 import { Link } from "@tanstack/react-router";
 import type { SourceVo } from "@magi/types";
 import { apiClient } from "@/services/api";
@@ -211,92 +216,106 @@ function EpgMatchingPage() {
         )}
       </Card>
 
-      <Card title="XMLTV 源列表">
-        {error ? (
-          <Result
-            status="error"
-            title="XMLTV 源加载失败"
-            subTitle={error.message}
-            extra={<Button onClick={() => void refetch()}>重试</Button>}
-          />
-        ) : xmltvSources.length === 0 && !isLoading ? (
-          // T074: empty state with a direct add entry point.
-          <Empty description="暂无 XMLTV 源">
-            <Link to="/dashboard/sources/xmltv">
-              <Button type="primary" icon={<PlusOutlined />}>
-                添加 XMLTV 源
-              </Button>
-            </Link>
-          </Empty>
-        ) : (
-          <ProList<SourceVo>
-            rowKey="id"
-            dataSource={xmltvSources}
-            split
-            metas={{
-              title: {
-                render: (_, source) => (
-                  <Flex vertical style={{ minWidth: 0 }}>
-                    <Typography.Text strong>{source.name}</Typography.Text>
-                    <Typography.Paragraph
-                      type="secondary"
-                      ellipsis
-                      style={{ margin: 0, maxWidth: 400 }}
-                    >
-                      {source.url}
-                    </Typography.Paragraph>
-                  </Flex>
-                ),
-              },
-              description: {
-                render: (_, source) => (
-                  <Flex align="center" wrap gap={token.marginXS}>
-                    <Tag color={source.enabled ? "blue" : undefined}>
-                      {source.enabled ? "启用" : "禁用"}
-                    </Tag>
-                    {source.lastSyncStatus && (
-                      <Tag
-                        color={
-                          source.lastSyncStatus === "success" ? "green" : "red"
-                        }
-                      >
-                        {source.lastSyncStatus === "success"
-                          ? "已同步"
-                          : "同步失败"}
-                      </Tag>
-                    )}
-                    {source.lastSyncAt && (
-                      <Typography.Text type="secondary">
-                        {new Intl.DateTimeFormat("zh-CN", {
-                          dateStyle: "short",
-                          timeStyle: "short",
-                        }).format(new Date(source.lastSyncAt))}
-                      </Typography.Text>
-                    )}
-                  </Flex>
-                ),
-              },
-              actions: {
-                render: (_, source) => [
-                  <Button
-                    key="match"
-                    size="small"
-                    onClick={() => {
-                      setSelectedSourceId(source.id);
-                      handleMatch(source.id);
-                    }}
-                    loading={
-                      preparePreview.isPending && selectedSourceId === source.id
+      <ProList<SourceVo>
+        rowKey="id"
+        headerTitle="XMLTV 源列表"
+        toolBarRender={() => [
+          <Link key="add" to="/dashboard/sources/xmltv">
+            <Button type="primary" icon={<PlusOutlined />}>
+              添加 XMLTV 源
+            </Button>
+          </Link>,
+          <Button
+            key="refresh"
+            icon={<ReloadOutlined />}
+            onClick={() => void refetch()}
+          >
+            刷新
+          </Button>,
+        ]}
+        dataSource={xmltvSources}
+        loading={isLoading}
+        split
+        locale={{
+          emptyText: error ? (
+            <Result
+              status="error"
+              title="XMLTV 源加载失败"
+              subTitle={error.message}
+              extra={<Button onClick={() => void refetch()}>重试</Button>}
+            />
+          ) : (
+            <Empty description="暂无 XMLTV 源">
+              <Link to="/dashboard/sources/xmltv">
+                <Button type="primary" icon={<PlusOutlined />}>
+                  添加 XMLTV 源
+                </Button>
+              </Link>
+            </Empty>
+          ),
+        }}
+        metas={{
+          title: {
+            render: (_, source) => (
+              <Flex vertical style={{ minWidth: 0 }}>
+                <Typography.Text strong>{source.name}</Typography.Text>
+                <Typography.Paragraph
+                  type="secondary"
+                  ellipsis
+                  style={{ margin: 0, maxWidth: 400 }}
+                >
+                  {source.url}
+                </Typography.Paragraph>
+              </Flex>
+            ),
+          },
+          description: {
+            render: (_, source) => (
+              <Flex align="center" wrap gap={token.marginXS}>
+                <Tag color={source.enabled ? "blue" : undefined}>
+                  {source.enabled ? "启用" : "禁用"}
+                </Tag>
+                {source.lastSyncStatus && (
+                  <Tag
+                    color={
+                      source.lastSyncStatus === "success" ? "green" : "red"
                     }
                   >
-                    预览匹配
-                  </Button>,
-                ],
-              },
-            }}
-          />
-        )}
-      </Card>
+                    {source.lastSyncStatus === "success"
+                      ? "已同步"
+                      : "同步失败"}
+                  </Tag>
+                )}
+                {source.lastSyncAt && (
+                  <Typography.Text type="secondary">
+                    {new Intl.DateTimeFormat("zh-CN", {
+                      dateStyle: "short",
+                      timeStyle: "short",
+                    }).format(new Date(source.lastSyncAt))}
+                  </Typography.Text>
+                )}
+              </Flex>
+            ),
+          },
+          actions: {
+            render: (_, source) => [
+              <Button
+                key="match"
+                size="small"
+                onClick={() => {
+                  setSelectedSourceId(source.id);
+                  handleMatch(source.id);
+                }}
+                loading={
+                  preparePreview.isPending && selectedSourceId === source.id
+                }
+              >
+                预览匹配
+              </Button>,
+            ],
+          },
+        }}
+      />
 
       <Modal
         open={!!previewChangeSetId}

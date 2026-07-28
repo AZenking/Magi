@@ -11,7 +11,7 @@ import type {
 } from "@magi/types";
 import { apiClient } from "@/services/api";
 import type { ProColumns } from "@ant-design/pro-components";
-import { Button, Dropdown, Flex, Tabs, theme } from "antd";
+import { Button, Dropdown, Tabs } from "antd";
 import type { MenuProps } from "antd";
 import { ProTableWrapper } from "@/components/pro-table-wrapper";
 import {
@@ -54,7 +54,6 @@ export const Route = createFileRoute("/dashboard/channels/")({
 
 function ChannelsPage() {
   const { message } = useFeedback();
-  const { token } = theme.useToken();
   const queryClient = useQueryClient();
   const navigate = Route.useNavigate();
   const searchParams = Route.useSearch();
@@ -245,30 +244,6 @@ function ChannelsPage() {
       <PageHeader
         title="频道管理"
         description="维护输出频道、EPG 关联与播放源可用性"
-        actions={
-          <Flex align="center" wrap gap={token.marginSM}>
-            <Dropdown menu={{ items: exportItems }} trigger={["click"]}>
-              <Button icon={<DownloadOutlined />}>
-                导出 <DownOutlined />
-              </Button>
-            </Dropdown>
-            <Button
-              type="primary"
-              onClick={() => checkStreamsMutation.mutate()}
-              disabled={checkStreamsMutation.isPending}
-              loading={checkStreamsMutation.isPending}
-              icon={<FundProjectionScreenOutlined />}
-            >
-              {checkStreamsMutation.isPending ? "提交中…" : "检查频道流"}
-            </Button>
-            <Button
-              shape="circle"
-              icon={<ReloadOutlined />}
-              onClick={refresh}
-              aria-label="刷新"
-            />
-          </Flex>
-        }
       />
 
       <Tabs
@@ -315,6 +290,31 @@ function ChannelsPage() {
         onRetry={() => void refetch()}
         search={true}
         onSearch={handleSearch}
+        toolBarRender={() => [
+          <Dropdown key="export" menu={{ items: exportItems }} trigger={["click"]}>
+            <Button icon={<DownloadOutlined />}>
+              导出 <DownOutlined />
+            </Button>
+          </Dropdown>,
+          <Button
+            key="check-streams"
+            type="primary"
+            onClick={() => checkStreamsMutation.mutate()}
+            disabled={checkStreamsMutation.isPending}
+            loading={checkStreamsMutation.isPending}
+            icon={<FundProjectionScreenOutlined />}
+          >
+            {checkStreamsMutation.isPending ? "提交中…" : "检查频道流"}
+          </Button>,
+          <Button
+            key="refresh"
+            icon={<ReloadOutlined />}
+            onClick={refresh}
+            aria-label="刷新"
+          >
+            刷新
+          </Button>,
+        ]}
         rowSelection={{
           type: "checkbox",
           selectedRowKeys,

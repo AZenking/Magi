@@ -35,20 +35,37 @@ export function getSourceColumns({
   deletingId = null,
 }: ColumnsContext): ProColumns<SourceVo>[] {
   return [
+    // Virtual keyword column: lives only in the search form, maps the form's
+    // `keyword` value to the `search` query param.
+    {
+      title: "搜索",
+      dataIndex: "keyword",
+      hideInTable: true,
+      search: {
+        transform: (value) => ({ search: value }),
+      },
+    },
     {
       title: "名称",
       dataIndex: "name",
+      search: false,
       ellipsis: true,
     },
     {
       title: "URL",
       dataIndex: "url",
+      search: false,
       ellipsis: true,
       width: 300,
     },
     {
       title: "状态",
       dataIndex: "enabled",
+      valueType: "select",
+      valueEnum: {
+        true: { text: "启用" },
+        false: { text: "禁用" },
+      },
       render: (_, record) => (
         <Tag color={record.enabled ? "success" : undefined}>
           {record.enabled ? "启用" : "禁用"}
@@ -58,6 +75,7 @@ export function getSourceColumns({
     {
       title: "最后同步",
       dataIndex: "lastSyncAt",
+      search: false,
       render: (_, record) =>
         record.lastSyncAt
           ? new Intl.DateTimeFormat("zh-CN", {
@@ -69,6 +87,7 @@ export function getSourceColumns({
     {
       title: "源状态",
       dataIndex: "checkStatus",
+      search: false,
       render: (_, record) => {
         const s = checkStatusMap[record.checkStatus ?? ""] ?? { label: "-" };
         return <Tag color={s.color}>{s.label}</Tag>;
@@ -77,6 +96,7 @@ export function getSourceColumns({
     {
       title: "最后检测",
       dataIndex: "lastCheckAt",
+      search: false,
       render: (_, record) =>
         record.lastCheckAt
           ? new Intl.DateTimeFormat("zh-CN", {
@@ -88,6 +108,7 @@ export function getSourceColumns({
     {
       title: "创建时间",
       dataIndex: "createdAt",
+      search: false,
       render: (_, record) =>
         new Intl.DateTimeFormat("zh-CN", {
           dateStyle: "short",

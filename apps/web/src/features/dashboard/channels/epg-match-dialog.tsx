@@ -8,7 +8,6 @@ import {
   Input,
   Modal,
   Result,
-  Spin,
   Typography,
   theme,
 } from "antd";
@@ -106,63 +105,68 @@ export function EpgMatchDialog({
           </Flex>
         )}
 
-        <Input
-          placeholder="搜索频道 ID 或名称…"
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(1);
+        <ProList<RawXmltvChannelVo>
+          rowKey="id"
+          headerTitle="XMLTV 候选频道"
+          toolBarRender={() => [
+            <Input
+              key="search"
+              placeholder="搜索频道 ID 或名称…"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              autoComplete="off"
+              allowClear
+              style={{ width: 220 }}
+            />,
+          ]}
+          dataSource={candidates}
+          loading={isLoading}
+          style={{ maxHeight: 320, overflowY: "auto" }}
+          locale={{
+            emptyText: isError ? (
+              <Result
+                status="error"
+                title="频道候选加载失败"
+                extra={<Button onClick={() => void refetch()}>重试</Button>}
+              />
+            ) : (
+              <Empty description="无结果" />
+            ),
           }}
-          autoComplete="off"
+          metas={{
+            title: {
+              render: (_, candidate) => (
+                <Typography.Text code>{candidate.xmltvId}</Typography.Text>
+              ),
+            },
+            description: {
+              render: (_, candidate) => candidate.displayName,
+            },
+            actions: {
+              render: (_, candidate) => [
+                <Button
+                  key="select"
+                  type="link"
+                  loading={pending}
+                  onClick={() => onSelect(candidate, lockManual)}
+                >
+                  选择
+                </Button>,
+              ],
+            },
+          }}
+          pagination={{
+            current: page,
+            pageSize: 10,
+            total: totalPages * 10,
+            onChange: (p) => setPage(p),
+            size: "small",
+            style: { textAlign: "center" },
+          }}
         />
-
-        {isError ? (
-          <Result
-            status="error"
-            title="频道候选加载失败"
-            extra={<Button onClick={() => void refetch()}>重试</Button>}
-          />
-        ) : isLoading ? (
-          <Spin description="搜索中…" />
-        ) : candidates.length === 0 ? (
-          <Empty description="无结果" />
-        ) : (
-          <ProList<RawXmltvChannelVo>
-            rowKey="id"
-            dataSource={candidates}
-            style={{ maxHeight: 320, overflowY: "auto" }}
-            metas={{
-              title: {
-                render: (_, candidate) => (
-                  <Typography.Text code>{candidate.xmltvId}</Typography.Text>
-                ),
-              },
-              description: {
-                render: (_, candidate) => candidate.displayName,
-              },
-              actions: {
-                render: (_, candidate) => [
-                  <Button
-                    key="select"
-                    type="link"
-                    loading={pending}
-                    onClick={() => onSelect(candidate, lockManual)}
-                  >
-                    选择
-                  </Button>,
-                ],
-              },
-            }}
-            pagination={{
-              current: page,
-              pageSize: 10,
-              total: totalPages * 10,
-              onChange: (p) => setPage(p),
-              size: "small",
-              style: { textAlign: "center" },
-            }}
-          />
-        )}
 
         {/* T073: manual lock — survives automatic matching (FR-005). */}
         <Checkbox
