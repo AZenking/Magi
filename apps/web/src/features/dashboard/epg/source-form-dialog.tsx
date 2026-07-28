@@ -1,19 +1,39 @@
 import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod";
-import type { SourceVo } from "@magi/types";
-import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Alert,
+  Button,
+  Descriptions,
+  Form,
+  Input,
+  Modal,
+  Select,
+  Skeleton,
+  Typography,
+  theme,
+} from "antd";
+import type { SourceEffectivePolicy, SourceVo } from "@magi/types";
+import { apiClient } from "@/services/api";
+import { useFeedback } from "@/lib/feedback";
 
 const sourceFormSchema = z.object({
   name: z.string().min(1, "请输入名称").max(255),
-  url: z.string().refine(
-    (u) => {
-      if (!u) return false;
-      try { new URL(u); } catch { return false; }
-      return u.startsWith("http://") || u.startsWith("https://");
-    },
-    { message: "请输入有效的 URL（以 http:// 或 https:// 开头）" },
-  ),
+  url: z
+    .string()
+    .refine(
+      (u) => {
+        if (!u) return false;
+        try {
+          new URL(u);
+        } catch {
+          return false;
+        }
+        return u.startsWith("http://") || u.startsWith("https://");
+      },
+      { message: "请输入有效的 URL（以 http:// 或 https:// 开头）" },
+    ),
   enabled: z.boolean(),
   priority: z.number().int().min(0).max(9999).default(100),
   allowFallback: z.boolean().default(true),
@@ -23,38 +43,101 @@ const sourceFormSchema = z.object({
 function getErrorMessage(err: unknown): string {
   if (!err) return "";
   if (typeof err === "string") return err;
-  if (typeof err === "object" && err !== null && "message" in err) return String((err as { message: unknown }).message);
+  if (typeof err === "object" && err !== null && "message" in err) {
+    return String((err as { message: unknown }).message);
+  }
   return String(err);
 }
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@magi/ui/components/dialog";
-import { Button } from "@magi/ui/components/button";
-import { Input } from "@magi/ui/components/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@magi/ui/components/select";
-import {
-  Field,
-  FieldGroup,
-  FieldLabel,
-  FieldError,
-} from "@magi/ui/components/field";
+
+/**
+ * T124: read-only effective-policy preview shown inside the edit dialog. Reads
+ * `GET /sources/{type}/{id}/effective-policy` and surfaces the resolved role,
+ * priority, participation/fallback flags and the server-provided Chinese
+ * summary. The summary explains how enabled/output/fallback interact
+ * (contracts/common.md). For XMLTV we skip the block entirely.
+ */
+function EffectivePolicyPreview({
+  source,
+}: {
+  source: Pick<SourceVo, "id" | "type">;
+}) {
+  const { token } = theme.useToken();
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["source-effective-policy", source.type, source.id],
+    queryFn: () =>
+      apiClient<{ success: boolean; data: SourceEffectivePolicy }>(
+        `/sources/${source.type}/${source.id}/effective-policy`,
+      ),
+  });
+
+  if (isLoading) {
+    return <Skeleton active paragraph={{ rows: 2 }} />;
+  }
+  if (isError) {
+    return (
+      <Alert
+        type="info"
+        showIcon
+        title="生效策略暂不可用"
+        description="保存后将重新计算生效策略。"
+      />
+    );
+  }
+
+  const policy = data?.data;
+  if (!policy) return null;
+
+  return (
+    <div
+      style={{
+        marginTop: token.marginMD,
+        paddingTop: token.paddingMD,
+        borderTop: `${token.lineWidth}px ${token.lineType} ${token.colorBorderSecondary}`,
+      }}
+    >
+      <Typography.Text strong>生效策略预览</Typography.Text>
+      <Typography.Paragraph
+        type="secondary"
+        style={{ marginTop: token.marginXS, marginBottom: token.marginSM }}
+      >
+        {policy.summary}
+      </Typography.Paragraph>
+      <Descriptions
+        size="small"
+        column={2}
+        items={[
+          { key: "enabled", label: "启用", children: policy.enabled ? "是" : "否" },
+          {
+            key: "participates",
+            label: "参与输出",
+            children: policy.participatesInOutput ? "是" : "否",
+          },
+          { key: "role", label: "角色", children: policy.role },
+          { key: "priority", label: "优先级", children: policy.priority },
+          {
+            key: "fallback",
+            label: "允许备选",
+            children: policy.fallbackAllowed ? "是" : "否",
+          },
+        ]}
+      />
+    </div>
+  );
+}
 
 interface SourceFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   source?: SourceVo | null;
   sourceType: "m3u" | "xmltv";
-  onSubmit: (data: { name: string; url: string; enabled: boolean; priority?: number; allowFallback?: boolean; participateInOutput?: boolean }) => Promise<void>;
+  onSubmit: (data: {
+    name: string;
+    url: string;
+    enabled: boolean;
+    priority?: number;
+    allowFallback?: boolean;
+    participateInOutput?: boolean;
+  }) => Promise<void>;
 }
 
 export function SourceFormDialog({
@@ -64,6 +147,7 @@ export function SourceFormDialog({
   sourceType,
   onSubmit,
 }: SourceFormDialogProps) {
+  const { message } = useFeedback();
   const [pending, setPending] = useState(false);
   const isEdit = !!source;
 
@@ -86,17 +170,17 @@ export function SourceFormDialog({
           name: value.name,
           url: value.url,
           enabled: value.enabled,
-          ...(sourceType === "m3u" ? {
-            priority: value.priority,
-            allowFallback: value.allowFallback,
-            participateInOutput: value.participateInOutput,
-          } : {}),
+          ...(sourceType === "m3u"
+            ? {
+                priority: value.priority,
+                allowFallback: value.allowFallback,
+                participateInOutput: value.participateInOutput,
+              }
+            : {}),
         });
         onOpenChange(false);
       } catch (err) {
-        toast.error(isEdit ? "源更新失败" : "源添加失败", {
-          description: err instanceof Error ? err.message : "请稍后重试",
-        });
+        message.error(`${isEdit ? "源更新失败" : "源添加失败"}：${err instanceof Error ? err.message : "请稍后重试"}`);
       } finally {
         setPending(false);
       }
@@ -104,193 +188,160 @@ export function SourceFormDialog({
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{isEdit ? "编辑源" : "添加源"}</DialogTitle>
-        </DialogHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            form.handleSubmit();
+    <Modal
+      open={open}
+      title={isEdit ? "编辑源" : "添加源"}
+      onCancel={() => onOpenChange(false)}
+      footer={null}
+      destroyOnHidden
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void form.handleSubmit();
+        }}
+      >
+      <Form
+        layout="vertical"
+        disabled={pending}
+      >
+        <form.Field name="name">
+          {(field) => {
+            const error =
+              field.state.meta.isTouched && !field.state.meta.isValid
+                ? getErrorMessage(field.state.meta.errors[0])
+                : undefined;
+            return (
+              <Form.Item label="名称" validateStatus={error ? "error" : ""} help={error}>
+                <Input
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  onBlur={field.handleBlur}
+                  placeholder="源名称…"
+                  autoComplete="off"
+                />
+              </Form.Item>
+            );
           }}
-        >
-          <FieldGroup>
-            <form.Field name="name">
+        </form.Field>
+
+        <Form.Item label="类型">
+          <Select value={sourceType} disabled options={[
+            { value: "m3u", label: "M3U" },
+            { value: "xmltv", label: "XMLTV" },
+          ]} />
+        </Form.Item>
+
+        <form.Field name="url">
+          {(field) => {
+            const error =
+              field.state.meta.isTouched && !field.state.meta.isValid
+                ? getErrorMessage(field.state.meta.errors[0])
+                : undefined;
+            return (
+              <Form.Item label="URL" validateStatus={error ? "error" : ""} help={error}>
+                <Input
+                  type="url"
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  onBlur={field.handleBlur}
+                  placeholder="https://example.com/source"
+                  autoComplete="url"
+                />
+              </Form.Item>
+            );
+          }}
+        </form.Field>
+
+        <form.Field name="enabled">
+          {(field) => (
+            <Form.Item label="状态">
+              <Select
+                value={field.state.value ? "true" : "false"}
+                onChange={(v) => field.handleChange(v === "true")}
+                options={[
+                  { value: "true", label: "启用" },
+                  { value: "false", label: "禁用" },
+                ]}
+              />
+            </Form.Item>
+          )}
+        </form.Field>
+
+        {sourceType === "m3u" && (
+          <>
+            <form.Field name="priority">
               {(field) => {
-                const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+                const error =
+                  field.state.meta.isTouched && !field.state.meta.isValid
+                    ? getErrorMessage(field.state.meta.errors[0])
+                    : undefined;
                 return (
-                  <Field data-invalid={isInvalid || undefined}>
-                    <FieldLabel htmlFor="source-name">名称</FieldLabel>
+                  <Form.Item
+                    label="优先级"
+                    validateStatus={error ? "error" : ""}
+                    help={error}
+                  >
                     <Input
-                      id="source-name"
-                      name="name"
+                      type="number"
                       value={field.state.value}
-                      onChange={(e) => field.handleChange(e.target.value)}
+                      onChange={(e) => field.handleChange(Number(e.target.value))}
                       onBlur={field.handleBlur}
-                      onClear={() => field.handleChange("")}
-                      placeholder="源名称…"
-                      aria-invalid={isInvalid}
-                      disabled={pending}
-                      autoComplete="off"
+                      placeholder="100"
+                      min={0}
+                      max={9999}
                     />
-                    {isInvalid && (
-                      <FieldError>
-                        {getErrorMessage(field.state.meta.errors[0])}
-                      </FieldError>
-                    )}
-                  </Field>
+                  </Form.Item>
                 );
               }}
             </form.Field>
 
-            <Field>
-              <FieldLabel htmlFor="source-type">类型</FieldLabel>
-              <Select value={sourceType} disabled>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="m3u">M3U</SelectItem>
-                  <SelectItem value="xmltv">XMLTV</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-
-            <form.Field name="url">
-              {(field) => {
-                const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={isInvalid || undefined}>
-                    <FieldLabel htmlFor="source-url">URL</FieldLabel>
-                    <Input
-                      id="source-url"
-                      name="url"
-                      type="url"
-                      value={field.state.value}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                      onBlur={field.handleBlur}
-                      onClear={() => field.handleChange("")}
-                      placeholder="https://example.com/source"
-                      aria-invalid={isInvalid}
-                      disabled={pending}
-                      autoComplete="url"
-                    />
-                    {isInvalid && (
-                      <FieldError>
-                        {getErrorMessage(field.state.meta.errors[0])}
-                      </FieldError>
-                    )}
-                  </Field>
-                );
-              }}
-            </form.Field>
-
-            <form.Field name="enabled">
+            <form.Field name="participateInOutput">
               {(field) => (
-                <Field>
-                  <FieldLabel htmlFor="source-enabled">状态</FieldLabel>
+                <Form.Item label="参与输出">
                   <Select
                     value={field.state.value ? "true" : "false"}
-                    onValueChange={(v) => field.handleChange(v === "true")}
-                    disabled={pending}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="true">启用</SelectItem>
-                      <SelectItem value="false">禁用</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
+                    onChange={(v) => field.handleChange(v === "true")}
+                    options={[
+                      { value: "true", label: "是" },
+                      { value: "false", label: "否" },
+                    ]}
+                  />
+                </Form.Item>
               )}
             </form.Field>
 
-            {sourceType === "m3u" && (
-              <>
-                <form.Field name="priority">
-                  {(field) => {
-                    const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-                    return (
-                      <Field data-invalid={isInvalid || undefined}>
-                        <FieldLabel htmlFor="source-priority">优先级</FieldLabel>
-                        <Input
-                          id="source-priority"
-                          type="number"
-                          value={field.state.value}
-                          onChange={(e) => field.handleChange(Number(e.target.value))}
-                          onBlur={field.handleBlur}
-                          placeholder="100"
-                          aria-invalid={isInvalid}
-                          disabled={pending}
-                          min={0}
-                          max={9999}
-                        />
-                        {isInvalid && (
-                          <FieldError>
-                            {getErrorMessage(field.state.meta.errors[0])}
-                          </FieldError>
-                        )}
-                      </Field>
-                    );
-                  }}
-                </form.Field>
+            <form.Field name="allowFallback">
+              {(field) => (
+                <Form.Item label="允许作为备选源">
+                  <Select
+                    value={field.state.value ? "true" : "false"}
+                    onChange={(v) => field.handleChange(v === "true")}
+                    options={[
+                      { value: "true", label: "是" },
+                      { value: "false", label: "否" },
+                    ]}
+                  />
+                </Form.Item>
+              )}
+            </form.Field>
+          </>
+        )}
 
-                <form.Field name="participateInOutput">
-                  {(field) => (
-                    <Field>
-                      <FieldLabel>参与输出</FieldLabel>
-                      <Select
-                        value={field.state.value ? "true" : "false"}
-                        onValueChange={(v) => field.handleChange(v === "true")}
-                        disabled={pending}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="true">是</SelectItem>
-                          <SelectItem value="false">否</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                  )}
-                </form.Field>
+        {source && sourceType === "m3u" && (
+          <EffectivePolicyPreview source={source} />
+        )}
 
-                <form.Field name="allowFallback">
-                  {(field) => (
-                    <Field>
-                      <FieldLabel>允许作为备选源</FieldLabel>
-                      <Select
-                        value={field.state.value ? "true" : "false"}
-                        onValueChange={(v) => field.handleChange(v === "true")}
-                        disabled={pending}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="true">是</SelectItem>
-                          <SelectItem value="false">否</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                  )}
-                </form.Field>
-              </>
-            )}
-          </FieldGroup>
-          <DialogFooter className="mt-6">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
-              取消
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? "保存中…" : "保存"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+          <Button onClick={() => onOpenChange(false)} disabled={pending}>
+            取消
+          </Button>
+          <Button type="primary" htmlType="submit" loading={pending}>
+            保存
+          </Button>
+        </div>
+      </Form>
+      </form>
+    </Modal>
   );
 }

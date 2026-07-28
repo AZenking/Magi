@@ -1,13 +1,8 @@
-import { createFileRoute, Outlet, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AppSidebar } from "@/components/app-sidebar";
-import {
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@magi/ui/components/sidebar";
-import { Separator } from "@magi/ui/components/separator";
+import { Button, Flex, Result, Spin } from "antd";
+import { AppLayout } from "@/components/app-layout";
 import { API_BASE } from "@/services/config";
 
 export const Route = createFileRoute("/dashboard")({
@@ -16,10 +11,12 @@ export const Route = createFileRoute("/dashboard")({
 
 function DashboardLayout() {
   const navigate = useNavigate();
-  const [user, setUser] = useState<{ name: string; username: string } | null>(null);
+  const [user, setUser] = useState<{ name: string; username: string } | null>(
+    null,
+  );
   const [checking, setChecking] = useState(true);
 
-  const { data } = useQuery({
+  const { data, isError, refetch } = useQuery({
     queryKey: ["auth-session"],
     queryFn: async () => {
       const res = await fetch(`${API_BASE}/api/auth/get-session`, {
@@ -37,26 +34,36 @@ function DashboardLayout() {
       setUser(data.user);
       setChecking(false);
     } else {
-      navigate({ to: "/login", search: { callbackUrl: location.pathname }, replace: true });
+      navigate({
+        to: "/login",
+        search: { callbackUrl: location.pathname },
+        replace: true,
+      });
     }
   }, [data, navigate]);
 
-  if (checking || !user) return null;
+  if (isError) {
+    return (
+      <Result
+        status="error"
+        title="登录状态检查失败"
+        subTitle="无法连接认证服务，请检查服务状态后重试。"
+        extra={
+          <Button type="primary" onClick={() => void refetch()}>
+            重试
+          </Button>
+        }
+      />
+    );
+  }
 
-  return (
-    <SidebarProvider>
-      <AppSidebar userName={user.name ?? user.username} />
-      <SidebarInset>
-        <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
-          <div className="flex items-center gap-2 px-4">
-            <SidebarTrigger className="-ml-1" />
-            <Separator orientation="vertical" className="mr-2 h-4" />
-          </div>
-        </header>
-        <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-          <Outlet />
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
-  );
+  if (checking || !user) {
+    return (
+      <Flex align="center" justify="center" style={{ minHeight: "100vh" }}>
+        <Spin description="正在检查登录状态…" size="large" />
+      </Flex>
+    );
+  }
+
+  return <AppLayout userName={user.name ?? user.username} />;
 }

@@ -1,14 +1,17 @@
-import { type ColumnDef } from "@tanstack/react-table";
+import type { ProColumns } from "@ant-design/pro-components";
 import type { SourceVo } from "@magi/types";
-import { Badge } from "@magi/ui/components/badge";
-import { Button } from "@magi/ui/components/button";
-import { DataTableColumnHeader } from "@magi/ui/components/data-table-column-header";
-import { PencilIcon, TrashIcon, RefreshCwIcon, ActivityIcon } from "lucide-react";
+import { Button, Tag } from "antd";
+import {
+  DeleteOutlined,
+  EditOutlined,
+  HeartOutlined,
+  SyncOutlined,
+} from "@ant-design/icons";
 
-const checkStatusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  online: { label: "正常", variant: "default" },
-  offline: { label: "不可达", variant: "destructive" },
-  unknown: { label: "未知", variant: "outline" },
+const checkStatusMap: Record<string, { label: string; color?: string }> = {
+  online: { label: "正常", color: "success" },
+  offline: { label: "不可达", color: "error" },
+  unknown: { label: "未知" },
 };
 
 interface ColumnsContext {
@@ -18,107 +21,135 @@ interface ColumnsContext {
   onCheck: (source: SourceVo) => void;
   syncingId: string | null;
   checkingId: string | null;
+  /** Source currently being prepared for deletion (T108 preview-first flow). */
+  deletingId?: string | null;
 }
 
-export function getSourceColumns({ onEdit, onDelete, onSync, onCheck, syncingId, checkingId }: ColumnsContext): ColumnDef<SourceVo>[] {
+export function getSourceColumns({
+  onEdit,
+  onDelete,
+  onSync,
+  onCheck,
+  syncingId,
+  checkingId,
+  deletingId = null,
+}: ColumnsContext): ProColumns<SourceVo>[] {
   return [
     {
-      accessorKey: "name",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="名称" />,
+      title: "名称",
+      dataIndex: "name",
     },
     {
-      accessorKey: "url",
-      header: "URL",
-      cell: ({ row }) => (
-        <span className="max-w-[300px] truncate block" title={row.original.url}>
-          {row.original.url}
+      title: "URL",
+      dataIndex: "url",
+      render: (_, record) => (
+        <span
+          style={{
+            maxWidth: 300,
+            display: "block",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+          title={record.url}
+        >
+          {record.url}
         </span>
       ),
     },
     {
-      accessorKey: "enabled",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="状态" />,
-      cell: ({ row }) => (
-        <Badge variant={row.original.enabled ? "default" : "secondary"}>
-          {row.original.enabled ? "启用" : "禁用"}
-        </Badge>
+      title: "状态",
+      dataIndex: "enabled",
+      render: (_, record) => (
+        <Tag color={record.enabled ? "success" : undefined}>
+          {record.enabled ? "启用" : "禁用"}
+        </Tag>
       ),
     },
     {
-      accessorKey: "lastSyncAt",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="最后同步" />,
-      cell: ({ row }) =>
-        row.original.lastSyncAt
-          ? new Intl.DateTimeFormat("zh-CN", { dateStyle: "short", timeStyle: "medium" }).format(new Date(row.original.lastSyncAt))
+      title: "最后同步",
+      dataIndex: "lastSyncAt",
+      render: (_, record) =>
+        record.lastSyncAt
+          ? new Intl.DateTimeFormat("zh-CN", {
+              dateStyle: "short",
+              timeStyle: "medium",
+            }).format(new Date(record.lastSyncAt))
           : "-",
     },
     {
-      accessorKey: "checkStatus",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="源状态" />,
-      cell: ({ row }) => {
-        const s = checkStatusMap[row.original.checkStatus ?? ""] ?? { label: "-", variant: "outline" as const };
-        return <Badge variant={s.variant}>{s.label}</Badge>;
+      title: "源状态",
+      dataIndex: "checkStatus",
+      render: (_, record) => {
+        const s = checkStatusMap[record.checkStatus ?? ""] ?? { label: "-" };
+        return <Tag color={s.color}>{s.label}</Tag>;
       },
     },
     {
-      accessorKey: "lastCheckAt",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="最后检测" />,
-      cell: ({ row }) =>
-        row.original.lastCheckAt
-          ? new Intl.DateTimeFormat("zh-CN", { dateStyle: "short", timeStyle: "medium" }).format(new Date(row.original.lastCheckAt))
+      title: "最后检测",
+      dataIndex: "lastCheckAt",
+      render: (_, record) =>
+        record.lastCheckAt
+          ? new Intl.DateTimeFormat("zh-CN", {
+              dateStyle: "short",
+              timeStyle: "medium",
+            }).format(new Date(record.lastCheckAt))
           : "-",
     },
     {
-      accessorKey: "createdAt",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="创建时间" />,
-      cell: ({ row }) =>
-        new Intl.DateTimeFormat("zh-CN", { dateStyle: "short", timeStyle: "medium" }).format(new Date(row.original.createdAt)),
+      title: "创建时间",
+      dataIndex: "createdAt",
+      render: (_, record) =>
+        new Intl.DateTimeFormat("zh-CN", {
+          dateStyle: "short",
+          timeStyle: "medium",
+        }).format(new Date(record.createdAt)),
     },
     {
-      id: "actions",
-      header: undefined,
-      cell: ({ row }) => (
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => onCheck(row.original)}
-            disabled={checkingId === row.original.id}
-            aria-label={`检测 ${row.original.name}`}
-          >
-            <ActivityIcon className="h-4 w-4" aria-hidden="true" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => onSync(row.original)}
-            disabled={syncingId === row.original.id}
-            aria-label={`同步 ${row.original.name}`}
-          >
-            <RefreshCwIcon className={`h-4 w-4 ${syncingId === row.original.id ? "animate-spin" : ""}`} aria-hidden="true" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => onEdit(row.original)}
-            aria-label={`编辑 ${row.original.name}`}
-          >
-            <PencilIcon className="h-4 w-4" aria-hidden="true" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => onDelete(row.original)}
-            aria-label={`删除 ${row.original.name}`}
-          >
-            <TrashIcon className="h-4 w-4 text-destructive" aria-hidden="true" />
-          </Button>
-        </div>
-      ),
+      title: "操作",
+      valueType: "option",
+      hideInSetting: true,
+      fixed: "right",
+      width: 180,
+      render: (_, record) => [
+        <Button
+          key="check"
+          type="text"
+          size="small"
+          icon={<HeartOutlined />}
+          onClick={() => onCheck(record)}
+          disabled={checkingId === record.id}
+          aria-label={`检测 ${record.name}`}
+        />,
+        <Button
+          key="sync"
+          type="text"
+          size="small"
+          icon={<SyncOutlined spin={syncingId === record.id} />}
+          onClick={() => onSync(record)}
+          disabled={syncingId === record.id}
+          aria-label={`同步 ${record.name}`}
+        />,
+        <Button
+          key="edit"
+          type="text"
+          size="small"
+          icon={<EditOutlined />}
+          onClick={() => onEdit(record)}
+          aria-label={`编辑 ${record.name}`}
+        />,
+        <Button
+          key="delete"
+          type="text"
+          size="small"
+          danger
+          icon={<DeleteOutlined />}
+          onClick={() => onDelete(record)}
+          disabled={deletingId === record.id}
+          loading={deletingId === record.id}
+          aria-label={`删除 ${record.name}`}
+        />,
+      ],
     },
   ];
 }

@@ -1,21 +1,32 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import {
+  Button,
+  Checkbox,
+  Empty,
+  Flex,
+  Input,
+  List,
+  Modal,
+  Pagination,
+  Result,
+  Spin,
+  Typography,
+  theme,
+} from "antd";
+import { LockOutlined } from "@ant-design/icons";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
 import { apiClient } from "@/services/api";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@magi/ui/components/dialog";
-import { Button } from "@magi/ui/components/button";
-import { Input } from "@magi/ui/components/input";
 import type { PaginatedResponse, RawXmltvChannelVo } from "@magi/types";
 
 interface EpgMatchDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentEpgChannelId: string | null;
+  /** Current manual-lock state (T073): locked bindings survive auto-matching. */
+  manualLocked?: boolean;
+  /** XMLTV source id bound to this channel (for display + binding context). */
+  xmltvSourceId?: string | null;
   onSelect: (xmltvChannelId: string) => Promise<void>;
   onClear: () => Promise<void>;
   pending?: boolean;
@@ -25,18 +36,25 @@ export function EpgMatchDialog({
   open,
   onOpenChange,
   currentEpgChannelId,
+  manualLocked,
+  xmltvSourceId,
   onSelect,
   onClear,
   pending,
 }: EpgMatchDialogProps) {
+  const { token } = theme.useToken();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [lockManual, setLockManual] = useState(manualLocked ?? false);
   const debouncedSearch = useDebouncedValue(search);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["epg-channels", debouncedSearch, page],
     queryFn: () =>
-      apiClient<{ success: boolean; data: PaginatedResponse<RawXmltvChannelVo> }>("/epg/channels", {
+      apiClient<{
+        success: boolean;
+        data: PaginatedResponse<RawXmltvChannelVo>;
+      }>("/epg/channels", {
         params: { search: debouncedSearch || undefined, page, pageSize: 10 },
       }),
     enabled: open,
@@ -46,66 +64,119 @@ export function EpgMatchDialog({
   const totalPages = data?.data?.totalPages ?? 0;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>EPG 频道匹配</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          {currentEpgChannelId && (
-            <div className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
-              <span>
-                当前绑定：<span className="font-mono font-medium">{currentEpgChannelId}</span>
-              </span>
-              <Button variant="outline" size="sm" onClick={onClear} disabled={pending}>
-                清空绑定
-              </Button>
-            </div>
-          )}
+    <Modal
+      open={open}
+      title="EPG 频道匹配"
+      onCancel={() => onOpenChange(false)}
+      footer={null}
+      width={560}
+      destroyOnHidden
+    >
+      <Flex vertical gap={token.marginMD}>
+        {currentEpgChannelId && (
+          <Flex
+            wrap
+            align="center"
+            justify="space-between"
+            gap={token.marginXS}
+            style={{
+              border: `${token.lineWidth}px ${token.lineType} ${token.colorBorderSecondary}`,
+              borderRadius: token.borderRadius,
+              padding: `${token.paddingXS}px ${token.paddingSM}px`,
+            }}
+          >
+            <Flex vertical gap={token.marginXXS}>
+              <Typography.Text>
+                当前绑定：
+                <Typography.Text code>{currentEpgChannelId}</Typography.Text>
+              </Typography.Text>
+              {xmltvSourceId && (
+                <Typography.Text type="secondary">
+                  XMLTV 来源：{xmltvSourceId}
+                </Typography.Text>
+              )}
+              {manualLocked && (
+                <Typography.Text type="warning">
+                  <LockOutlined /> 已锁定人工绑定（自动匹配不会覆盖）
+                </Typography.Text>
+              )}
+            </Flex>
+            <Button size="small" onClick={onClear} loading={pending}>
+              清空绑定
+            </Button>
+          </Flex>
+        )}
 
-          <div className="flex gap-2">
-            <Input
-              placeholder="搜索频道 ID 或名称…"
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              autoComplete="off"
-            />
-          </div>
+        <Input
+          placeholder="搜索频道 ID 或名称…"
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
+          autoComplete="off"
+        />
 
-          {isLoading ? (
-            <div className="py-8 text-center text-sm text-muted-foreground">搜索中…</div>
-          ) : candidates.length === 0 ? (
-            <div className="py-8 text-center text-sm text-muted-foreground">无结果</div>
-          ) : (
-            <div className="max-h-64 space-y-1 overflow-y-auto">
-              {candidates.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm hover:bg-accent transition-colors"
-                  onClick={() => onSelect(c.xmltvId)}
-                  disabled={pending}
-                >
-                  <span className="font-mono">{c.xmltvId}</span>
-                  <span className="text-muted-foreground">{c.displayName}</span>
-                </button>
-              ))}
-            </div>
-          )}
+        {isError ? (
+          <Result
+            status="error"
+            title="频道候选加载失败"
+            extra={<Button onClick={() => void refetch()}>重试</Button>}
+          />
+        ) : isLoading ? (
+          <Spin description="搜索中…" />
+        ) : candidates.length === 0 ? (
+          <Empty description="无结果" />
+        ) : (
+          <List
+            style={{ maxHeight: 256, overflowY: "auto" }}
+            dataSource={candidates}
+            renderItem={(candidate) => (
+              <List.Item
+                actions={[
+                  <Button
+                    key="select"
+                    type="link"
+                    loading={pending}
+                    onClick={() => onSelect(candidate.xmltvId)}
+                  >
+                    选择
+                  </Button>,
+                ]}
+              >
+                <List.Item.Meta
+                  title={
+                    <Typography.Text code>{candidate.xmltvId}</Typography.Text>
+                  }
+                  description={candidate.displayName}
+                />
+              </List.Item>
+            )}
+          />
+        )}
 
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2">
-              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                上一页
-              </Button>
-              <span className="text-sm text-muted-foreground">{page} / {totalPages}</span>
-              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-                下一页
-              </Button>
-            </div>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
+        {totalPages > 1 && (
+          <Pagination
+            current={page}
+            total={totalPages * 10}
+            pageSize={10}
+            onChange={(p) => setPage(p)}
+            size="small"
+            style={{ textAlign: "center" }}
+          />
+        )}
+
+        {/* T073: manual lock — survives automatic matching (FR-005). */}
+        <Checkbox
+          checked={lockManual}
+          onChange={(e) => setLockManual(e.target.checked)}
+        >
+          <LockOutlined /> 锁定人工绑定
+        </Checkbox>
+        <Typography.Text type="secondary" style={{ fontSize: token.fontSizeSM }}>
+          锁定后，自动匹配将保留此绑定；清空时会一并解除锁定。
+        </Typography.Text>
+      </Flex>
+    </Modal>
   );
 }

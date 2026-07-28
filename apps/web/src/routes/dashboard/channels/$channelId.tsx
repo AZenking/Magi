@@ -1,339 +1,607 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { toast } from "sonner";
-import type { OutputChannelDetailVo, ChannelStreamVo, PaginatedResponse, ProgrammeVo } from "@magi/types";
+import { useState, type ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Button,
+  Card,
+  Descriptions,
+  Dropdown,
+  Empty,
+  Flex,
+  Grid,
+  List,
+  Modal,
+  Result,
+  Spin,
+  Tag,
+  Typography,
+  theme,
+} from "antd";
+import type { MenuProps } from "antd";
+import {
+  ArrowLeftOutlined,
+  DeleteOutlined,
+  DownOutlined,
+  EditOutlined,
+  EyeInvisibleOutlined,
+  LinkOutlined,
+  PlusOutlined,
+  RestOutlined,
+  StarFilled,
+  StopOutlined,
+  UndoOutlined,
+} from "@ant-design/icons";
+import type {
+  ChannelStreamVo,
+  OutputChannelDetailVo,
+  PaginatedResponse,
+  ProgrammeVo,
+} from "@magi/types";
+import { useFeedback } from "@/lib/feedback";
 import { apiClient } from "@/services/api";
 import { LogoUpload } from "@/features/dashboard/channels/logo-upload";
-import { Button } from "@magi/ui/components/button";
-import { Badge } from "@magi/ui/components/badge";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@magi/ui/components/alert-dialog";
-import { ArrowLeftIcon, PlusIcon, TrashIcon, StarIcon, LinkIcon, PencilIcon } from "lucide-react";
 import { OutputChannelFormDialog } from "@/features/dashboard/channels/channel-form-dialog";
 import { EpgMatchDialog } from "@/features/dashboard/channels/epg-match-dialog";
 import { ChannelStreamDialog } from "@/features/dashboard/channels/channel-stream-dialog";
+import {
+  changeChannelLifecycle,
+  formatPurgeAfter,
+  lifecycleMap,
+} from "@/features/dashboard/channels/channel-lifecycle-actions";
+import { ChannelStreamOrder } from "@/features/dashboard/channels/channel-stream-order";
+import { ChannelFailoverPolicy } from "@/features/dashboard/channels/channel-failover-policy";
+import { PageStack } from "@/components/page-layout";
 
 export const Route = createFileRoute("/dashboard/channels/$channelId")({
   component: ChannelDetailPage,
 });
 
-const epgStatusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  matched_auto: { label: "自动匹配", variant: "default" },
-  matched_manual: { label: "手动匹配", variant: "secondary" },
-  unmatched: { label: "未匹配", variant: "outline" },
-  conflict: { label: "冲突", variant: "destructive" },
+const epgStatusMap: Record<string, { label: string; color?: string }> = {
+  matched_auto: { label: "自动匹配", color: "processing" },
+  matched_manual: { label: "手动匹配", color: "blue" },
+  unmatched: { label: "未匹配" },
+  conflict: { label: "冲突", color: "error" },
 };
 
-const healthStatusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  online: { label: "在线", variant: "default" },
-  offline: { label: "离线", variant: "destructive" },
-  degraded: { label: "降级", variant: "secondary" },
-  unknown: { label: "未知", variant: "outline" },
+const healthStatusMap: Record<string, { label: string; color?: string }> = {
+  online: { label: "在线", color: "success" },
+  offline: { label: "离线", color: "error" },
+  degraded: { label: "降级", color: "warning" },
+  unknown: { label: "未知" },
 };
+
+type LifecycleTarget = "active" | "hidden" | "disabled" | "trashed";
+
+/** T061: build the lifecycle dropdown items allowed from the current state. */
+function buildLifecycleMenuItems(
+  current: LifecycleTarget,
+  handlers: {
+    onTransition: (
+      target: LifecycleTarget,
+      title: string,
+      danger: boolean,
+    ) => void;
+    onPurge: () => void;
+  },
+): MenuProps["items"] {
+  const item = (
+    key: LifecycleTarget,
+    label: string,
+    icon: ReactNode,
+    danger = false,
+  ) => ({ key, label, icon, danger, onClick: () => handlers.onTransition(key, label, danger) });
+  const items: NonNullable<MenuProps["items"]> = [];
+  if (current !== "active")
+    items.push(item("active", "恢复输出", <UndoOutlined />));
+  if (current !== "hidden" && current !== "trashed")
+    items.push(item("hidden", "隐藏", <EyeInvisibleOutlined />));
+  if (current !== "disabled" && current !== "trashed")
+    items.push(item("disabled", "禁用", <StopOutlined />));
+  if (current !== "trashed") {
+    items.push(item("trashed", "移入回收站", <RestOutlined />, true));
+  } else {
+    items.push({ type: "divider" });
+    items.push({
+      key: "purge",
+      label: "永久删除（预览）",
+      icon: <DeleteOutlined />,
+      danger: true,
+      onClick: handlers.onPurge,
+    });
+  }
+  return items;
+}
 
 function ChannelDetailPage() {
+  const { message } = useFeedback();
+  const { token } = theme.useToken();
+  const screens = Grid.useBreakpoint();
   const channelId = Route.useParams().channelId;
   const queryClient = useQueryClient();
-
   const [editOpen, setEditOpen] = useState(false);
   const [epgOpen, setEpgOpen] = useState(false);
   const [streamDialogOpen, setStreamDialogOpen] = useState(false);
-  const [editingStream, setEditingStream] = useState<ChannelStreamVo | null>(null);
-  const [confirmDeleteStreamId, setConfirmDeleteStreamId] = useState<string | null>(null);
+  const [editingStream, setEditingStream] = useState<ChannelStreamVo | null>(
+    null,
+  );
+  const [confirmDeleteStreamId, setConfirmDeleteStreamId] = useState<
+    string | null
+  >(null);
+  // T061: single-channel lifecycle transition + purge preview state.
+  const [pendingLifecycle, setPendingLifecycle] = useState<
+    | { target: "active" | "hidden" | "disabled" | "trashed"; title: string; danger: boolean }
+    | null
+  >(null);
+  const [purgePreviewOpen, setPurgePreviewOpen] = useState(false);
 
-  // Channel detail
-  const { data: detail, isLoading } = useQuery({
+  const {
+    data: detail,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["output-channel-detail", channelId],
     queryFn: () =>
-      apiClient<{ success: boolean; data: OutputChannelDetailVo }>(`/output/channels/${channelId}`),
+      apiClient<{ success: boolean; data: OutputChannelDetailVo }>(
+        `/output/channels/${channelId}`,
+      ),
   });
-
   const channel = detail?.data?.channel;
   const streams = detail?.data?.streams ?? [];
 
-  // Programmes (only if EPG bound)
-  const [progPage] = useState(1);
-  const { data: progData } = useQuery({
-    queryKey: ["programmes", channel?.epgChannelId, progPage],
+  const {
+    data: progData,
+    isError: programmesError,
+    refetch: refetchProgrammes,
+  } = useQuery({
+    queryKey: ["programmes", channel?.epgChannelId],
     queryFn: () =>
-      apiClient<{ success: boolean; data: PaginatedResponse<ProgrammeVo> }>("/programmes", {
-        params: { xmltvChannelId: channel!.epgChannelId ?? undefined, page: progPage, pageSize: 10 },
-      }),
+      apiClient<{ success: boolean; data: PaginatedResponse<ProgrammeVo> }>(
+        "/programmes",
+        {
+          params: {
+            xmltvChannelId: channel!.epgChannelId ?? undefined,
+            page: 1,
+            pageSize: 10,
+          },
+        },
+      ),
     enabled: !!channel?.epgChannelId,
   });
-
   const programmes = progData?.data?.items ?? [];
 
-  // Update channel mutation (with error toast)
+  const invalidateChannel = () => {
+    void queryClient.invalidateQueries({
+      queryKey: ["output-channel-detail", channelId],
+    });
+    void queryClient.invalidateQueries({ queryKey: ["output-channels"] });
+  };
   const updateMutation = useMutation({
     mutationFn: async (body: Record<string, unknown>) =>
       apiClient(`/output/channels/${channelId}`, { method: "PUT", body }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["output-channel-detail", channelId] });
-      queryClient.invalidateQueries({ queryKey: ["output-channels"] });
-    },
-    onError: (err) => {
-      toast.error("保存失败", { description: err.message });
-    },
+    onSuccess: invalidateChannel,
+    onError: (error) => message.error(`保存失败：${error.message}`),
   });
-
-  // Stream CRUD mutations
   const createStreamMutation = useMutation({
-    mutationFn: async (data: { streamUrl: string; m3uSourceId?: string | null; sourceChannelId?: string | null }) =>
-      apiClient(`/output/channels/${channelId}/streams`, { method: "POST", body: data }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["output-channel-detail", channelId] });
-      queryClient.invalidateQueries({ queryKey: ["output-channels"] });
-    },
-    onError: (err) => {
-      toast.error("新增播放源失败", { description: err.message });
-    },
+    mutationFn: async (data: {
+      streamUrl: string;
+      m3uSourceId?: string | null;
+      sourceChannelId?: string | null;
+    }) =>
+      apiClient(`/output/channels/${channelId}/streams`, {
+        method: "POST",
+        body: data,
+      }),
+    onSuccess: invalidateChannel,
+    onError: (error) => message.error(`新增播放源失败：${error.message}`),
   });
-
   const updateStreamMutation = useMutation({
-    mutationFn: async ({ streamId, data }: { streamId: string; data: { streamUrl?: string; m3uSourceId?: string | null; sourceChannelId?: string | null } }) =>
-      apiClient(`/output/channels/${channelId}/streams/${streamId}`, { method: "PUT", body: data }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["output-channel-detail", channelId] });
-      queryClient.invalidateQueries({ queryKey: ["output-channels"] });
-    },
-    onError: (err) => {
-      toast.error("更新播放源失败", { description: err.message });
-    },
+    mutationFn: async ({
+      streamId,
+      data,
+    }: {
+      streamId: string;
+      data: {
+        streamUrl?: string;
+        m3uSourceId?: string | null;
+        sourceChannelId?: string | null;
+      };
+    }) =>
+      apiClient(`/output/channels/${channelId}/streams/${streamId}`, {
+        method: "PUT",
+        body: data,
+      }),
+    onSuccess: invalidateChannel,
+    onError: (error) => message.error(`更新播放源失败：${error.message}`),
   });
-
   const deleteStreamMutation = useMutation({
     mutationFn: async (streamId: string) =>
-      apiClient(`/output/channels/${channelId}/streams/${streamId}`, { method: "DELETE" }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["output-channel-detail", channelId] });
-      queryClient.invalidateQueries({ queryKey: ["output-channels"] });
-    },
-    onError: (err) => {
-      toast.error("删除失败", { description: err.message });
-    },
+      apiClient(`/output/channels/${channelId}/streams/${streamId}`, {
+        method: "DELETE",
+      }),
+    onSuccess: invalidateChannel,
+    onError: (error) => message.error(`删除失败：${error.message}`),
   });
-
   const setPrimaryMutation = useMutation({
     mutationFn: async (streamId: string) =>
-      apiClient(`/output/channels/${channelId}/streams/${streamId}/primary`, { method: "POST" }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["output-channel-detail", channelId] });
-      queryClient.invalidateQueries({ queryKey: ["output-channels"] });
+      apiClient(`/output/channels/${channelId}/streams/${streamId}/primary`, {
+        method: "POST",
+      }),
+    onSuccess: invalidateChannel,
+    onError: (error) => message.error(`设为主源失败：${error.message}`),
+  });
+  // T061: reversible lifecycle transition (single channel, If-Match version).
+  const lifecycleMutation = useMutation({
+    mutationFn: async (target: "active" | "hidden" | "disabled" | "trashed") => {
+      if (!channel) throw new Error("Channel not loaded");
+      return changeChannelLifecycle(channel, target);
     },
-    onError: (err) => {
-      toast.error("设为主源失败", { description: err.message });
+    onSuccess: (_d, target) => {
+      message.success(`${lifecycleMap[target].label} 已更新`);
+      invalidateChannel();
+      void queryClient.invalidateQueries({ queryKey: ["output-channels"] });
     },
+    onError: (error) => message.error(`操作失败：${error.message}`),
+  });
+  // T061: purge preview — read-only impact; the destructive apply goes via
+  // POST /operations/previews kind=channel_purge (contracts/channels.md).
+  const { data: purgePreviewData, isLoading: purgePreviewLoading } = useQuery({
+    queryKey: ["channel-purge-preview", channelId],
+    queryFn: () =>
+      apiClient<{ success: boolean; data: { relations: Array<{ type: string; count: number; recoverable: boolean }>; purgeAfter: string | null } }>(
+        `/output/channels/${channelId}/purge-preview`,
+      ),
+    enabled: purgePreviewOpen,
   });
 
-  if (isLoading) {
+  if (isLoading) return <Spin description="正在加载频道详情…" />;
+  if (isError) {
     return (
-      <div className="py-8 text-center text-muted-foreground">加载中…</div>
+      <Result
+        status="error"
+        title="频道详情加载失败"
+        extra={
+          <Button type="primary" onClick={() => void refetch()}>
+            重试
+          </Button>
+        }
+      />
     );
   }
-
   if (!channel) {
     return (
-      <div className="py-8 text-center text-muted-foreground">频道不存在</div>
+      <Result
+        status="404"
+        title="频道不存在"
+        extra={
+          <Link to="/dashboard/channels">
+            <Button>返回频道列表</Button>
+          </Link>
+        }
+      />
     );
   }
 
-  const epgBadge = epgStatusMap[channel.epgStatus] ?? { label: channel.epgStatus, variant: "outline" as const };
+  const epgStatus = epgStatusMap[channel.epgStatus] ?? {
+    label: channel.epgStatus,
+  };
 
   return (
     <>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" asChild>
-            <Link to="/dashboard/channels">
-              <ArrowLeftIcon className="h-4 w-4" />
-            </Link>
-          </Button>
-          <div className="flex items-center gap-3">
-            <LogoUpload
-              currentLogo={channel.standardLogo}
-              channelId={channel.id}
-              onLogoChange={() => queryClient.invalidateQueries({ queryKey: ["output-channel-detail", channelId] })}
+      <PageStack>
+        <Flex wrap align="center" gap={token.marginMD}>
+          <Link to="/dashboard/channels">
+            <Button
+              type="text"
+              icon={<ArrowLeftOutlined />}
+              aria-label="返回频道列表"
             />
-            <div>
-              <h1 className="text-xl font-bold">{channel.standardName}</h1>
-              {channel.standardGroup && (
-                <p className="text-sm text-muted-foreground">{channel.standardGroup}</p>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-2 ml-auto">
-            <Badge variant={epgBadge.variant}>{epgBadge.label}</Badge>
-            <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+          </Link>
+          <LogoUpload
+            currentLogo={channel.standardLogo}
+            channelId={channel.id}
+            onLogoChange={() =>
+              void queryClient.invalidateQueries({
+                queryKey: ["output-channel-detail", channelId],
+              })
+            }
+          />
+          <Flex vertical style={{ minWidth: 0 }}>
+            <Typography.Title level={2} ellipsis style={{ margin: 0 }}>
+              {channel.standardName}
+            </Typography.Title>
+            {channel.standardGroup && (
+              <Typography.Text type="secondary">
+                {channel.standardGroup}
+              </Typography.Text>
+            )}
+          </Flex>
+          <Flex
+            wrap
+            gap={token.marginXS}
+            style={{ marginLeft: screens.sm ? "auto" : 0 }}
+          >
+            <Tag color={epgStatus.color}>{epgStatus.label}</Tag>
+            {channel.lifecycle && (
+              <Tag color={lifecycleMap[channel.lifecycle].color}>
+                {lifecycleMap[channel.lifecycle].label}
+              </Tag>
+            )}
+            <Button icon={<EditOutlined />} onClick={() => setEditOpen(true)}>
               编辑
             </Button>
-          </div>
-        </div>
+            {/* T061: lifecycle action menu — transitions allowed from current state. */}
+            <Dropdown
+              menu={{
+                items: buildLifecycleMenuItems(channel.lifecycle ?? "active", {
+                  onTransition: (target, title, danger) =>
+                    setPendingLifecycle({ target, title, danger }),
+                  onPurge: () => setPurgePreviewOpen(true),
+                }),
+              }}
+              trigger={["click"]}
+            >
+              <Button>
+                生命周期 <DownOutlined />
+              </Button>
+            </Dropdown>
+          </Flex>
+        </Flex>
 
-        {/* EPG Section */}
-        <section className="rounded-lg border p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold">EPG 匹配</h2>
-            <Button variant="outline" size="sm" onClick={() => setEpgOpen(true)}>
+        <Card
+          title="EPG 匹配"
+          extra={
+            <Button size="small" onClick={() => setEpgOpen(true)}>
               修改绑定
             </Button>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div>
-              <span className="text-muted-foreground">频道 ID (tvg-id)</span>
-              <p className="font-mono">{channel.epgChannelId ?? "未绑定"}</p>
-            </div>
-            <div>
-              <span className="text-muted-foreground">匹配方式</span>
-              <p>{channel.epgMatchType === "manual" ? "手动" : channel.epgMatchType === "auto" ? "自动" : "—"}</p>
-            </div>
-          </div>
-        </section>
+          }
+        >
+          <Descriptions
+            column={{ xs: 1, sm: 2 }}
+            items={[
+              {
+                key: "epgChannelId",
+                label: "频道 ID (tvg-id)",
+                children: (
+                  <Typography.Text code>
+                    {channel.epgChannelId ?? "未绑定"}
+                  </Typography.Text>
+                ),
+              },
+              {
+                key: "matchType",
+                label: "匹配方式",
+                children:
+                  channel.epgMatchType === "manual"
+                    ? "手动"
+                    : channel.epgMatchType === "auto"
+                      ? "自动"
+                      : "—",
+              },
+            ]}
+          />
+        </Card>
 
-        {/* Programmes */}
-        <section className="rounded-lg border p-4 space-y-3">
-          <h2 className="font-semibold">节目单</h2>
-          {!channel.epgChannelId ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">未绑定 EPG，暂无节目单</p>
+        <Card title="节目单">
+          {programmesError ? (
+            <Result
+              status="error"
+              title="节目单加载失败"
+              extra={
+                <Button onClick={() => void refetchProgrammes()}>重试</Button>
+              }
+            />
+          ) : !channel.epgChannelId ? (
+            <Empty description="未绑定 EPG，暂无节目单" />
           ) : programmes.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">暂无节目数据</p>
+            <Empty description="暂无节目数据" />
           ) : (
-            <div className="space-y-2">
-              {programmes.map((p) => (
-                <div key={p.id} className="flex items-start gap-3 rounded-md border px-3 py-2 text-sm">
-                  <div className="shrink-0 text-muted-foreground font-mono text-xs min-w-[100px]">
-                    {new Date(p.startAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
-                    {" – "}
-                    {new Date(p.stopAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
-                  </div>
-                  <div>
-                    <p className="font-medium">{p.title ?? "未命名"}</p>
-                    {p.desc && <p className="text-muted-foreground text-xs mt-0.5 line-clamp-2">{p.desc}</p>}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <List
+              dataSource={programmes}
+              renderItem={(programme) => (
+                <List.Item>
+                  <Flex
+                    gap={token.marginSM}
+                    align="start"
+                    style={{ width: "100%" }}
+                  >
+                    <Typography.Text code style={{ flexShrink: 0 }}>
+                      {new Date(programme.startAt).toLocaleTimeString("zh-CN", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                      {" – "}
+                      {new Date(programme.stopAt).toLocaleTimeString("zh-CN", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </Typography.Text>
+                    <Flex vertical style={{ minWidth: 0 }}>
+                      <Typography.Text strong>
+                        {programme.title ?? "未命名"}
+                      </Typography.Text>
+                      {programme.desc && (
+                        <Typography.Text type="secondary" ellipsis>
+                          {programme.desc}
+                        </Typography.Text>
+                      )}
+                    </Flex>
+                  </Flex>
+                </List.Item>
+              )}
+            />
           )}
-        </section>
+        </Card>
 
-        {/* Streams */}
-        <section className="rounded-lg border p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold">播放源</h2>
-            <Button variant="outline" size="sm" onClick={() => { setEditingStream(null); setStreamDialogOpen(true); }}>
-              <PlusIcon className="mr-1 h-4 w-4" />
+        <Card
+          title="播放源"
+          extra={
+            <Button
+              type="primary"
+              size="small"
+              icon={<PlusOutlined />}
+              onClick={() => {
+                setEditingStream(null);
+                setStreamDialogOpen(true);
+              }}
+            >
               新增
             </Button>
-          </div>
+          }
+        >
           {streams.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">暂无播放源</p>
+            <Empty description="暂无播放源" />
           ) : (
-            <div className="space-y-2">
-              {streams.map((s) => {
-                const hs = healthStatusMap[s.healthStatus] ?? { label: s.healthStatus, variant: "outline" as const };
+            <>
+            <List
+              dataSource={streams}
+              renderItem={(stream) => {
+                const healthStatus = healthStatusMap[stream.healthStatus] ?? {
+                  label: stream.healthStatus,
+                };
                 return (
-                  <div key={s.id} className="flex items-center gap-3 rounded-md border px-3 py-2 text-sm">
-                    {s.isPrimary ? (
-                      <Badge variant="default" className="shrink-0 gap-1">
-                        <StarIcon className="h-3 w-3" />
-                        主源
-                      </Badge>
-                    ) : (
-                      <div className="w-12 shrink-0" />
-                    )}
-                    <Badge variant={hs.variant} className="shrink-0">{hs.label}</Badge>
-                    {s.m3uSourceName && (
-                      <Badge variant="outline" className="shrink-0 text-xs">{s.m3uSourceName}</Badge>
-                    )}
-                    {s.streamCodec && (
-                      <Badge variant="outline" className="shrink-0 text-xs">{s.streamCodec}</Badge>
-                    )}
-                    {s.streamWidth && s.streamHeight && (
-                      <Badge variant="outline" className="shrink-0 text-xs">{s.streamWidth}×{s.streamHeight}</Badge>
-                    )}
-                    {s.streamBitrate && (
-                      <Badge variant="outline" className="shrink-0 text-xs">{s.streamBitrate} kbps</Badge>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <span className="font-mono text-xs truncate block">{s.streamUrl}</span>
-                      {(s.sourceChannelName || s.responseTime) && (
-                        <span className="text-[10px] text-muted-foreground">
-                          {s.sourceChannelName ? `来源：${s.sourceChannelName}` : ""}
-                          {s.sourceChannelName && s.responseTime ? " · " : ""}
-                          {s.responseTime ? `${s.responseTime}ms` : ""}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      {!s.isPrimary && (
+                  <List.Item
+                    actions={[
+                      !stream.isPrimary ? (
                         <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={() => setPrimaryMutation.mutate(s.id)}
+                          key="primary"
+                          type="text"
+                          icon={<LinkOutlined />}
                           aria-label="设为主源"
-                          disabled={setPrimaryMutation.isPending}
-                        >
-                          <LinkIcon className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
+                          loading={setPrimaryMutation.isPending}
+                          onClick={() => setPrimaryMutation.mutate(stream.id)}
+                        />
+                      ) : null,
                       <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => { setEditingStream(s); setStreamDialogOpen(true); }}
+                        key="edit"
+                        type="text"
+                        icon={<EditOutlined />}
                         aria-label="编辑"
-                      >
-                        <PencilIcon className="h-3.5 w-3.5" />
-                      </Button>
+                        onClick={() => {
+                          setEditingStream(stream);
+                          setStreamDialogOpen(true);
+                        }}
+                      />,
                       <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-destructive"
-                        onClick={() => setConfirmDeleteStreamId(s.id)}
+                        key="delete"
+                        type="text"
+                        danger
+                        icon={<DeleteOutlined />}
                         aria-label="删除"
-                        disabled={deleteStreamMutation.isPending}
-                      >
-                        <TrashIcon className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
+                        loading={deleteStreamMutation.isPending}
+                        onClick={() => setConfirmDeleteStreamId(stream.id)}
+                      />,
+                    ].filter(Boolean)}
+                  >
+                    <List.Item.Meta
+                      title={
+                        <Flex wrap gap={token.marginXS}>
+                          {stream.isPrimary && (
+                            <Tag color="blue" icon={<StarFilled />}>
+                              主源
+                            </Tag>
+                          )}
+                          <Tag color={healthStatus.color}>
+                            {healthStatus.label}
+                          </Tag>
+                          {stream.m3uSourceName && (
+                            <Tag>{stream.m3uSourceName}</Tag>
+                          )}
+                          {stream.streamCodec && (
+                            <Tag>{stream.streamCodec}</Tag>
+                          )}
+                          {stream.streamWidth && stream.streamHeight && (
+                            <Tag>
+                              {stream.streamWidth}×{stream.streamHeight}
+                            </Tag>
+                          )}
+                          {stream.streamBitrate && (
+                            <Tag>{stream.streamBitrate} kbps</Tag>
+                          )}
+                        </Flex>
+                      }
+                      description={
+                        <Flex vertical style={{ minWidth: 0 }}>
+                          <Typography.Text code copyable ellipsis>
+                            {stream.streamUrl}
+                          </Typography.Text>
+                          {(stream.sourceChannelName ||
+                            stream.responseTime) && (
+                            <Typography.Text type="secondary">
+                              {stream.sourceChannelName
+                                ? `来源：${stream.sourceChannelName}`
+                                : ""}
+                              {stream.sourceChannelName && stream.responseTime
+                                ? " · "
+                                : ""}
+                              {stream.responseTime
+                                ? `${stream.responseTime}ms`
+                                : ""}
+                            </Typography.Text>
+                          )}
+                        </Flex>
+                      }
+                    />
+                  </List.Item>
                 );
-              })}
-            </div>
+              }}
+            />
+            {/* T121: reorderable list with primary/eligibility controls. Lives
+                below the per-row edit/delete actions so both surfaces stay
+                focused. Disabled channels keep their streams visible but the
+                order is still editable for when it is restored. */}
+            <Flex
+              vertical
+              gap={token.marginSM}
+              style={{
+                marginTop: token.marginMD,
+                paddingTop: token.paddingMD,
+                borderTop: `${token.lineWidth}px ${token.lineType} ${token.colorBorderSecondary}`,
+              }}
+            >
+              <Typography.Text strong>顺序与故障转移</Typography.Text>
+              <ChannelStreamOrder
+                channel={channel}
+                streams={streams}
+                onSaved={invalidateChannel}
+              />
+            </Flex>
+            </>
           )}
-        </section>
-      </div>
+        </Card>
 
-      {/* Dialogs */}
-      <AlertDialog open={!!confirmDeleteStreamId} onOpenChange={() => setConfirmDeleteStreamId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认删除</AlertDialogTitle>
-            <AlertDialogDescription>确定要删除该播放源吗？此操作不可撤销。</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { deleteStreamMutation.mutate(confirmDeleteStreamId!); setConfirmDeleteStreamId(null); }}>
-              删除
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        <Card title="故障转移策略">
+          <ChannelFailoverPolicy channelId={channel.id} />
+        </Card>
+      </PageStack>
 
-      {channel && (
-        <OutputChannelFormDialog
-          open={editOpen}
-          onOpenChange={setEditOpen}
-          channel={channel}
-          onSubmit={async (body) => { await updateMutation.mutateAsync(body); }}
-        />
-      )}
+      <Modal
+        open={!!confirmDeleteStreamId}
+        title="确认删除"
+        okText="删除"
+        okButtonProps={{
+          danger: true,
+          loading: deleteStreamMutation.isPending,
+        }}
+        cancelText="取消"
+        onCancel={() => setConfirmDeleteStreamId(null)}
+        onOk={() => {
+          deleteStreamMutation.mutate(confirmDeleteStreamId!);
+          setConfirmDeleteStreamId(null);
+        }}
+        destroyOnHidden
+      >
+        确定要删除该播放源吗？此操作不可撤销。
+      </Modal>
 
+      <OutputChannelFormDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        channel={channel}
+        onSubmit={async (body) => {
+          await updateMutation.mutateAsync(body);
+        }}
+      />
       <EpgMatchDialog
         open={epgOpen}
         onOpenChange={setEpgOpen}
@@ -348,7 +616,6 @@ function ChannelDetailPage() {
         }}
         pending={updateMutation.isPending}
       />
-
       {streamDialogOpen && (
         <ChannelStreamDialog
           open={streamDialogOpen}
@@ -363,13 +630,91 @@ function ChannelDetailPage() {
           title={editingStream ? "编辑播放源" : "新增播放源"}
           onSubmit={async (data) => {
             if (editingStream) {
-              await updateStreamMutation.mutateAsync({ streamId: editingStream.id, data });
+              await updateStreamMutation.mutateAsync({
+                streamId: editingStream.id,
+                data,
+              });
             } else {
               await createStreamMutation.mutateAsync(data);
             }
           }}
         />
       )}
+
+      {/* T061: lifecycle transition confirmation (single channel). */}
+      <Modal
+        open={!!pendingLifecycle}
+        title={`确认${pendingLifecycle?.title ?? ""}`}
+        okText={pendingLifecycle?.title}
+        okButtonProps={{
+          danger: pendingLifecycle?.danger,
+          loading: lifecycleMutation.isPending,
+        }}
+        cancelText="取消"
+        onCancel={() => setPendingLifecycle(null)}
+        onOk={() => {
+          if (pendingLifecycle) lifecycleMutation.mutate(pendingLifecycle.target);
+          setPendingLifecycle(null);
+        }}
+        mask={{ closable: false }}
+        destroyOnHidden
+      >
+        <Flex vertical gap={token.marginXS}>
+          <Typography.Text>
+            将对频道「{channel.standardName}」执行「{pendingLifecycle?.title}」。
+          </Typography.Text>
+          {pendingLifecycle?.target === "trashed" && (
+            <Typography.Text type="secondary">
+              回收站中的频道将在 30 天后可被永久清除，期间可随时恢复。
+            </Typography.Text>
+          )}
+        </Flex>
+      </Modal>
+
+      {/* T061: independent purge preview — names every unrecoverable relationship. */}
+      <Modal
+        open={purgePreviewOpen}
+        title="永久删除预览"
+        okText="前往正式清除"
+        cancelText="关闭"
+        onCancel={() => setPurgePreviewOpen(false)}
+        onOk={() => {
+          setPurgePreviewOpen(false);
+          // Purge apply is a high-risk operation: route the operator to the
+          // operations preview flow (kind=channel_purge) rather than a one-click.
+          message.info("请在操作预览中确认后执行永久清除");
+        }}
+        width={560}
+        mask={{ closable: false }}
+        destroyOnHidden
+      >
+        {purgePreviewLoading ? (
+          <Spin size="small" />
+        ) : (
+          <Flex vertical gap={token.marginSM}>
+            <Tag color="error">
+              此操作不可撤销，以下关系将变为不可恢复：
+            </Tag>
+            <List
+              size="small"
+              dataSource={purgePreviewData?.data?.relations ?? []}
+              renderItem={(rel) => (
+                <List.Item>
+                  <Flex justify="space-between" style={{ width: "100%" }}>
+                    <Typography.Text>{rel.type}</Typography.Text>
+                    <Typography.Text type="secondary">
+                      {rel.count} 项{rel.recoverable ? "" : "（不可恢复）"}
+                    </Typography.Text>
+                  </Flex>
+                </List.Item>
+              )}
+            />
+            <Typography.Text type="secondary">
+              可清除时间：{formatPurgeAfter(purgePreviewData?.data?.purgeAfter ?? channel.purgeAfter)}
+            </Typography.Text>
+          </Flex>
+        )}
+      </Modal>
     </>
   );
 }

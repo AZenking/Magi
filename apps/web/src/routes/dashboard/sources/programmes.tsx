@@ -1,60 +1,71 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ColumnDef } from "@tanstack/react-table";
+import type { ProColumns } from "@ant-design/pro-components";
 import type { ProgrammeVo, PaginatedResponse, SourceVo } from "@magi/types";
 import { apiClient } from "@/services/api";
-import { Button } from "@magi/ui/components/button";
-import { Input } from "@magi/ui/components/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@magi/ui/components/select";
-import { DataTable } from "@magi/ui/components/data-table";
-import { DataTablePagination } from "@magi/ui/components/data-table-pagination";
-import { DataTableViewOptions } from "@magi/ui/components/data-table-view-options";
-import { DataTableColumnHeader } from "@magi/ui/components/data-table-column-header";
-import { RefreshCwIcon } from "lucide-react";
-import { useReactTable, getCoreRowModel, type VisibilityState } from "@tanstack/react-table";
+import { Button, Input, Select, Typography } from "antd";
+import { ProTableWrapper } from "@/components/pro-table-wrapper";
+import { ReloadOutlined } from "@ant-design/icons";
+import { FilterBar, PageHeader, PageStack } from "@/components/page-layout";
 
 export const Route = createFileRoute("/dashboard/sources/programmes")({
   component: ProgrammesPreviewPage,
 });
 
-function getColumns(): ColumnDef<ProgrammeVo>[] {
+function getColumns(): ProColumns<ProgrammeVo>[] {
   return [
     {
-      accessorKey: "xmltvChannelId",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="频道 ID" />,
-      cell: ({ row }) => <span className="font-mono text-xs">{row.original.xmltvChannelId}</span>,
+      dataIndex: "xmltvChannelId",
+      title: "频道 ID",
+      render: (_, record) => (
+        <span style={{ fontFamily: "monospace", fontSize: 12 }}>
+          {record.xmltvChannelId}
+        </span>
+      ),
     },
     {
-      accessorKey: "title",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="标题" />,
-      cell: ({ row }) => row.original.title ?? "-",
+      dataIndex: "title",
+      title: "标题",
+      render: (_, record) => record.title ?? "-",
     },
     {
-      accessorKey: "subTitle",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="副标题" />,
-      cell: ({ row }) => row.original.subTitle ?? "-",
+      dataIndex: "subTitle",
+      title: "副标题",
+      render: (_, record) => record.subTitle ?? "-",
     },
     {
-      accessorKey: "category",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="分类" />,
-      cell: ({ row }) => row.original.category ?? "-",
+      dataIndex: "category",
+      title: "分类",
+      render: (_, record) => record.category ?? "-",
     },
     {
-      accessorKey: "startAt",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="开始" />,
-      cell: ({ row }) => new Date(row.original.startAt).toLocaleString("zh-CN"),
+      dataIndex: "startAt",
+      title: "开始",
+      render: (_, record) => new Date(record.startAt).toLocaleString("zh-CN"),
     },
     {
-      accessorKey: "stopAt",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="结束" />,
-      cell: ({ row }) => new Date(row.original.stopAt).toLocaleString("zh-CN"),
+      dataIndex: "stopAt",
+      title: "结束",
+      render: (_, record) => new Date(record.stopAt).toLocaleString("zh-CN"),
     },
     {
-      accessorKey: "desc",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="简介" />,
-      cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground line-clamp-2 max-w-[200px]">{row.original.desc ?? "-"}</span>
+      dataIndex: "desc",
+      title: "简介",
+      render: (_, record) => (
+        <Typography.Text
+          type="secondary"
+          style={{
+            fontSize: 12,
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+            maxWidth: 200,
+          }}
+        >
+          {record.desc ?? "-"}
+        </Typography.Text>
       ),
     },
   ];
@@ -67,33 +78,38 @@ function ProgrammesPreviewPage() {
   const [sourceId, setSourceId] = useState<string>("");
   const [channelId, setChannelId] = useState("");
   const [channelInput, setChannelInput] = useState("");
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
 
   const { data: sourcesData } = useQuery({
     queryKey: ["sources", "xmltv"],
     queryFn: () =>
-      apiClient<{ success: boolean; data: PaginatedResponse<SourceVo> }>("/sources", {
-        params: { type: "xmltv", pageSize: 100 },
-      }),
+      apiClient<{ success: boolean; data: PaginatedResponse<SourceVo> }>(
+        "/sources",
+        {
+          params: { type: "xmltv", pageSize: 100 },
+        },
+      ),
   });
 
   const xmltvSources = sourcesData?.data?.items ?? [];
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["programmes", page, pageSize, sourceId, channelId],
     queryFn: () =>
-      apiClient<{ success: boolean; data: PaginatedResponse<ProgrammeVo> }>("/programmes", {
-        params: {
-          page,
-          pageSize,
-          sourceId: sourceId || undefined,
-          xmltvChannelId: channelId || undefined,
+      apiClient<{ success: boolean; data: PaginatedResponse<ProgrammeVo> }>(
+        "/programmes",
+        {
+          params: {
+            page,
+            pageSize,
+            sourceId: sourceId || undefined,
+            xmltvChannelId: channelId || undefined,
+          },
         },
-      }),
+      ),
   });
 
   const programmes = data?.data?.items ?? [];
-  const totalPages = data?.data?.totalPages ?? 0;
+  const total = data?.data?.total ?? 0;
 
   const refresh = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["programmes"] });
@@ -101,51 +117,37 @@ function ProgrammesPreviewPage() {
 
   const columns = useMemo(() => getColumns(), []);
 
-  const table = useReactTable({
-    data: programmes,
-    columns,
-    pageCount: totalPages,
-    state: {
-      columnVisibility,
-      pagination: { pageIndex: page - 1, pageSize },
-    },
-    manualPagination: true,
-    onPaginationChange: (updater) => {
-      const next = typeof updater === "function" ? updater({ pageIndex: page - 1, pageSize }) : updater;
-      setPage(next.pageIndex + 1);
-      setPageSize(next.pageSize);
-    },
-    onColumnVisibilityChange: setColumnVisibility,
-    getCoreRowModel: getCoreRowModel(),
-  });
-
   return (
-    <>
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">节目单预览</h1>
-        <Button variant="outline" size="icon" onClick={refresh} aria-label="刷新">
-          <RefreshCwIcon className="h-4 w-4" />
-        </Button>
-      </div>
+    <PageStack>
+      <PageHeader
+        title="节目单预览"
+        actions={
+          <Button
+            shape="circle"
+            icon={<ReloadOutlined />}
+            onClick={refresh}
+            aria-label="刷新"
+          />
+        }
+      />
 
-      <div className="flex items-center gap-2">
+      <FilterBar>
         <Select
-          value={sourceId}
-          onValueChange={(v) => {
+          value={sourceId || "all"}
+          onChange={(v) => {
             setSourceId(v === "all" ? "" : v);
             setPage(1);
           }}
-        >
-          <SelectTrigger className="w-[200px]" aria-label="XMLTV 源筛选">
-            <SelectValue placeholder="全部 XMLTV 源" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部 XMLTV 源</SelectItem>
-            {xmltvSources.map((s) => (
-              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          aria-label="XMLTV 源筛选"
+          options={[
+            { value: "all", label: "全部 XMLTV 源" },
+            ...xmltvSources.map((source) => ({
+              value: source.id,
+              label: source.name,
+            })),
+          ]}
+          style={{ width: 200 }}
+        />
         <Input
           placeholder="频道 ID 过滤"
           value={channelInput}
@@ -156,14 +158,32 @@ function ProgrammesPreviewPage() {
               setPage(1);
             }
           }}
-          className="max-w-[200px]"
+          style={{ maxWidth: 200 }}
           autoComplete="off"
         />
-        <DataTableViewOptions table={table} />
-      </div>
+      </FilterBar>
 
-      <DataTable table={table} columns={columns} loading={isLoading} />
-      <DataTablePagination table={table} />
-    </>
+      <ProTableWrapper<ProgrammeVo>
+        columns={columns}
+        dataSource={programmes}
+        rowKey="id"
+        loading={isLoading}
+        error={error}
+        onRetry={() => void refetch()}
+        columnsStateKey="programmes-columns"
+        pagination={{
+          current: page,
+          pageSize,
+          total,
+          showSizeChanger: true,
+          showQuickJumper: true,
+          showTotal: (t) => `共 ${t} 条`,
+          onChange: (nextPage, nextPageSize) => {
+            setPage(nextPage);
+            setPageSize(nextPageSize);
+          },
+        }}
+      />
+    </PageStack>
   );
 }

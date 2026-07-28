@@ -3,26 +3,17 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type { SourceVo, PaginatedResponse } from "@magi/types";
 import { apiClient } from "@/services/api";
-import { toast } from "sonner";
-import { Button } from "@magi/ui/components/button";
-import { Input } from "@magi/ui/components/input";
-import { DataTable } from "@magi/ui/components/data-table";
-import { DataTablePagination } from "@magi/ui/components/data-table-pagination";
-import { DataTableViewOptions } from "@magi/ui/components/data-table-view-options";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@magi/ui/components/alert-dialog";
-import { PlusIcon, SearchIcon } from "lucide-react";
-import { useReactTable, getCoreRowModel, type SortingState, type VisibilityState } from "@tanstack/react-table";
+import { useFeedback } from "@/lib/feedback";
+import { Button, Input, Modal, Space, Typography } from "antd";
+import { ProTableWrapper } from "@/components/pro-table-wrapper";
+import { PlusOutlined, SearchOutlined } from "@ant-design/icons";
 import { getSourceColumns } from "@/features/dashboard/epg/columns";
 import { SourceFormDialog } from "@/features/dashboard/epg/source-form-dialog";
+import { FilterBar, PageHeader, PageStack } from "@/components/page-layout";
+import { OperationPreview } from "@/features/dashboard/operations/operation-preview";
+import { usePreparePreview } from "@/features/dashboard/operations/operation-queries";
+
+const { Text } = Typography;
 
 interface SourceListPageProps {
   type: "m3u" | "xmltv";
@@ -30,26 +21,35 @@ interface SourceListPageProps {
 }
 
 export function SourceListPage({ type, title }: SourceListPageProps) {
+  const { message, notification } = useFeedback();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  // Server-side sort state (manual). ProTableWrapper's onSorterChange feeds
+  // these so the query params (sortBy/sortDir) drive sorting.
+  const [sortBy, setSortBy] = useState<string | undefined>(undefined);
+  const [sortDir, setSortDir] = useState<"asc" | "desc" | undefined>(undefined);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSource, setEditingSource] = useState<SourceVo | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // Safe Operations (T108): source delete goes preview → confirm → task.
+  // The flow shows impact (channels/programmes/mappings/streams) plus the
+  // reversible disable alternative before any irreversible change.
+  const [deletingSource, setDeletingSource] = useState<SourceVo | null>(null);
+  const [deleteChangeSetId, setDeleteChangeSetId] = useState<string | null>(null);
+  const [deletePreviewKind, setDeletePreviewKind] = useState<
+    "source_delete" | null
+  >(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [checkingId, setCheckingId] = useState<string | null>(null);
+  // Safe Operations (T046): M3U sync goes preview → confirm → task.
+  const [previewChangeSetId, setPreviewChangeSetId] = useState<string | null>(null);
+  const preparePreview = usePreparePreview();
 
-  const sortBy = sorting[0]?.id;
-  const sortDir = sorting[0] ? (sorting[0].desc ? "desc" : "asc") : undefined;
-
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["sources", type, search, page, pageSize, sortBy, sortDir],
     queryFn: () =>
       apiClient<{ success: boolean; data: PaginatedResponse<SourceVo> }>(
@@ -68,25 +68,31 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
   });
 
   const sources = data?.data?.items ?? [];
-  const totalPages = data?.data?.totalPages ?? 0;
 
   const refresh = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["sources"] });
   }, [queryClient]);
 
   const handleCreate = useCallback(
-    async (formData: { name: string; url: string; enabled: boolean; priority?: number; allowFallback?: boolean; participateInOutput?: boolean }) => {
+    async (formData: {
+      name: string;
+      url: string;
+      enabled: boolean;
+      priority?: number;
+      allowFallback?: boolean;
+      participateInOutput?: boolean;
+    }) => {
       try {
         await apiClient("/sources", {
           method: "POST",
           body: { ...formData, type },
         });
-        toast.success("源添加成功");
+        message.success("源添加成功");
         refresh();
       } catch (err) {
-        toast.error("源添加失败", {
-          description: err instanceof Error ? err.message : "请稍后重试",
-        });
+        message.error(
+          `源添加失败：${err instanceof Error ? err.message : "请稍后重试"}`,
+        );
         throw err;
       }
     },
@@ -94,39 +100,75 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
   );
 
   const handleUpdate = useCallback(
-    async (formData: { name: string; url: string; enabled: boolean; priority?: number; allowFallback?: boolean; participateInOutput?: boolean }) => {
+    async (formData: {
+      name: string;
+      url: string;
+      enabled: boolean;
+      priority?: number;
+      allowFallback?: boolean;
+      participateInOutput?: boolean;
+    }) => {
       if (!editingSource) return;
       try {
         await apiClient(`/sources/${editingSource.type}/${editingSource.id}`, {
           method: "PUT",
           body: formData,
         });
-        toast.success("源更新成功");
+        message.success("源更新成功");
         refresh();
       } catch (err) {
-        toast.error("源更新失败", {
-          description: err instanceof Error ? err.message : "请稍后重试",
-        });
+        message.error(
+          `源更新失败：${err instanceof Error ? err.message : "请稍后重试"}`,
+        );
         throw err;
       }
     },
     [editingSource, refresh],
   );
 
+  // Safe Operations (T108): the delete button triggers a source_delete
+  // preview that shows the impact (channels/programmes/mappings/streams) and
+  // offers a reversible disable alternative. The actual delete happens via the
+  // standard apply flow inside OperationPreview.
   const handleDelete = useCallback(
     async (source: SourceVo) => {
-      setDeleting(source.id);
+      setDeletingSource(source);
       try {
-        await apiClient(`/sources/${source.type}/${source.id}`, { method: "DELETE" });
-        toast.success("源删除成功");
-        refresh();
-      } catch (err) {
-        toast.error("源删除失败", {
-          description: err instanceof Error ? err.message : "请稍后重试",
+        const result = await preparePreview.mutateAsync({
+          kind: "source_delete",
+          scope: { type: "source", id: source.id },
+          parameters: { sourceId: source.id },
+          expectedVersions: {},
         });
-      } finally {
-        setDeleting(null);
-        setConfirmDeleteId(null);
+        setDeletePreviewKind("source_delete");
+        setDeleteChangeSetId(result.changeSet.id);
+      } catch (err) {
+        message.error(
+          `准备删除预览失败：${err instanceof Error ? err.message : "请稍后重试"}`,
+        );
+        setDeletingSource(null);
+      }
+    },
+    [preparePreview],
+  );
+
+  // Reversible alternative offered by the source_delete preview summary: flip
+  // enabled=false via the normal update channel without any irreversible
+  // change (contracts/operation-previews.md source_delete obligations).
+  const handleDisableAlternative = useCallback(
+    async (source: SourceVo) => {
+      try {
+        await apiClient(`/sources/${source.type}/${source.id}`, {
+          method: "PUT",
+          body: { enabled: false },
+        });
+        message.success("源已停用，可随时恢复");
+        refresh();
+        setDeletingSource(null);
+      } catch (err) {
+        message.error(
+          `停用失败：${err instanceof Error ? err.message : "请稍后重试"}`,
+        );
       }
     },
     [refresh],
@@ -136,49 +178,83 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
     async (source: SourceVo) => {
       setSyncingId(source.id);
       try {
-        const result = await apiClient<{ success: boolean; data: { taskId: string } }>(
-          `/sources/${source.type}/${source.id}/sync`,
-          { method: "POST" },
-        );
-        toast.success("同步任务已提交", {
+        if (type === "m3u") {
+          // Preview → confirm → task (FR-001/FR-027): never mutate directly.
+          // Loading stays scoped to this source row via syncingId.
+          const result = await preparePreview.mutateAsync({
+            kind: "m3u_sync",
+            scope: { type: "source", id: source.id },
+            parameters: { sourceId: source.id },
+            expectedVersions: {},
+          });
+          setPreviewChangeSetId(result.changeSet.id);
+          return;
+        }
+        const result = await apiClient<{
+          success: boolean;
+          data: { taskId: string };
+        }>(`/sources/${source.type}/${source.id}/sync`, { method: "POST" });
+        notification.success({
+          title: "同步任务已提交",
           description: "任务已加入队列",
-          action: {
-            label: "查看详情",
-            onClick: () => navigate({ to: "/dashboard/tasks/$taskId", params: { taskId: result.data.taskId } }),
-          },
+          actions: (
+            <Button
+              type="link"
+              size="small"
+              onClick={() =>
+                navigate({
+                  to: "/dashboard/tasks/$taskId",
+                  params: { taskId: result.data.taskId },
+                })
+              }
+            >
+              查看任务
+            </Button>
+          ),
         });
         refresh();
       } catch (err) {
-        toast.error("提交同步失败", {
-          description: err instanceof Error ? err.message : "请稍后重试",
-        });
+        message.error(
+          `提交同步失败：${err instanceof Error ? err.message : "请稍后重试"}`,
+        );
       } finally {
         setSyncingId(null);
       }
     },
-    [refresh, navigate],
+    [refresh, navigate, type, preparePreview],
   );
 
   const handleCheck = useCallback(
     async (source: SourceVo) => {
       setCheckingId(source.id);
       try {
-        const result = await apiClient<{ success: boolean; data: { taskId: string } }>(
-          `/sources/${source.type}/${source.id}/check`,
-          { method: "POST" },
-        );
-        toast.success("源检测已提交", {
-          description: "检测中，稍后刷新查看结果",
-          action: {
-            label: "查看详情",
-            onClick: () => navigate({ to: "/dashboard/tasks/$taskId", params: { taskId: result.data.taskId } }),
-          },
+        const result = await apiClient<{
+          success: boolean;
+          data: { taskId: string };
+        }>(`/sources/${source.type}/${source.id}/check`, { method: "POST" });
+        notification.success({
+          title: "源检测已提交",
+          description: "检测中，可前往任务详情查看进度",
+          actions: (
+            <Button
+              type="link"
+              size="small"
+              onClick={() =>
+                navigate({
+                  to: "/dashboard/tasks/$taskId",
+                  params: { taskId: result.data.taskId },
+                })
+              }
+            >
+              查看任务
+            </Button>
+          ),
         });
         refresh();
       } catch (err) {
-        toast.error("提交检测失败", {
-          description: err instanceof Error ? err.message : "请稍后重试",
-        });
+        message.error(
+          `提交检测失败：${err instanceof Error ? err.message : "请稍后重试"}`,
+        );
       } finally {
         setCheckingId(null);
       }
@@ -193,93 +269,101 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
           setEditingSource(source);
           setDialogOpen(true);
         },
-        onDelete: (source) => setConfirmDeleteId(source.id),
+        onDelete: (source) => void handleDelete(source),
         onSync: handleSync,
         onCheck: handleCheck,
         syncingId,
         checkingId,
+        deletingId: deletingSource?.id ?? null,
       }),
-    [handleSync, handleCheck, syncingId, checkingId],
+    [handleSync, handleCheck, handleDelete, syncingId, checkingId, deletingSource],
   );
 
-  const table = useReactTable({
-    data: sources,
-    columns,
-    pageCount: totalPages,
-    state: {
-      sorting,
-      columnVisibility,
-      pagination: { pageIndex: page - 1, pageSize },
-    },
-    manualPagination: true,
-    manualSorting: true,
-    onPaginationChange: (updater) => {
-      const next =
-        typeof updater === "function"
-          ? updater({ pageIndex: page - 1, pageSize })
-          : updater;
-      setPage(next.pageIndex + 1);
-      setPageSize(next.pageSize);
-    },
-    onSortingChange: (updater) => {
-      const next = typeof updater === "function" ? updater(sorting) : updater;
-      setSorting(next);
-      setPage(1);
-    },
-    onColumnVisibilityChange: setColumnVisibility,
-    getCoreRowModel: getCoreRowModel(),
-  });
+  // Controlled sort state mirrors the server-side sort so the column header
+  // shows the active direction after a manual change.
+  const sortState = useMemo<
+    { field: string; order: "ascend" | "descend" } | null
+  >(
+    () =>
+      sortBy && sortDir
+        ? {
+            field: sortBy,
+            order: sortDir === "asc" ? "ascend" : "descend",
+          }
+        : null,
+    [sortBy, sortDir],
+  );
 
-  const deleteTarget = sources.find((s) => s.id === confirmDeleteId);
+  const deleteTarget = deletingSource;
 
   return (
-    <>
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
-        <Button
-          onClick={() => {
-            setEditingSource(null);
-            setDialogOpen(true);
-          }}
-        >
-          <PlusIcon className="mr-2 h-4 w-4" />
-          添加源
-        </Button>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <SearchIcon className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" aria-hidden="true" />
-          <Input
-            placeholder="搜索名称或 URL…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                setSearch(searchInput);
-                setPage(1);
-              }
+    <PageStack>
+      <PageHeader
+        title={title}
+        actions={
+          <Button
+            type="primary"
+            onClick={() => {
+              setEditingSource(null);
+              setDialogOpen(true);
             }}
-            className="pl-8"
-            aria-label="搜索源"
-          />
-        </div>
+            icon={<PlusOutlined />}
+          >
+            添加源
+          </Button>
+        }
+      />
+
+      <FilterBar>
+        <Input
+          placeholder="搜索名称或 URL…"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              setSearch(searchInput);
+              setPage(1);
+            }
+          }}
+          prefix={<SearchOutlined />}
+          style={{ maxWidth: 300 }}
+          aria-label="搜索源"
+        />
         <Button
-          variant="outline"
-          size="icon"
+          type="default"
           onClick={() => {
             setSearch(searchInput);
             setPage(1);
           }}
           aria-label="搜索"
-        >
-          <SearchIcon className="h-4 w-4" aria-hidden="true" />
-        </Button>
-        <DataTableViewOptions table={table} />
-      </div>
+          icon={<SearchOutlined />}
+        />
+      </FilterBar>
 
-      <DataTable table={table} columns={columns} loading={isLoading} />
-      <DataTablePagination table={table} />
+      <ProTableWrapper
+        columns={columns}
+        dataSource={sources}
+        rowKey="id"
+        loading={isLoading}
+        error={error}
+        onRetry={() => void refetch()}
+        sortState={sortState}
+        onSorterChange={(field, order) => {
+          setSortBy(field ?? undefined);
+          setSortDir(order === "ascend" ? "asc" : order === "descend" ? "desc" : undefined);
+          setPage(1);
+        }}
+        pagination={{
+          current: page,
+          pageSize,
+          total: data?.data?.total ?? 0,
+          onChange: (nextPage, nextPageSize) => {
+            setPage(nextPage);
+            setPageSize(nextPageSize);
+          },
+        }}
+        columnsStateKey="source-columns"
+      />
 
       <SourceFormDialog
         key={editingSource?.id ?? "create"}
@@ -294,27 +378,126 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
       />
 
       {deleteTarget && (
-        <AlertDialog open onOpenChange={() => setConfirmDeleteId(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>确认删除</AlertDialogTitle>
-              <AlertDialogDescription>
-                确定要删除源「{deleteTarget.name}」吗？此操作不可撤销。
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setConfirmDeleteId(null)}>取消</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => handleDelete(deleteTarget)}
-                disabled={deleting === deleteTarget.id}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+        <Modal
+          open
+          title="删除影响预览"
+          onCancel={() => {
+            setDeletingSource(null);
+            setDeleteChangeSetId(null);
+            setDeletePreviewKind(null);
+          }}
+          footer={
+            <>
+              <Button
+                onClick={() => {
+                  setDeletingSource(null);
+                  setDeleteChangeSetId(null);
+                  setDeletePreviewKind(null);
+                }}
               >
-                {deleting === deleteTarget.id ? "删除中…" : "删除"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+                取消
+              </Button>
+              {/* Reversible alternative (contracts/operation-previews.md
+                  source_delete): disable keeps the configuration intact and
+                  stops sync/output participation; recoverable at any time. */}
+              <Button
+                onClick={() => void handleDisableAlternative(deleteTarget)}
+                disabled={!deleteChangeSetId}
+              >
+                改为停用
+              </Button>
+            </>
+          }
+          destroyOnHidden
+          width={880}
+          mask={{ closable: false }}
+        >
+          <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+            <Text>
+              删除源「{deleteTarget.name}」前已计算对频道、节目、映射、线路与调度
+              的影响。下方预览可安全浏览；「应用变更」后才会真正提交删除任务。
+              如需可恢复的替代方案，请使用「改为停用」。
+            </Text>
+            {preparePreview.isPending && !deleteChangeSetId && (
+              <Text type="secondary">正在计算影响范围…</Text>
+            )}
+            {deleteChangeSetId && deletePreviewKind === "source_delete" && (
+              <OperationPreview
+                changeSetId={deleteChangeSetId}
+                onClose={() => {
+                  setDeletingSource(null);
+                  setDeleteChangeSetId(null);
+                  setDeletePreviewKind(null);
+                  refresh();
+                }}
+                onApplied={(taskId) => {
+                  notification.success({
+                    title: "删除任务已提交",
+                    description: "应用任务执行中，完成后列表自动刷新",
+                    actions: (
+                      <Button
+                        type="link"
+                        size="small"
+                        onClick={() =>
+                          navigate({
+                            to: "/dashboard/tasks/$taskId",
+                            params: { taskId },
+                          })
+                        }
+                      >
+                        查看任务
+                      </Button>
+                    ),
+                  });
+                  setDeletingSource(null);
+                  setDeleteChangeSetId(null);
+                  setDeletePreviewKind(null);
+                }}
+              />
+            )}
+          </Space>
+        </Modal>
       )}
-    </>
+
+      <Modal
+        open={!!previewChangeSetId}
+        title="同步影响预览"
+        onCancel={() => setPreviewChangeSetId(null)}
+        footer={null}
+        width={880}
+        mask={{ closable: false }}
+        destroyOnHidden
+      >
+        {previewChangeSetId && (
+          <OperationPreview
+            changeSetId={previewChangeSetId}
+            onClose={() => {
+              setPreviewChangeSetId(null);
+              refresh();
+            }}
+            onApplied={(taskId) => {
+              notification.success({
+                title: "变更已提交应用",
+                description: "应用任务执行中，完成后列表自动刷新",
+                actions: (
+                  <Button
+                    type="link"
+                    size="small"
+                    onClick={() =>
+                      navigate({
+                        to: "/dashboard/tasks/$taskId",
+                        params: { taskId },
+                      })
+                    }
+                  >
+                    查看任务
+                  </Button>
+                ),
+              });
+            }}
+          />
+        )}
+      </Modal>
+    </PageStack>
   );
 }

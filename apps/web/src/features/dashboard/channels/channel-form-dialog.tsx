@@ -1,24 +1,9 @@
 import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod";
+import { Button, Checkbox, Form, Input, Modal } from "antd";
 import type { CanonicalChannelVo } from "@magi/types";
-import { toast } from "sonner";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@magi/ui/components/dialog";
-import { Button } from "@magi/ui/components/button";
-import { Input } from "@magi/ui/components/input";
-import { Checkbox } from "@magi/ui/components/checkbox";
-import {
-  Field,
-  FieldGroup,
-  FieldLabel,
-  FieldError,
-} from "@magi/ui/components/field";
+import { useFeedback } from "@/lib/feedback";
 
 const channelFormSchema = z.object({
   standardName: z.string().min(1, "请输入频道名称").max(255).nullable(),
@@ -33,7 +18,9 @@ const channelFormSchema = z.object({
 function getErrorMessage(err: unknown): string {
   if (!err) return "";
   if (typeof err === "string") return err;
-  if (typeof err === "object" && err !== null && "message" in err) return String((err as { message: unknown }).message);
+  if (typeof err === "object" && err !== null && "message" in err) {
+    return String((err as { message: unknown }).message);
+  }
   return String(err);
 }
 
@@ -58,6 +45,7 @@ export function OutputChannelFormDialog({
   channel,
   onSubmit,
 }: ChannelFormDialogProps) {
+  const { message } = useFeedback();
   const [pending, setPending] = useState(false);
 
   const form = useForm({
@@ -71,7 +59,7 @@ export function OutputChannelFormDialog({
       starred: channel.starred,
     },
     validators: {
-      onChangeAsync: channelFormSchema,
+      onChangeAsync: channelFormSchema as never,
     },
     onSubmit: async ({ value }) => {
       setPending(true);
@@ -85,12 +73,10 @@ export function OutputChannelFormDialog({
           hidden: value.hidden,
           starred: value.starred,
         });
-        toast.success("频道已更新");
+        message.success("频道已更新");
         onOpenChange(false);
       } catch (err) {
-        toast.error("更新失败", {
-          description: err instanceof Error ? err.message : "请稍后重试",
-        });
+        message.error(`更新失败：${err instanceof Error ? err.message : "请稍后重试"}`);
       } finally {
         setPending(false);
       }
@@ -98,156 +84,145 @@ export function OutputChannelFormDialog({
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>编辑频道</DialogTitle>
-        </DialogHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            form.handleSubmit();
+    <Modal
+      open={open}
+      title="编辑频道"
+      onCancel={() => onOpenChange(false)}
+      footer={null}
+      destroyOnHidden
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void form.handleSubmit();
+        }}
+      >
+      <Form
+        layout="vertical"
+        disabled={pending}
+      >
+        <form.Field name="standardName">
+          {(field) => {
+            const error =
+              field.state.meta.isTouched && !field.state.meta.isValid
+                ? getErrorMessage(field.state.meta.errors[0])
+                : undefined;
+            return (
+              <Form.Item
+                label="频道名称"
+                validateStatus={error ? "error" : ""}
+                help={error}
+              >
+                <Input
+                  value={field.state.value ?? ""}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  onBlur={field.handleBlur}
+                  placeholder="频道名称"
+                  autoComplete="off"
+                />
+              </Form.Item>
+            );
           }}
-        >
-          <FieldGroup>
-            <form.Field name="standardName">
-              {(field) => {
-                const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={isInvalid || undefined}>
-                    <FieldLabel htmlFor="ch-name">频道名称</FieldLabel>
-                    <Input
-                      id="ch-name"
-                      value={field.state.value ?? ""}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                      onBlur={field.handleBlur}
-                      onClear={() => field.handleChange("")}
-                      placeholder="频道名称"
-                      aria-invalid={isInvalid}
-                      disabled={pending}
-                      autoComplete="off"
-                    />
-                    {isInvalid && (
-                      <FieldError>{getErrorMessage(field.state.meta.errors[0])}</FieldError>
-                    )}
-                  </Field>
-                );
-              }}
-            </form.Field>
+        </form.Field>
 
-            <form.Field name="standardGroup">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor="ch-group">分组</FieldLabel>
-                  <Input
-                    id="ch-group"
-                    value={field.state.value ?? ""}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    onBlur={field.handleBlur}
-                    onClear={() => field.handleChange("")}
-                    placeholder="分组名称"
-                    disabled={pending}
-                    autoComplete="off"
-                  />
-                </Field>
-              )}
-            </form.Field>
+        <form.Field name="standardGroup">
+          {(field) => (
+            <Form.Item label="分组">
+              <Input
+                value={field.state.value ?? ""}
+                onChange={(e) => field.handleChange(e.target.value)}
+                onBlur={field.handleBlur}
+                placeholder="分组名称"
+                autoComplete="off"
+              />
+            </Form.Item>
+          )}
+        </form.Field>
 
-            <form.Field name="standardLogo">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor="ch-logo">Logo URL</FieldLabel>
-                  <Input
-                    id="ch-logo"
-                    value={field.state.value ?? ""}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    onBlur={field.handleBlur}
-                    onClear={() => field.handleChange("")}
-                    placeholder="https://..."
-                    disabled={pending}
-                    autoComplete="url"
-                  />
-                </Field>
-              )}
-            </form.Field>
+        <form.Field name="standardLogo">
+          {(field) => (
+            <Form.Item label="Logo URL">
+              <Input
+                value={field.state.value ?? ""}
+                onChange={(e) => field.handleChange(e.target.value)}
+                onBlur={field.handleBlur}
+                placeholder="https://..."
+                autoComplete="url"
+              />
+            </Form.Item>
+          )}
+        </form.Field>
 
-            <form.Field name="epgChannelId">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor="ch-epg">EPG Channel ID / tvg-id</FieldLabel>
-                  <Input
-                    id="ch-epg"
-                    value={field.state.value ?? ""}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    onBlur={field.handleBlur}
-                    onClear={() => field.handleChange("")}
-                    placeholder="CCTV1"
-                    disabled={pending}
-                    autoComplete="off"
-                  />
-                </Field>
-              )}
-            </form.Field>
+        <form.Field name="epgChannelId">
+          {(field) => (
+            <Form.Item label="EPG Channel ID / tvg-id">
+              <Input
+                value={field.state.value ?? ""}
+                onChange={(e) => field.handleChange(e.target.value)}
+                onBlur={field.handleBlur}
+                placeholder="CCTV1"
+                autoComplete="off"
+              />
+            </Form.Item>
+          )}
+        </form.Field>
 
-            <form.Field name="channelNumber">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor="ch-number">频道号</FieldLabel>
-                  <Input
-                    id="ch-number"
-                    type="number"
-                    value={field.state.value ?? ""}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      field.handleChange(v === "" ? undefined as unknown as number : parseInt(v, 10));
-                    }}
-                    onBlur={field.handleBlur}
-                    placeholder="自动"
-                    disabled={pending}
-                    autoComplete="off"
-                  />
-                </Field>
-              )}
-            </form.Field>
+        <form.Field name="channelNumber">
+          {(field) => (
+            <Form.Item label="频道号">
+              <Input
+                type="number"
+                value={field.state.value ?? ""}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  field.handleChange(
+                    v === "" ? (undefined as unknown as number) : parseInt(v, 10),
+                  );
+                }}
+                onBlur={field.handleBlur}
+                placeholder="自动"
+                autoComplete="off"
+              />
+            </Form.Item>
+          )}
+        </form.Field>
 
-            <div className="flex items-center gap-6">
-              <form.Field name="hidden">
-                {(field) => (
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <Checkbox
-                      checked={field.state.value}
-                      onCheckedChange={(v) => field.handleChange(v === true)}
-                      disabled={pending}
-                    />
-                    <span className="text-sm">隐藏</span>
-                  </label>
-                )}
-              </form.Field>
+        <form.Field name="hidden">
+          {(field) => (
+            <Form.Item style={{ marginBottom: 8 }}>
+              <Checkbox
+                checked={field.state.value}
+                onChange={(e) => field.handleChange(e.target.checked)}
+              >
+                隐藏
+              </Checkbox>
+            </Form.Item>
+          )}
+        </form.Field>
 
-              <form.Field name="starred">
-                {(field) => (
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <Checkbox
-                      checked={field.state.value}
-                      onCheckedChange={(v) => field.handleChange(v === true)}
-                      disabled={pending}
-                    />
-                    <span className="text-sm">收藏</span>
-                  </label>
-                )}
-              </form.Field>
-            </div>
-          </FieldGroup>
-          <DialogFooter className="mt-6">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
-              取消
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? "保存中…" : "保存"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+        <form.Field name="starred">
+          {(field) => (
+            <Form.Item style={{ marginBottom: 16 }}>
+              <Checkbox
+                checked={field.state.value}
+                onChange={(e) => field.handleChange(e.target.checked)}
+              >
+                收藏
+              </Checkbox>
+            </Form.Item>
+          )}
+        </form.Field>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <Button onClick={() => onOpenChange(false)} disabled={pending}>
+            取消
+          </Button>
+          <Button type="primary" htmlType="submit" loading={pending}>
+            保存
+          </Button>
+        </div>
+      </Form>
+      </form>
+    </Modal>
   );
 }
