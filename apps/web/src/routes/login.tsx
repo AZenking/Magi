@@ -1,6 +1,7 @@
-import { Form, Typography, theme as antdTheme } from "antd";
+import { Typography, theme as antdTheme } from "antd";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ProFormInstance } from "@ant-design/pro-components";
 import { signIn, useSession } from "@/lib/auth-client";
 import { LoginForm, type LoginFormValues } from "@/components/login-form";
 
@@ -15,7 +16,7 @@ function LoginPage() {
   const navigate = useNavigate();
   const { data: session, isPending: sessionPending } = useSession();
   const { token } = antdTheme.useToken();
-  const [form] = Form.useForm<LoginFormValues>();
+  const formRef = useRef<ProFormInstance<LoginFormValues>>(undefined);
   const [pending, setPending] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -38,8 +39,8 @@ function LoginPage() {
       if (error) {
         if (error.status === 401) {
           setErrorMessage("用户名或密码错误");
-          form.setFieldValue("password", "");
-          const passwordField = form.getFieldInstance("password") as
+          formRef.current?.setFieldValue("password", "");
+          const passwordField = formRef.current?.getFieldInstance("password") as
             | HTMLInputElement
             | undefined;
           passwordField?.focus?.();
@@ -117,7 +118,7 @@ function LoginPage() {
           onFinish={handleSubmit}
           pending={pending}
           errorMessage={errorMessage}
-          form={form}
+          formRef={formRef}
           onValuesChange={() => setErrorMessage(null)}
         />
       </div>

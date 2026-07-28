@@ -1,53 +1,16 @@
-import { useState } from "react";
-import { useForm } from "@tanstack/react-form";
-import { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
+import { Alert, Form, Select, Typography, theme } from "antd";
 import {
-  Alert,
-  Button,
-  Form,
-  Input,
-  Modal,
-  Select,
-  Typography,
-  theme,
-} from "antd";
+  ModalForm,
+  ProFormDigit,
+  ProFormSelect,
+  ProFormText,
+} from "@ant-design/pro-components";
 import { ProDescriptions } from "@ant-design/pro-components";
 import type { SourceEffectivePolicy, SourceVo } from "@magi/types";
 import { apiClient } from "@/services/api";
 import { useFeedback } from "@/lib/feedback";
 import { CardSkeleton } from "@/components/page-skeleton";
-
-const sourceFormSchema = z.object({
-  name: z.string().min(1, "请输入名称").max(255),
-  url: z
-    .string()
-    .refine(
-      (u) => {
-        if (!u) return false;
-        try {
-          new URL(u);
-        } catch {
-          return false;
-        }
-        return u.startsWith("http://") || u.startsWith("https://");
-      },
-      { message: "请输入有效的 URL（以 http:// 或 https:// 开头）" },
-    ),
-  enabled: z.boolean(),
-  priority: z.number().int().min(0).max(9999).default(100),
-  allowFallback: z.boolean().default(true),
-  participateInOutput: z.boolean().default(true),
-});
-
-function getErrorMessage(err: unknown): string {
-  if (!err) return "";
-  if (typeof err === "string") return err;
-  if (typeof err === "object" && err !== null && "message" in err) {
-    return String((err as { message: unknown }).message);
-  }
-  return String(err);
-}
 
 /**
  * T124: read-only effective-policy preview shown inside the edit dialog. Reads
@@ -153,200 +116,118 @@ export function SourceFormDialog({
   onSubmit,
 }: SourceFormDialogProps) {
   const { message } = useFeedback();
-  const [pending, setPending] = useState(false);
   const isEdit = !!source;
 
-  const form = useForm({
-    defaultValues: {
-      name: source?.name ?? "",
-      url: source?.url ?? "",
-      enabled: source?.enabled ?? true,
-      priority: source?.priority ?? 100,
-      allowFallback: source?.allowFallback ?? true,
-      participateInOutput: source?.participateInOutput ?? true,
-    },
-    validators: {
-      onChange: sourceFormSchema as never,
-    },
-    onSubmit: async ({ value }) => {
-      setPending(true);
-      try {
-        await onSubmit({
-          name: value.name,
-          url: value.url,
-          enabled: value.enabled,
-          ...(sourceType === "m3u"
-            ? {
-                priority: value.priority,
-                allowFallback: value.allowFallback,
-                participateInOutput: value.participateInOutput,
-              }
-            : {}),
-        });
-        onOpenChange(false);
-      } catch (err) {
-        message.error(`${isEdit ? "源更新失败" : "源添加失败"}：${err instanceof Error ? err.message : "请稍后重试"}`);
-      } finally {
-        setPending(false);
-      }
-    },
-  });
-
   return (
-    <Modal
+    <ModalForm
       open={open}
+      onOpenChange={onOpenChange}
       title={isEdit ? "编辑源" : "添加源"}
-      onCancel={() => onOpenChange(false)}
-      footer={null}
-      destroyOnHidden
+      modalProps={{ destroyOnHidden: true }}
+      width={480}
+      initialValues={{
+        name: source?.name ?? "",
+        url: source?.url ?? "",
+        enabled: source?.enabled ?? true,
+        priority: source?.priority ?? 100,
+        participateInOutput: source?.participateInOutput ?? true,
+        allowFallback: source?.allowFallback ?? true,
+      }}
+      onFinish={async (values) => {
+        try {
+          await onSubmit({
+            name: values.name,
+            url: values.url,
+            enabled: values.enabled,
+            ...(sourceType === "m3u"
+              ? {
+                  priority: values.priority,
+                  allowFallback: values.allowFallback,
+                  participateInOutput: values.participateInOutput,
+                }
+              : {}),
+          });
+          return true;
+        } catch (err) {
+          message.error(
+            `${isEdit ? "源更新失败" : "源添加失败"}：${err instanceof Error ? err.message : "请稍后重试"}`,
+          );
+          return false;
+        }
+      }}
     >
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void form.handleSubmit();
-        }}
-      >
-      <Form
-        layout="vertical"
-        disabled={pending}
-      >
-        <form.Field name="name">
-          {(field) => {
-            const error =
-              field.state.meta.isTouched && !field.state.meta.isValid
-                ? getErrorMessage(field.state.meta.errors[0])
-                : undefined;
-            return (
-              <Form.Item label="名称" validateStatus={error ? "error" : ""} help={error}>
-                <Input
-                  value={field.state.value}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  onBlur={field.handleBlur}
-                  placeholder="源名称…"
-                  autoComplete="off"
-                />
-              </Form.Item>
-            );
-          }}
-        </form.Field>
+      <ProFormText
+        name="name"
+        label="名称"
+        placeholder="源名称…"
+        fieldProps={{ autoComplete: "off" }}
+        rules={[{ required: true, message: "请输入名称" }]}
+      />
 
-        <Form.Item label="类型">
-          <Select value={sourceType} disabled options={[
+      <Form.Item label="类型">
+        <Select
+          disabled
+          value={sourceType}
+          options={[
             { value: "m3u", label: "M3U" },
             { value: "xmltv", label: "XMLTV" },
-          ]} />
-        </Form.Item>
+          ]}
+        />
+      </Form.Item>
 
-        <form.Field name="url">
-          {(field) => {
-            const error =
-              field.state.meta.isTouched && !field.state.meta.isValid
-                ? getErrorMessage(field.state.meta.errors[0])
-                : undefined;
-            return (
-              <Form.Item label="URL" validateStatus={error ? "error" : ""} help={error}>
-                <Input
-                  type="url"
-                  value={field.state.value}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  onBlur={field.handleBlur}
-                  placeholder="https://example.com/source"
-                  autoComplete="url"
-                />
-              </Form.Item>
-            );
-          }}
-        </form.Field>
+      <ProFormText
+        name="url"
+        label="URL"
+        placeholder="https://example.com/source"
+        fieldProps={{ autoComplete: "url" }}
+        rules={[
+          { required: true, message: "请输入 URL" },
+          {
+            pattern: /^https?:\/\//,
+            message: "必须以 http:// 或 https:// 开头",
+          },
+        ]}
+      />
 
-        <form.Field name="enabled">
-          {(field) => (
-            <Form.Item label="状态">
-              <Select
-                value={field.state.value ? "true" : "false"}
-                onChange={(v) => field.handleChange(v === "true")}
-                options={[
-                  { value: "true", label: "启用" },
-                  { value: "false", label: "禁用" },
-                ]}
-              />
-            </Form.Item>
-          )}
-        </form.Field>
+      <ProFormSelect<boolean>
+        name="enabled"
+        label="状态"
+        options={[
+          { value: true, label: "启用" },
+          { value: false, label: "禁用" },
+        ]}
+      />
 
-        {sourceType === "m3u" && (
-          <>
-            <form.Field name="priority">
-              {(field) => {
-                const error =
-                  field.state.meta.isTouched && !field.state.meta.isValid
-                    ? getErrorMessage(field.state.meta.errors[0])
-                    : undefined;
-                return (
-                  <Form.Item
-                    label="优先级"
-                    validateStatus={error ? "error" : ""}
-                    help={error}
-                  >
-                    <Input
-                      type="number"
-                      value={field.state.value}
-                      onChange={(e) => field.handleChange(Number(e.target.value))}
-                      onBlur={field.handleBlur}
-                      placeholder="100"
-                      min={0}
-                      max={9999}
-                    />
-                  </Form.Item>
-                );
-              }}
-            </form.Field>
+      {sourceType === "m3u" && (
+        <>
+          <ProFormDigit
+            name="priority"
+            label="优先级"
+            placeholder="100"
+            min={0}
+            max={9999}
+            fieldProps={{ precision: 0 }}
+          />
+          <ProFormSelect<boolean>
+            name="participateInOutput"
+            label="参与输出"
+            options={[
+              { value: true, label: "是" },
+              { value: false, label: "否" },
+            ]}
+          />
+          <ProFormSelect<boolean>
+            name="allowFallback"
+            label="允许作为备选源"
+            options={[
+              { value: true, label: "是" },
+              { value: false, label: "否" },
+            ]}
+          />
+        </>
+      )}
 
-            <form.Field name="participateInOutput">
-              {(field) => (
-                <Form.Item label="参与输出">
-                  <Select
-                    value={field.state.value ? "true" : "false"}
-                    onChange={(v) => field.handleChange(v === "true")}
-                    options={[
-                      { value: "true", label: "是" },
-                      { value: "false", label: "否" },
-                    ]}
-                  />
-                </Form.Item>
-              )}
-            </form.Field>
-
-            <form.Field name="allowFallback">
-              {(field) => (
-                <Form.Item label="允许作为备选源">
-                  <Select
-                    value={field.state.value ? "true" : "false"}
-                    onChange={(v) => field.handleChange(v === "true")}
-                    options={[
-                      { value: "true", label: "是" },
-                      { value: "false", label: "否" },
-                    ]}
-                  />
-                </Form.Item>
-              )}
-            </form.Field>
-          </>
-        )}
-
-        {source && sourceType === "m3u" && (
-          <EffectivePolicyPreview source={source} />
-        )}
-
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
-          <Button onClick={() => onOpenChange(false)} disabled={pending}>
-            取消
-          </Button>
-          <Button type="primary" htmlType="submit" loading={pending}>
-            保存
-          </Button>
-        </div>
-      </Form>
-      </form>
-    </Modal>
+      {source && sourceType === "m3u" && <EffectivePolicyPreview source={source} />}
+    </ModalForm>
   );
 }

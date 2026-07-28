@@ -11,6 +11,16 @@ const statusMap: Record<TaskVo["status"], { label: string; color?: string }> = {
   cancelled: { label: "已取消" },
 };
 
+// ProTable QueryFilter valueEnum for the status column. Mirrors `statusMap`
+// labels so the select options match the rendered tags.
+export const STATUS_VALUE_ENUM = {
+  pending: { text: "等待中" },
+  running: { text: "运行中" },
+  success: { text: "成功" },
+  failed: { text: "失败" },
+  cancelled: { text: "已取消" },
+};
+
 const taskTypeMap: Record<string, string> = {
   "m3u-sync": "M3U 同步",
   "xmltv-sync": "XMLTV 同步",
@@ -25,6 +35,14 @@ const queueNameMap: Record<string, string> = {
   "source-sync": "源同步",
   epg: "EPG",
   "health-check": "健康检查",
+};
+
+// ProTable QueryFilter valueEnum for the queueName column. Mirrors
+// `queueNameMap` labels so the select options match the rendered text.
+export const QUEUE_NAME_VALUE_ENUM = {
+  "source-sync": { text: "源同步" },
+  epg: { text: "EPG" },
+  "health-check": { text: "健康检查" },
 };
 
 const dtf = new Intl.DateTimeFormat("zh-CN", {
@@ -62,12 +80,16 @@ export function getTaskColumns(ctx?: ColumnContext): ProColumns<TaskVo>[] {
     {
       title: "队列",
       dataIndex: "queueName",
+      valueType: "select",
+      valueEnum: QUEUE_NAME_VALUE_ENUM,
       render: (_, record) =>
         queueNameMap[record.queueName ?? ""] ?? record.queueName ?? "-",
     },
     {
       title: "状态",
       dataIndex: "status",
+      valueType: "select",
+      valueEnum: STATUS_VALUE_ENUM,
       render: (_, record) => {
         const s = statusMap[record.status];
         if (!s) return <Tag>{record.status}</Tag>;

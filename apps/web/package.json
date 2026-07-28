@@ -20,7 +20,6 @@
     "@ant-design/pro-components": "3.1.14-5",
     "@magi/types": "workspace:*",
     "@magi/utils": "workspace:*",
-    "@tanstack/react-form": "^1.33.0",
     "@tanstack/react-query": "^5.101.0",
     "@tanstack/react-router": "^1.170.11",
     "@tanstack/react-start": "^1.168.19",

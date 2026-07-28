@@ -1,13 +1,10 @@
 import { useState } from "react";
-import { useForm } from "@tanstack/react-form";
-import { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
 import {
   Avatar,
   Button,
   Empty,
   Flex,
-  Form,
   Input,
   Modal,
   Select,
@@ -15,14 +12,11 @@ import {
   Typography,
   theme,
 } from "antd";
+import { ProForm, ProFormText } from "@ant-design/pro-components";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
 import type { PaginatedResponse, ChannelVo, SourceVo } from "@magi/types";
 import { apiClient } from "@/services/api";
 import { useFeedback } from "@/lib/feedback";
-
-const streamFormSchema = z.object({
-  streamUrl: z.string().min(1, "请输入播放地址").url("请输入有效的 URL"),
-});
 
 type StreamMode = "manual" | "picker";
 
@@ -65,28 +59,20 @@ export function ChannelStreamDialog({
   );
   const debouncedPickerSearch = useDebouncedValue(pickerSearch);
 
-  const form = useForm({
-    defaultValues: {
-      streamUrl: initialUrl ?? "",
-    },
-    validators: {
-      onChangeAsync: streamFormSchema as never,
-    },
-    onSubmit: async ({ value }) => {
-      setPending(true);
-      try {
-        await onSubmit({ streamUrl: value.streamUrl });
-        message.success("播放源已保存");
-        onOpenChange(false);
-      } catch (err) {
-        message.error(
-          `保存失败：${err instanceof Error ? err.message : "请稍后重试"}`,
-        );
-      } finally {
-        setPending(false);
-      }
-    },
-  });
+  async function handleManualSubmit(values: { streamUrl: string }) {
+    setPending(true);
+    try {
+      await onSubmit({ streamUrl: values.streamUrl });
+      message.success("播放源已保存");
+      onOpenChange(false);
+    } catch (err) {
+      message.error(
+        `保存失败：${err instanceof Error ? err.message : "请稍后重试"}`,
+      );
+    } finally {
+      setPending(false);
+    }
+  }
 
   async function handlePickerSubmit() {
     if (!selectedChannelId || !selectedChannelUrl) return;
@@ -152,7 +138,6 @@ export function ChannelStreamDialog({
       setPickerSearch("");
       setSelectedChannelId(null);
       setSelectedChannelUrl("");
-      form.reset();
     }
     onOpenChange(nextOpen);
   }
@@ -179,52 +164,33 @@ export function ChannelStreamDialog({
             key: "manual",
             label: "手动输入",
             children: (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void form.handleSubmit();
+              <ProForm
+                layout="vertical"
+                initialValues={{ streamUrl: initialUrl ?? "" }}
+                onFinish={async (values) => {
+                  await handleManualSubmit({ streamUrl: values.streamUrl });
+                  return false;
+                }}
+                submitter={{
+                  searchConfig: { submitText: "保存" },
+                  resetButtonProps: {
+                    children: "取消",
+                    onClick: () => handleOpenChange(false),
+                  },
+                  submitButtonProps: { loading: pending },
                 }}
               >
-                <Form layout="vertical" disabled={pending}>
-                  <form.Field name="streamUrl">
-                    {(field) => {
-                      const firstError = field.state.meta.errors[0] as unknown;
-                      const error =
-                        field.state.meta.isTouched && !field.state.meta.isValid
-                          ? firstError instanceof Error
-                            ? firstError.message
-                            : String(firstError ?? "")
-                          : undefined;
-                      return (
-                        <Form.Item
-                          label="播放地址"
-                          validateStatus={error ? "error" : ""}
-                          help={error}
-                        >
-                          <Input
-                            value={field.state.value}
-                            onChange={(e) => field.handleChange(e.target.value)}
-                            onBlur={field.handleBlur}
-                            placeholder="https://..."
-                            autoComplete="url"
-                          />
-                        </Form.Item>
-                      );
-                    }}
-                  </form.Field>
-                  <Flex justify="flex-end" gap={token.marginXS}>
-                    <Button
-                      onClick={() => handleOpenChange(false)}
-                      disabled={pending}
-                    >
-                      取消
-                    </Button>
-                    <Button type="primary" htmlType="submit" loading={pending}>
-                      保存
-                    </Button>
-                  </Flex>
-                </Form>
-              </form>
+                <ProFormText
+                  name="streamUrl"
+                  label="播放地址"
+                  placeholder="https://..."
+                  fieldProps={{ autoComplete: "url" }}
+                  rules={[
+                    { required: true, message: "请输入播放地址" },
+                    { type: "url", message: "请输入有效的 URL" },
+                  ]}
+                />
+              </ProForm>
             ),
           },
           {

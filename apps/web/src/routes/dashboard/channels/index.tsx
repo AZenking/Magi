@@ -10,7 +10,8 @@ import type {
   UpdateOutputChannel,
 } from "@magi/types";
 import { apiClient } from "@/services/api";
-import { Button, Dropdown, Flex, Input, Select, Tabs, theme } from "antd";
+import type { ProColumns } from "@ant-design/pro-components";
+import { Button, Dropdown, Flex, Tabs, theme } from "antd";
 import type { MenuProps } from "antd";
 import { ProTableWrapper } from "@/components/pro-table-wrapper";
 import {
@@ -18,7 +19,6 @@ import {
   DownloadOutlined,
   FundProjectionScreenOutlined,
   ReloadOutlined,
-  SearchOutlined,
 } from "@ant-design/icons";
 import { getChannelColumns } from "@/features/dashboard/channels/columns";
 import {
@@ -26,9 +26,8 @@ import {
   lifecycleMap,
 } from "@/features/dashboard/channels/channel-lifecycle-actions";
 import { OutputChannelFormDialog } from "@/features/dashboard/channels/channel-form-dialog";
-import { useDebouncedValue } from "@/lib/use-debounced-value";
 import { API_BASE } from "@/services/config";
-import { FilterBar, PageHeader, PageStack } from "@/components/page-layout";
+import { PageHeader, PageStack } from "@/components/page-layout";
 
 const LIFECYCLES: ChannelLifecycle[] = [
   "active",
@@ -66,6 +65,7 @@ function ChannelsPage() {
   const [epgStatus, setEpgStatus] = useState<string>("");
   const [outputStatus, setOutputStatus] = useState<string>("");
   const [groupFilter, setGroupFilter] = useState<string>("");
+  const [searchFilter, setSearchFilter] = useState<string>("");
   // T059/FR-015: cross-page row selection. preserveSelectedRowKeys keeps
   // selections stable across pagination; selectedChannels mirrors the full
   // selected records so batch actions have names without re-fetching.
@@ -75,8 +75,6 @@ function ChannelsPage() {
   );
   const [editingChannel, setEditingChannel] =
     useState<CanonicalChannelVo | null>(null);
-  const [search, setSearch] = useState("");
-  const debouncedSearch = useDebouncedValue(search, 300);
 
   const { data: groupsData } = useQuery({
     queryKey: ["channel-groups"],
@@ -104,7 +102,7 @@ function ChannelsPage() {
       epgStatus,
       outputStatus,
       groupFilter,
-      debouncedSearch,
+      searchFilter,
       lifecycle,
       sourcePresence,
     ],
@@ -119,7 +117,7 @@ function ChannelsPage() {
           epgStatus: epgStatus || undefined,
           outputStatus: outputStatus || undefined,
           group: groupFilter || undefined,
-          search: debouncedSearch || undefined,
+          search: searchFilter || undefined,
           lifecycle,
           sourcePresence: sourcePresence || undefined,
         },
@@ -188,16 +186,40 @@ function ChannelsPage() {
     return () => clearInterval(interval);
   }, [pollingActive, queryClient]);
 
-  const columns = useMemo(
-    () =>
-      getChannelColumns({
-        onEdit: (ch) => setEditingChannel(ch),
-        onToggleHidden: (ch) =>
-          updateMutation.mutate({ id: ch.id, body: { hidden: !ch.hidden } }),
-        trashView: lifecycle === "trashed",
-      }),
-    [updateMutation, lifecycle],
-  );
+  const columns = useMemo<ProColumns<CanonicalChannelVo>[]>(() => {
+    const base = getChannelColumns({
+      onEdit: (ch) => setEditingChannel(ch),
+      onToggleHidden: (ch) =>
+        updateMutation.mutate({ id: ch.id, body: { hidden: !ch.hidden } }),
+      trashView: lifecycle === "trashed",
+      groupOptions:
+        groupsData?.data?.map((group) => ({
+          value: group.name,
+          label: `${group.name} (${group.count})`,
+        })) ?? [],
+    });
+    // Virtual keyword column: lives only in the search form, maps the form's
+    // `keyword` value to the `search` query param.
+    const searchColumn: ProColumns<CanonicalChannelVo> = {
+      title: "搜索",
+      dataIndex: "keyword",
+      hideInTable: true,
+      search: {
+        transform: (value) => ({ search: value }),
+      },
+    };
+    return [searchColumn, ...base];
+  }, [updateMutation, lifecycle, groupsData]);
+
+  // ProTable's QueryFilter submit/reset routes here. Map the form values to
+  // the existing filter state variables so the useQuery picks them up.
+  const handleSearch = useCallback((params: Record<string, unknown>) => {
+    setSearchFilter((params.search as string) ?? "");
+    setEpgStatus((params.epgStatus as string) ?? "");
+    setOutputStatus((params.outputStatus as string) ?? "");
+    setGroupFilter((params.standardGroup as string) ?? "");
+    setPage(1);
+  }, []);
 
   const exportItems: MenuProps["items"] = [
     {
@@ -268,68 +290,6 @@ function ChannelsPage() {
         }))}
       />
 
-      <FilterBar>
-        <Input
-          type="text"
-          placeholder="搜索频道…"
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(1);
-          }}
-          prefix={<SearchOutlined />}
-          style={{ width: 200 }}
-        />
-        <Select
-          value={epgStatus || "all"}
-          onChange={(v) => {
-            setEpgStatus(v === "all" ? "" : v);
-            setPage(1);
-          }}
-          aria-label="EPG 状态"
-          options={[
-            { value: "all", label: "全部 EPG 状态" },
-            { value: "matched_auto", label: "自动匹配" },
-            { value: "matched_manual", label: "手动匹配" },
-            { value: "unmatched", label: "未匹配" },
-            { value: "conflict", label: "冲突" },
-          ]}
-          style={{ width: 160 }}
-        />
-        <Select
-          value={outputStatus || "all"}
-          onChange={(v) => {
-            setOutputStatus(v === "all" ? "" : v);
-            setPage(1);
-          }}
-          aria-label="播放源状态"
-          options={[
-            { value: "all", label: "全部播放源状态" },
-            { value: "active", label: "正常" },
-            { value: "degraded", label: "降级" },
-            { value: "unavailable", label: "不可用" },
-            { value: "unknown", label: "未知" },
-          ]}
-          style={{ width: 180 }}
-        />
-        <Select
-          value={groupFilter || "all"}
-          onChange={(v) => {
-            setGroupFilter(v === "all" ? "" : v);
-            setPage(1);
-          }}
-          aria-label="分组筛选"
-          options={[
-            { value: "all", label: "全部分组" },
-            ...(groupsData?.data?.map((group) => ({
-              value: group.name,
-              label: `${group.name} (${group.count})`,
-            })) ?? []),
-          ]}
-          style={{ width: 180 }}
-        />
-      </FilterBar>
-
       {selectedChannels.length > 0 && (
         <ChannelLifecycleActions
           channels={selectedChannels}
@@ -353,6 +313,8 @@ function ChannelsPage() {
         loading={isLoading}
         error={error}
         onRetry={() => void refetch()}
+        search={true}
+        onSearch={handleSearch}
         rowSelection={{
           type: "checkbox",
           selectedRowKeys,

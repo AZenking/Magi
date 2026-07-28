@@ -7,7 +7,7 @@ import {
 } from "@tanstack/react-query";
 import type { TaskVo, PaginatedResponse } from "@magi/types";
 import { apiClient } from "@/services/api";
-import { Button, Drawer, Grid, Select, Tabs } from "antd";
+import { Button, Drawer, Grid, Tabs } from "antd";
 import { ProTableWrapper } from "@/components/pro-table-wrapper";
 import { ReloadOutlined } from "@ant-design/icons";
 import { getTaskColumns } from "@/features/dashboard/tasks/columns";
@@ -17,7 +17,7 @@ import {
   targetPendingRegistry,
   useTargetPending,
 } from "@/features/dashboard/tasks/task-registry";
-import { FilterBar, PageHeader, PageStack } from "@/components/page-layout";
+import { PageHeader, PageStack } from "@/components/page-layout";
 
 export const Route = createFileRoute("/dashboard/tasks/")({
   component: TasksPage,
@@ -131,6 +131,14 @@ function TasksPage() {
     [retryMutation, cancelMutation, isRowPending],
   );
 
+  // ProTable's QueryFilter submit/reset routes here. Map the form values to
+  // the existing filter state variables so the useQuery picks them up.
+  const handleSearch = useCallback((params: Record<string, unknown>) => {
+    setStatusFilter((params.status as string) ?? "");
+    setQueueFilter((params.queueName as string) ?? "");
+    setPage(1);
+  }, []);
+
   // Drawer task detail query
   const { data: drawerData } = useQuery({
     queryKey: ["task", selectedTaskId],
@@ -169,40 +177,6 @@ function TasksPage() {
             label: "历史任务",
             children: (
               <PageStack>
-                <FilterBar>
-                  <Select
-                    value={statusFilter || "all"}
-                    onChange={(v) => {
-                      setStatusFilter(v === "all" ? "" : v);
-                      setPage(1);
-                    }}
-                    aria-label="状态筛选"
-                    options={[
-                      { value: "all", label: "全部状态" },
-                      { value: "pending", label: "等待中" },
-                      { value: "running", label: "运行中" },
-                      { value: "success", label: "成功" },
-                      { value: "failed", label: "失败" },
-                      { value: "cancelled", label: "已取消" },
-                    ]}
-                    style={{ width: 160 }}
-                  />
-                  <Select
-                    value={queueFilter || "all"}
-                    onChange={(v) => {
-                      setQueueFilter(v === "all" ? "" : v);
-                      setPage(1);
-                    }}
-                    aria-label="队列筛选"
-                    options={[
-                      { value: "all", label: "全部队列" },
-                      { value: "source-sync", label: "源同步" },
-                      { value: "epg", label: "EPG" },
-                      { value: "health-check", label: "健康检查" },
-                    ]}
-                    style={{ width: 160 }}
-                  />
-                </FilterBar>
                 <ProTableWrapper
                   columns={columns}
                   dataSource={tasks}
@@ -211,6 +185,8 @@ function TasksPage() {
                   error={error}
                   onRetry={() => void refetch()}
                   onRowClick={(task) => setSelectedTaskId(task.id)}
+                  search={true}
+                  onSearch={handleSearch}
                   pagination={{
                     current: page,
                     pageSize,

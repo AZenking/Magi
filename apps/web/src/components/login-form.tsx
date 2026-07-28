@@ -1,5 +1,5 @@
-import { Alert, Button, Form, Input } from "antd";
-import type { FormInstance } from "antd";
+import { LoginForm as ProLoginForm, ProFormText } from "@ant-design/pro-components";
+import type { ProFormInstance } from "@ant-design/pro-components";
 
 export type LoginFormValues = {
   username: string;
@@ -10,46 +10,46 @@ type LoginFormProps = {
   onFinish: (values: LoginFormValues) => Promise<void> | void;
   pending: boolean;
   errorMessage?: string | null;
-  form?: FormInstance<LoginFormValues>;
+  formRef?: React.MutableRefObject<ProFormInstance<LoginFormValues> | undefined>;
   onValuesChange?: (changed: Partial<LoginFormValues>, all: LoginFormValues) => void;
 };
 
-export function LoginForm({ onFinish, pending, errorMessage, form, onValuesChange }: LoginFormProps) {
+export function LoginForm({
+  onFinish,
+  pending,
+  errorMessage,
+  formRef,
+  onValuesChange,
+}: LoginFormProps) {
   return (
-    <Form<LoginFormValues>
-      name="login"
-      layout="vertical"
-      onFinish={onFinish}
-      onValuesChange={onValuesChange}
-      disabled={pending}
-      form={form}
-      autoComplete="on"
+    <ProLoginForm<LoginFormValues>
+      formRef={formRef as never}
+      onFinish={async (values) => {
+        await onFinish(values);
+        // Login errors are surfaced via `errorMessage`; never auto-close.
+        return false;
+      }}
+      onValuesChange={onValuesChange as never}
+      submitter={{
+        searchConfig: { submitText: "登录" },
+        submitButtonProps: { loading: pending, block: true },
+      }}
+      message={errorMessage ? errorMessage : false}
+      title={false}
+      subTitle={false}
     >
-      {errorMessage ? (
-        <Form.Item>
-          <Alert type="error" showIcon title={errorMessage} banner />
-        </Form.Item>
-      ) : null}
-      <Form.Item
+      <ProFormText
         name="username"
-        label="用户名"
+        placeholder="admin"
+        fieldProps={{ autoComplete: "username" }}
         rules={[{ required: true, message: "请输入用户名" }]}
-      >
-        <Input autoComplete="username" placeholder="admin" />
-      </Form.Item>
-      <Form.Item
+      />
+      <ProFormText.Password
         name="password"
-        label="密码"
+        placeholder="密码"
+        fieldProps={{ autoComplete: "current-password" }}
         rules={[{ required: true, message: "请输入密码" }]}
-      >
-        <Input.Password autoComplete="current-password" />
-      </Form.Item>
-      <Form.Item>
-        <Button type="primary" htmlType="submit" block loading={pending}>
-          登录
-        </Button>
-      </Form.Item>
-    </Form>
+      />
+    </ProLoginForm>
   );
 }
-

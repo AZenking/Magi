@@ -29,11 +29,31 @@ const outputStatusMap: Record<string, { label: string; color?: string }> = {
   unknown: { label: "未知" },
 };
 
+// ProTable QueryFilter valueEnums. Mirror the label maps above so search
+// options match the rendered tags/text. Exported for pages that need to
+// augment with remote data (e.g. the group options endpoint).
+export const EPG_STATUS_VALUE_ENUM = {
+  matched_auto: { text: "自动匹配" },
+  matched_manual: { text: "手动匹配" },
+  unmatched: { text: "未匹配" },
+  conflict: { text: "冲突" },
+};
+
+export const OUTPUT_STATUS_VALUE_ENUM = {
+  active: { text: "正常" },
+  degraded: { text: "降级" },
+  unavailable: { text: "不可用" },
+  inactive: { text: "停用" },
+  unknown: { text: "未知" },
+};
+
 interface ColumnContext {
   onEdit?: (channel: CanonicalChannelVo) => void;
   onToggleHidden?: (channel: CanonicalChannelVo) => void;
   /** Trash tab shows purgeAfter instead of the hide toggle (T060). */
   trashView?: boolean;
+  /** Remote group options for the standardGroup search dropdown (T059). */
+  groupOptions?: { value: string; label: string }[];
 }
 
 export function getChannelColumns(
@@ -43,16 +63,22 @@ export function getChannelColumns(
     {
       title: "频道名称",
       dataIndex: "standardName",
+      search: false,
       render: (_, record) => <ChannelNameCell channel={record} />,
     },
     {
       title: "分组",
       dataIndex: "standardGroup",
+      valueType: "select",
+      // Remote group list (with counts) drives the dropdown options.
+      fieldProps: { options: ctx?.groupOptions },
       render: (_, record) => record.standardGroup ?? "-",
     },
     {
       title: "EPG",
       dataIndex: "epgStatus",
+      valueType: "select",
+      valueEnum: EPG_STATUS_VALUE_ENUM,
       render: (_, record) => {
         const s = epgStatusMap[record.epgStatus] ?? { label: record.epgStatus };
         return <Tag color={s.color}>{s.label}</Tag>;
@@ -61,6 +87,8 @@ export function getChannelColumns(
     {
       title: "输出",
       dataIndex: "outputStatus",
+      valueType: "select",
+      valueEnum: OUTPUT_STATUS_VALUE_ENUM,
       render: (_, record) => {
         const s = outputStatusMap[record.outputStatus] ?? {
           label: record.outputStatus,
@@ -71,6 +99,7 @@ export function getChannelColumns(
     {
       title: "状态",
       dataIndex: "lifecycle",
+      search: false,
       render: (_, record) => {
         const s = lifecycleMap[record.lifecycle ?? "active"];
         return <Tag color={s.color}>{s.label}</Tag>;
@@ -79,6 +108,7 @@ export function getChannelColumns(
     {
       title: "tvg-id",
       dataIndex: "epgChannelId",
+      search: false,
       render: (_, record) => (
         <span style={{ fontFamily: "monospace", fontSize: 12 }}>
           {record.epgChannelId ?? "-"}
@@ -88,6 +118,7 @@ export function getChannelColumns(
     {
       title: "频道号",
       dataIndex: "channelNumber",
+      search: false,
       render: (_, record) => record.channelNumber ?? "-",
     },
   ];
@@ -97,12 +128,14 @@ export function getChannelColumns(
     columns.push({
       title: "可清除时间",
       dataIndex: "purgeAfter",
+      search: false,
       render: (_, record) => formatPurgeAfter(record.purgeAfter),
     });
   } else {
     columns.push({
       title: "隐藏",
       dataIndex: "hidden",
+      search: false,
       render: (_, record) => (
         <Button
           type="text"

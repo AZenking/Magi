@@ -5,19 +5,19 @@
  * occurredAt, action, displayName, result tag, and reason. Clicking a row
  * opens a drawer with summary, taskId/changeSetId/recoveryPointId links.
  *
- * Filter dimensions: action, result, targetType (antd Select) and time range
- * (DatePicker.RangePicker). When an event has a recoveryPointId the detail
- * panel offers a recovery_restore entry that opens the OperationPreview flow.
+ * Filter dimensions (action, result, targetType, time range) live in the
+ * ProTable built-in QueryFilter (columns declare valueType/valueEnum). When an
+ * event has a recoveryPointId the detail panel offers a recovery_restore entry
+ * that opens the OperationPreview flow.
  *
  * antd v6 visual language (T001): token-only colors, 4px grid spacing, single
- * primary action. PageStack/PageHeader/FilterBar layout.
+ * primary action. PageStack/PageHeader layout.
  */
 import { useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type { ProColumns } from "@ant-design/pro-components";
 import { ProDescriptions } from "@ant-design/pro-components";
-import type { Dayjs } from "dayjs";
 import {
   AUDIT_ACTOR_LABELS,
   AUDIT_RESULT_META,
@@ -27,11 +27,9 @@ import { apiClient } from "@/services/api";
 import { useFeedback } from "@/lib/feedback";
 import {
   Button,
-  DatePicker,
   Drawer,
   Empty,
   Grid,
-  Select,
   Space,
   Tag,
   Tooltip,
@@ -40,24 +38,41 @@ import {
 } from "antd";
 import { ReloadOutlined, UndoOutlined } from "@ant-design/icons";
 import { ProTableWrapper } from "@/components/pro-table-wrapper";
-import { FilterBar, PageHeader, PageStack } from "@/components/page-layout";
+import { PageHeader, PageStack } from "@/components/page-layout";
 import { OperationPreview } from "@/features/dashboard/operations/operation-preview";
 import { usePreparePreview } from "@/features/dashboard/operations/operation-queries";
-
-const { RangePicker } = DatePicker;
 
 interface Envelope<T> {
   success: boolean;
   data: T;
 }
 
-const RESULT_OPTIONS = [
-  { value: "accepted", label: "已受理" },
-  { value: "succeeded", label: "成功" },
-  { value: "failed", label: "失败" },
-  { value: "skipped", label: "跳过" },
-  { value: "cancelled", label: "取消" },
-];
+const RESULT_VALUE_ENUM = {
+  accepted: { text: "已受理" },
+  succeeded: { text: "成功" },
+  failed: { text: "失败" },
+  skipped: { text: "跳过" },
+  cancelled: { text: "取消" },
+};
+
+const TARGET_TYPE_VALUE_ENUM = {
+  source: { text: "数据源" },
+  channel: { text: "频道" },
+  backup: { text: "备份" },
+  schedule: { text: "调度" },
+  operation: { text: "操作" },
+};
+
+const ACTION_VALUE_ENUM = {
+  "source.sync": { text: "源同步" },
+  "source.delete": { text: "源删除" },
+  "epg.match": { text: "EPG 匹配" },
+  "channel.lifecycle": { text: "频道生命周期" },
+  "channel.purge": { text: "频道清理" },
+  "backup.create": { text: "创建备份" },
+  "backup.restore": { text: "恢复备份" },
+  "recovery.restore": { text: "恢复点恢复" },
+};
 
 function formatDatetime(iso: string): string {
   try {
@@ -79,35 +94,11 @@ export function AuditList() {
   const [actionFilter, setActionFilter] = useState<string>("");
   const [resultFilter, setResultFilter] = useState<string>("");
   const [targetTypeFilter, setTargetTypeFilter] = useState<string>("");
-  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
+  const [from, setFrom] = useState<string>("");
+  const [to, setTo] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [recoveryChangeSetId, setRecoveryChangeSetId] = useState<string | null>(
     null,
-  );
-
-  const targetTypeOptions = useMemo(
-    () => [
-      { value: "source", label: "数据源" },
-      { value: "channel", label: "频道" },
-      { value: "backup", label: "备份" },
-      { value: "schedule", label: "调度" },
-      { value: "operation", label: "操作" },
-    ],
-    [],
-  );
-
-  const actionOptions = useMemo(
-    () => [
-      { value: "source.sync", label: "源同步" },
-      { value: "source.delete", label: "源删除" },
-      { value: "epg.match", label: "EPG 匹配" },
-      { value: "channel.lifecycle", label: "频道生命周期" },
-      { value: "channel.purge", label: "频道清理" },
-      { value: "backup.create", label: "创建备份" },
-      { value: "backup.restore", label: "恢复备份" },
-      { value: "recovery.restore", label: "恢复点恢复" },
-    ],
-    [],
   );
 
   const { data, isLoading, error, refetch } = useQuery({
@@ -118,8 +109,8 @@ export function AuditList() {
       actionFilter,
       resultFilter,
       targetTypeFilter,
-      range?.[0]?.toISOString(),
-      range?.[1]?.toISOString(),
+      from,
+      to,
     ],
     queryFn: () => {
       const params: Record<string, string | number | undefined> = {
@@ -128,8 +119,8 @@ export function AuditList() {
         action: actionFilter || undefined,
         result: resultFilter || undefined,
         targetType: targetTypeFilter || undefined,
-        from: range?.[0]?.toISOString() ?? undefined,
-        to: range?.[1]?.toISOString() ?? undefined,
+        from: from || undefined,
+        to: to || undefined,
       };
       return apiClient<Envelope<PaginatedResponse<AuditEventVo>>>(
         "/audit-events",
@@ -170,23 +161,27 @@ export function AuditList() {
     }
   };
 
-  const columns = useMemo<ProColumns<AuditEventVo>[]>(
-    () => [
+  const columns = useMemo<ProColumns<AuditEventVo>[]>(() => {
+    const list: ProColumns<AuditEventVo>[] = [
       {
         dataIndex: "occurredAt",
         title: "时间",
         width: 180,
+        search: false,
         render: (_, record) => formatDatetime(record.occurredAt),
       },
       {
         dataIndex: "action",
         title: "动作",
         width: 160,
+        valueType: "select",
+        valueEnum: ACTION_VALUE_ENUM,
         render: (_, record) => <Tag>{record.action}</Tag>,
       },
       {
         dataIndex: "displayName",
         title: "目标",
+        search: false,
         render: (_, record) => {
           const name = record.displayName;
           return (
@@ -199,9 +194,17 @@ export function AuditList() {
         },
       },
       {
+        dataIndex: "targetType",
+        title: "目标类型",
+        valueType: "select",
+        valueEnum: TARGET_TYPE_VALUE_ENUM,
+        hideInTable: true,
+      },
+      {
         dataIndex: "actorType",
         title: "发起方",
         width: 100,
+        search: false,
         render: (_, record) =>
           AUDIT_ACTOR_LABELS[record.actorType] ?? record.actorType,
       },
@@ -209,6 +212,8 @@ export function AuditList() {
         dataIndex: "result",
         title: "结果",
         width: 100,
+        valueType: "select",
+        valueEnum: RESULT_VALUE_ENUM,
         render: (_, record) => {
           const meta = AUDIT_RESULT_META[record.result];
           return meta ? (
@@ -221,6 +226,7 @@ export function AuditList() {
       {
         dataIndex: "reason",
         title: "原因",
+        search: false,
         render: (_, record) => {
           const reason = record.reason;
           return reason ? (
@@ -232,17 +238,37 @@ export function AuditList() {
           );
         },
       },
-    ],
+      // Virtual column: date range drives the `from`/`to` query params. Lives
+      // only in the search form (hidden from the table).
+      {
+        dataIndex: "dateRange",
+        title: "时间范围",
+        valueType: "dateRange",
+        hideInTable: true,
+        search: {
+          transform: (value) => ({
+            from: Array.isArray(value) ? value[0] : value,
+            to: Array.isArray(value) ? value[1] : value,
+          }),
+        },
+      },
+    ];
+    return list;
+  }, []);
+
+  // ProTable's QueryFilter submit/reset routes here. Map the form values to
+  // the existing filter state variables so the useQuery picks them up.
+  const handleSearch = useCallback(
+    (params: Record<string, unknown>) => {
+      setActionFilter((params.action as string) ?? "");
+      setResultFilter((params.result as string) ?? "");
+      setTargetTypeFilter((params.targetType as string) ?? "");
+      setFrom((params.from as string) ?? "");
+      setTo((params.to as string) ?? "");
+      setPage(1);
+    },
     [],
   );
-
-  const resetFilters = () => {
-    setActionFilter("");
-    setResultFilter("");
-    setTargetTypeFilter("");
-    setRange(null);
-    setPage(1);
-  };
 
   return (
     <PageStack>
@@ -259,57 +285,6 @@ export function AuditList() {
         }
       />
 
-      <FilterBar>
-        <Select
-          allowClear
-          placeholder="动作"
-          value={actionFilter || undefined}
-          onChange={(v) => {
-            setActionFilter(v ?? "");
-            setPage(1);
-          }}
-          options={actionOptions}
-          style={{ width: 180 }}
-          aria-label="动作筛选"
-        />
-        <Select
-          allowClear
-          placeholder="结果"
-          value={resultFilter || undefined}
-          onChange={(v) => {
-            setResultFilter(v ?? "");
-            setPage(1);
-          }}
-          options={RESULT_OPTIONS}
-          style={{ width: 140 }}
-          aria-label="结果筛选"
-        />
-        <Select
-          allowClear
-          placeholder="目标类型"
-          value={targetTypeFilter || undefined}
-          onChange={(v) => {
-            setTargetTypeFilter(v ?? "");
-            setPage(1);
-          }}
-          options={targetTypeOptions}
-          style={{ width: 160 }}
-          aria-label="目标类型筛选"
-        />
-        <RangePicker
-          showTime
-          value={range as never}
-          onChange={(value) => {
-            setRange((value as [Dayjs | null, Dayjs | null] | null) ?? null);
-            setPage(1);
-          }}
-          aria-label="时间范围"
-        />
-        {(actionFilter || resultFilter || targetTypeFilter || range) && (
-          <Button onClick={resetFilters}>清除筛选</Button>
-        )}
-      </FilterBar>
-
       <ProTableWrapper<AuditEventVo>
         columns={columns}
         dataSource={events}
@@ -319,6 +294,8 @@ export function AuditList() {
         onRetry={() => void refetch()}
         onRowClick={(record) => setSelectedId(record.id)}
         columnsStateKey="audit-events-columns"
+        search={true}
+        onSearch={handleSearch}
         pagination={{
           current: page,
           pageSize,

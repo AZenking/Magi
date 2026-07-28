@@ -52,6 +52,14 @@ export interface ProTableWrapperProps<T = object> {
    * `{ current, pageSize, total, onChange }`.
    */
   pagination?: React.ComponentProps<typeof ProTable>["pagination"];
+  /**
+   * Search form config. Pass `true` or a ProTable search config object to
+   * enable the built-in QueryFilter (auto-generated from column valueType/
+   * valueEnum/fieldProps). Default `false` (page-level FilterBar).
+   */
+  search?: boolean | Record<string, unknown>;
+  /** Callback when the search form is submitted (receives form values). */
+  onSearch?: (params: Record<string, unknown>) => void;
   /** Extra ProTable props passthrough. */
   proTableProps?: Partial<ProTableProps<T, Record<string, unknown>>>;
 }
@@ -71,6 +79,8 @@ export function ProTableWrapper<T extends object>({
   toolBarRender,
   columnsStateKey,
   pagination,
+  search = false,
+  onSearch,
   proTableProps,
 }: ProTableWrapperProps<T>) {
   const actionRef = useRef<ActionType>(null);
@@ -83,7 +93,7 @@ export function ProTableWrapper<T extends object>({
       dataSource={dataSource}
       rowKey={rowKey}
       loading={loading}
-      search={false}
+      search={search === true ? { labelWidth: "auto", defaultCollapsed: false } : search}
       options={{
         density: false,
         reload: false,
@@ -111,6 +121,8 @@ export function ProTableWrapper<T extends object>({
           : undefined
       }
       rowSelection={rowSelection}
+      onSubmit={(params) => onSearch?.(params as Record<string, unknown>)}
+      onReset={() => onSearch?.({})}
       locale={{
         emptyText: error ? (
           <Result
