@@ -7,6 +7,7 @@ dist/
 .next/
 out/
 build/
+apps/web/public/antd.min.css
 
 # Turbo
 .turbo/
@@ -42,3 +43,4 @@ coverage/
 
 # Docker
 docker/.env
+.data/
