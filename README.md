@@ -9,6 +9,7 @@
 | Frontend | TanStack Start (Vite), TanStack Router, React 19, antd v6, TanStack Query, TanStack Table, Zustand |
 | Auth | better-auth (邮箱密码) |
 | Backend | NestJS, Drizzle ORM, PostgreSQL, Redis, BullMQ, Zod |
+| Android TV | Kotlin, Jetpack Compose for TV, Media3/ExoPlayer, Retrofit, DataStore + Android Keystore |
 | Infra | Docker, Docker Compose, Turborepo, pnpm |
 
 ## Project Structure
@@ -208,6 +209,17 @@ export JAVA_HOME="$(/usr/libexec/java_home -v 21)"   # 或指向你的 JDK 17–
 ./gradlew :app:assembleDebug
 # 产物: app/build/outputs/apk/debug/app-debug.apk
 ```
+
+涉及 `apps/tv` 的变更在合并前必须通过：
+
+```bash
+cd apps/tv
+./gradlew :app:lintDebug :app:testDebugUnitTest :app:assembleDebug
+```
+
+涉及遥控器焦点、Back、换台、播放器或覆盖层的变更，还必须在 Android TV 模拟器和至少
+一台真实遥控器设备上验证。TV 端分层、D-pad 可达性、播放恢复、10-foot UI 与凭据保护
+的强制规则见 [项目宪法](.specify/memory/constitution.md) 原则 VIII。
 
 ### 接入
 

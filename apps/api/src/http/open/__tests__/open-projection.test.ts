@@ -62,6 +62,21 @@ function makeController(channels: CanonicalChannel[], detailChannel?: CanonicalC
   );
 }
 
+/** Like makeController, but lets the caller control the reported `total`
+ *  independently of `items.length` (for multi-page pagination tests). */
+function makeControllerWithTotal(pageItems: CanonicalChannel[], total: number) {
+  return new OpenApiController(
+    {
+      execute: vi.fn(async () => ({ items: pageItems, total })),
+      findGroups: vi.fn(async () => []),
+      countByLifecycle: vi.fn(async () => ({})),
+    } as never,
+    { execute: vi.fn(async () => ({ channel: pageItems[0]!, streams: [] })) } as never,
+    { execute: vi.fn(async () => ({ items: [], total: 0 })) } as never,
+    { execute: vi.fn(async () => null) } as never,
+  );
+}
+
 const FORBIDDEN_KEYS = [
   "streamUrl",
   "sourceId",
@@ -117,6 +132,35 @@ describe("OpenApiController projection (FR-012, FR-011)", () => {
     const controller = makeController([makeChannel({ lifecycle: "trashed" })]);
     const res = await controller.channels({ page: 1, pageSize: 20 });
     expect(res.data!.items).toHaveLength(0);
+  });
+
+  it("multi-page: returns REAL total/totalPages when items < total (>100 channels)", async () => {
+    // Simulate page 1 of a 250-channel catalog: 100 items on this page,
+    // but the use case reports total=250. The controller must echo the real
+    // total, not mapped.length (which would wrongly be 100 → totalPages=1).
+    const pageItems = Array.from({ length: 100 }, (_, i) => makeChannel({ id: `ch-${i}` }));
+    const controller = makeControllerWithTotal(pageItems, 250);
+    const res = await controller.channels({ page: 1, pageSize: 100 });
+    expect(res.data!.items).toHaveLength(100);
+    expect(res.data!.total).toBe(250);         // real total, NOT items.length
+    expect(res.data!.totalPages).toBe(3);      // ceil(250/100)
+  });
+
+  it("multi-page: page 2 of a 250-channel catalog still reports total=250", async () => {
+    const pageItems = Array.from({ length: 50 }, (_, i) => makeChannel({ id: `ch-${100 + i}` }));
+    const controller = makeControllerWithTotal(pageItems, 250);
+    const res = await controller.channels({ page: 3, pageSize: 100 });
+    expect(res.data!.items).toHaveLength(50);
+    expect(res.data!.total).toBe(250);
+    expect(res.data!.totalPages).toBe(3);
+    expect(res.data!.page).toBe(3);
+  });
+
+  it("single-page: totalPages is at least 1 for empty result", async () => {
+    const controller = makeControllerWithTotal([], 0);
+    const res = await controller.channels({ page: 1, pageSize: 100 });
+    expect(res.data!.total).toBe(0);
+    expect(res.data!.totalPages).toBe(1);      // ceil(0/100) || 1
   });
 
   it("detail of a visible channel returns product view", async () => {

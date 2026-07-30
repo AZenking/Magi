@@ -1,41 +1,50 @@
 <!--
 同步影响报告
 ==================
-版本变更：2.1.0 → 2.2.0
-- MINOR（次版本）：进一步扩展 antd 指导 —— 新增"编写 antd UI 前必须读 design.md，按 Ant Design v6 视觉语言决策"的硬性约束。
-  理由判定为 MINOR：未删除/重定义任何核心原则，也未新增原则，但为 v2.1.0 的 API 查询流程补充了视觉语言层面的具体要求（materially expanded guidance）。
+版本变更：2.2.0 → 3.0.0
+- MAJOR（主版本）：Android TV 成为正式的一等客户端后，原有“整个 monorepo 强制
+  TypeScript”及“所有 app 必须直接消费 packages/types”的治理规则不再兼容。
+  本次将跨语言契约改为 OpenAPI 边界，并为 Kotlin/Compose TV 客户端新增强制原则。
 
-本次变更：
-- 章节"开发流程与质量门槛"新增 bullet"antd 视觉语言遵循（强制）"，摘录 design.md 的核心约束（四大价值观 / 颜色 / 排版 / 4px 网格 / 圆角 / 动效 / Do's & Don'ts）。
-- 配套查询命令：`antd design.md --format json`（离线毫秒级，已随 @ant-design/cli v6.5.1 提供）；在线副本 <https://ant.design/design.md>。
+修改的原则：
+- I. 整洁架构（分层）→ 扩展 Android TV 的 presentation/domain/data/platform 依赖规则。
+- II. 单仓多包 → 明确 apps/tv 是独立 Gradle 工程，跨语言共享通过 OpenAPI 契约。
+- V. 端到端类型安全 → 重命名为“端到端契约与类型安全”，区分 TypeScript 与 Kotlin。
 
-未变更：
-- 核心原则 I–VII 不变。
-- 技术栈标准不变（v2.0.0 锁定的 antd v6 保持）。
-- v2.1.0 的 "antd UI 编写流程（强制）" 不变 —— 与本次新增的"antd 视觉语言遵循"并列，前者管 API、后者管视觉决策。
+新增原则：
+- VIII. Android TV 遥控器优先与播放可靠性。
 
-v2.0.0 遗留的迁移待办（**仍须在迁移 PR 中处理，否则视为违反宪法**）：
-- ⚠ packages/ui：删除 shadcn 相关依赖（radix-ui、class-variance-authority、clsx、tailwind-merge、lucide-react、next-themes、sonner、vaul、tailwindcss 等），重写 src/components/ 下所有组件为 antd。
-- ⚠ packages/ui/components.json 与 apps/web/components.json：删除（shadcn CLI 配置）。
-- ⚠ apps/web/package.json：移除 @tailwindcss/vite、tailwindcss；新增 antd v6。
-- ⚠ apps/web/vite.config.ts：移除 @tailwindcss/vite 插件；按 antd v6 推荐配置。
-- ⚠ apps/web 入口与全局样式：移除 Tailwind preflight / @import "tailwindcss"；改为 antd 的 App / ConfigProvider 包裹 + 必要的全局 reset。
-- ⚠ README.md：更新技术栈说明（移除 Tailwind/shadcn 字样）。
-- ⚠ docs/architecture.md：更新前端栈描述与组件库选型理由。
-- ⚠ 既有 packages/ui/src/styles/globals.css、site-header.tsx、app-sidebar.tsx、sidebar.tsx 等：评估保留 / 重写 / 删除。
+新增/扩展章节：
+- 技术栈标准：锁定 Kotlin、Compose for TV、Media3、Retrofit、DataStore 与 JDK 17。
+- 开发流程与质量门槛：新增 Android TV 构建、单测、lint、焦点和实机播放验收门槛。
 
-需要更新的模板：
-- ✅ .specify/templates/plan-template.md — Constitution Check 章节为通用占位；新约束在 plan 评审阶段强制执行，无需修改。
-- ✅ .specify/templates/spec-template.md — 通用模板；无需修改。
-- ✅ .specify/templates/tasks-template.md — 通用模板；无需修改。
-- ✅ .specify/templates/checklist-template.md — 通用模板；无需修改。
+移除章节：
+- 无。
+
+模板同步：
+- ✅ .specify/templates/plan-template.md — 新增 Android TV Constitution Check。
+- ✅ .specify/templates/spec-template.md — 新增 TV 交互、恢复与 10-foot UI 要求。
+- ✅ .specify/templates/tasks-template.md — 新增 TV 测试、焦点、播放和实机验收任务。
+- ✅ .specify/templates/checklist-template.md — 增加 TV 专项检查清单生成要求。
+- ✅ README.md — 增加 Android TV 技术栈与质量门槛。
+- ✅ docs/architecture.md — 增加 TV 分层、焦点与播放器边界。
+- ✅ .specify/templates/commands/*.md — 目录不存在，无需更新。
+
+待处理的既有合规债务：
+- ⚠ apps/tv：配置保存前尚未验证服务端与 API Key，且缺少应用内重新配置入口。
+- ⚠ apps/tv：侧栏、播放器信息层和诊断页尚未形成确定性焦点交接与恢复。
+- ⚠ apps/tv：LivePlaybackViewModel 仍直接依赖 data 层 LastChannelStore 和 Android Context。
+- ⚠ apps/tv：播放决策异常存在吞错路径，错误恢复动作不完整。
+- ⚠ apps/tv：API Key 当前存于普通 Preferences DataStore，尚未加密。
+- ⚠ apps/tv：存在未接入现行导航的旧 EPG/Player/Navigation 代码。
 
 修订简史：
-- 1.0.0（2026-07-07）：初始采纳，六大核心原则 + 技术栈 + 开发流程 + 治理。
-- 1.1.0（2026-07-07 → 2026-07-20 修订）：新增核心原则 VII（可观测性）。
-- 2.0.0（2026-07-20）：前端 UI 栈根本替换 —— TailwindCSS 4 + shadcn/ui → antd v6。
-- 2.1.0（2026-07-20）：扩展 antd 指导 —— 编写 antd UI 代码前必须先通过 @ant-design/cli 查询，写完必须 lint。
-- 2.2.0（2026-07-20）：进一步扩展 antd 指导 —— 编写 antd UI 前必须读 design.md，按 Ant Design v6 视觉语言决策（颜色/排版/4px 网格/圆角/动效）。
+- 1.0.0（2026-07-07）：初始采纳，六大核心原则。
+- 1.1.0（2026-07-20）：新增原则 VII（可观测性）。
+- 2.0.0（2026-07-20）：Web UI 栈替换为 antd v6。
+- 2.1.0（2026-07-20）：新增 antd CLI 查询与 lint 流程。
+- 2.2.0（2026-07-20）：新增 antd v6 视觉语言约束。
+- 3.0.0（2026-07-30）：Android TV 成为一等客户端，建立跨语言契约与 TV 体验约束。
 -->
 
 # MAGI 项目宪法
@@ -58,6 +67,19 @@ HTTP/Controller → Application/UseCase → Domain → Infrastructure/Repository
 
 **理由**：长期由单人维护的项目承受不起分层腐化。严格分层能让未来的你替换 Drizzle、NestJS 或 BullMQ 时不动业务规则。
 
+Android TV 必须遵循：
+
+```txt
+Compose UI / ViewModel → UseCase / Domain Port → Data or Platform Implementation
+```
+
+- `domain/` 禁止导入 Android、Compose、Media3、Retrofit 或 DataStore。
+- `ui/` 和 ViewModel 禁止直接依赖 `data/` 的具体实现。
+- 播放器、设备能力、凭据存储和最后频道存储必须经由 domain/application
+  接口或 UseCase 暴露。
+- Composable 只渲染 `UiState` 并发送用户意图；禁止直接探测 MediaCodec、
+  发网络请求或构造用于驱动播放器的伪领域对象。
+
 ### II. 单仓多包（Monorepo with Shared Packages）
 
 仓库采用 Turborepo + pnpm workspace，包含两棵顶层目录树：
@@ -67,8 +89,15 @@ HTTP/Controller → Application/UseCase → Domain → Infrastructure/Repository
 
 规则：
 
-- DTO、枚举、值对象（VO）与 Zod schema 必须在 `packages/types` 中定义唯一一次，由各 app 引入。跨 app 重复定义类型是被禁止的。
-- 跨 app 的代码复用必须通过 `packages/*`，禁止 app 之间直接相互导入。
+- TypeScript 应用之间共享的 DTO、枚举、值对象（VO）与 Zod schema 必须在
+  `packages/types` 中定义唯一一次。
+- Kotlin Android TV 客户端不得直接复制 TypeScript 类型作为第二真相源；跨语言 API
+  契约以 `/api/open.json` 的 OpenAPI 文档为准。Kotlin DTO 必须由契约生成，或由
+  契约测试验证字段、可空性和枚举兼容性。
+- TypeScript app 之间的代码复用必须通过 `packages/*`；`apps/tv` 通过 HTTP/OpenAPI
+  边界协作。禁止 app 之间直接导入源码。
+- `apps/tv` 是独立 Gradle 工程，不进入 pnpm/turbo 构建图；其质量门槛必须由 Gradle
+  命令独立执行。
 - 新 package 必须有清晰、单一的职责；仅作组织用途的 package（只是一个空文件夹）是不允许的。
 
 **理由**：前后端共享同一份契约源真相，杜绝"web 与 api 之间类型漂移"的失败模式。
@@ -100,13 +129,17 @@ Worker 镜像 API 的分层架构（`application/`、`domain/`、`infrastructure
 
 **理由**：单个 XMLTV 源导入可能耗时数分钟。阻塞 API 请求会拖累每个用户的管理后台，并可能触发代理超时。
 
-### V. 端到端类型安全
+### V. 端到端契约与类型安全
 
-整个 monorepo 强制使用 TypeScript。规则：
+TypeScript workspace 强制使用 TypeScript；Android TV 强制使用 Kotlin。规则：
 
 - 禁止使用 `any`，若必须使用须在行内注释说明理由。优先使用 `unknown` + 类型收窄。
 - Zod schema 是唯一真相源；TypeScript 类型通过 `z.infer<typeof Schema>` 推导，禁止手写并行接口。
 - API 契约变更必须先改 `packages/types`，再由 `apps/api` 与 `apps/web` 消费。
+- 开放 API 契约变更必须同步更新 OpenAPI，并验证 Android TV 对新增字段、可空字段和
+  枚举值的前后兼容性；禁止仅修改 Retrofit DTO 而不更新服务端契约。
+- Kotlin 禁止无理由的 `!!`、无类型字符串错误和把网络 DTO 直接暴露给 UI；DTO 必须在
+  data 层映射为 domain model。
 - 合并前 `eslint` 与 `tsc --noEmit` 必须通过。
 
 **理由**：编译期发现契约漂移的成本约为线上 500 错误被触发后再修复的千分之一。
@@ -135,6 +168,34 @@ API 与 Worker 必须输出结构化、机器可解析、且能跨 API → Worke
 
 **理由**：单次 XMLTV 导入跨越 API 投递 → Worker 处理 → DB 写入，耗时可达数分钟。如果没有结构化日志与一条贯穿 HTTP 请求与 BullMQ job 的链路 ID，"凌晨 3 点源 X 为什么失败了？"就只能靠猜。事后补可观测性的成本约为一开始就做好的 10 倍。
 
+### VIII. Android TV 遥控器优先与播放可靠性
+
+Android TV 是 MAGI 的正式消费端，不是 Web 页面的电视适配版。任何 TV 功能必须满足：
+
+- **D-pad 完整可达**：核心流程必须只用方向键、OK 和 Back 完成。禁止依赖触摸、鼠标、
+  隐藏手势或不可发现的长按。新增可交互元素必须定义进入、退出、返回和焦点恢复路径。
+- **确定性焦点**：打开侧栏、弹层或新页面时必须显式设置初始焦点；关闭后必须恢复到
+  触发元素或播放器。当前播放项必须滚动可见。禁止把行为交给不稳定的默认空间寻焦。
+- **Back 层级固定**：Back 必须按“最上层弹层/侧栏 → 信息层 → 上一页面 → 退出应用”
+  逐层消费。任一错误状态不得把“退出应用”作为唯一恢复动作。
+- **播放器单一所有者**：Media3/ExoPlayer 必须由生命周期明确的 platform 实现持有。
+  换台复用播放器；并发换台必须可取消或序列化，旧请求与旧回调不得覆盖新频道状态。
+- **显式播放状态**：加载、解析线路、缓冲、首帧、切换线路、可恢复错误、终止错误必须是
+  明确状态。禁止吞异常、无限 loading 或通过伪造空领域对象触发错误 UI。
+- **可恢复配置**：保存服务器地址和 API Key 前必须验证连接与鉴权。已配置应用必须始终
+  提供重新配置入口；网络、401、无线路和解码失败必须提供与原因匹配的重试或恢复动作。
+- **凭据保护**：API Key 必须使用 Android Keystore 支持的加密存储；日志、诊断、崩溃
+  信息和 UI 截图不得包含明文 Key 或完整播放地址。
+- **10-foot UI**：关键正文不得小于 16sp，辅助正文不得小于 14sp；更小字号仅限非关键
+  标签并须在设计评审中说明。可交互目标最小 48dp，必须保留 TV 安全区。焦点状态不得
+  只依赖颜色，必须同时具备轮廓、缩放、明度或其他远距离可辨识反馈。
+- **实机验收**：改变焦点、Back、换台、播放器或覆盖层的功能，除单元/集成测试外，必须
+  在 Android TV 模拟器和至少一台真实遥控器设备上验证。验收记录必须包含快速连续换台、
+  侧栏开关、线路故障切换、断网、401 和应用恢复。
+
+**理由**：TV 的主要失败模式不是页面无法渲染，而是焦点丢失、遥控器不可达、播放器竞态
+和错误后无法恢复。这些问题只能通过架构边界、确定性状态机与实机门槛共同约束。
+
 ## 技术栈标准
 
 技术栈是固定的。替换需要宪法修正。
@@ -152,6 +213,9 @@ API 与 Worker 必须输出结构化、机器可解析、且能跨 API → Worke
 | 缓存 / 队列 | Redis、BullMQ |
 | 校验 | Zod |
 | 构建 / 仓库 | Turborepo、pnpm（Node ≥ 20） |
+| Android TV | Kotlin、Jetpack Compose for TV、Media3/ExoPlayer |
+| TV 网络 / 存储 | Retrofit、kotlinx.serialization、DataStore + Android Keystore |
+| TV 构建 | Gradle、Android Gradle Plugin、JDK 17+ |
 | 部署 | Docker、Docker Compose |
 
 - 新增运行时依赖必须在 PR 描述中说明理由（为什么现有依赖无法胜任）。
@@ -166,6 +230,15 @@ API 与 Worker 必须输出结构化、机器可解析、且能跨 API → Worke
   - `pnpm lint`
   - `pnpm build`
   - 每个包的 `tsc --noEmit`
+- **Android TV 质量门槛（涉及 `apps/tv` 时必须通过）**：
+  - `cd apps/tv && ./gradlew :app:lintDebug`
+  - `cd apps/tv && ./gradlew :app:testDebugUnitTest`
+  - `cd apps/tv && ./gradlew :app:assembleDebug`
+  - 涉及焦点、Back、播放器或覆盖层时，PR/spec 验收记录必须列出模拟器与真实设备结果；
+    仅截图或鼠标操作不算通过。
+- **TV spec 门槛**：任何影响 `apps/tv` 的非平凡特性，spec 必须列出 D-pad 焦点图、
+  Back 层级、加载/空/错误/重试状态、10-foot UI 指标和播放生命周期影响。缺失任一项时
+  不得进入实现。
 - **提交规范**：Conventional Commits（`feat:`、`fix:`、`chore:`、`docs:`、`refactor:`）。允许 scope（如 `feat(api): …`）。
 - **Spec 优先**：非平凡特性应先在 `.specify/specs/<feature>/` 下产出一份 spec。琐碎修复可以跳过。
 - **测试**：新增测试时遵循 Red-Green-Refactor — 先写失败的测试，再写实现。测试与源码同目录或镜像在 `tests/` 下，与所覆盖的层级对应。
@@ -202,4 +275,4 @@ API 与 Worker 必须输出结构化、机器可解析、且能跨 API → Worke
 - **合规评审**：每个 PR 评审都必须隐式检查本次变更是否违反本文件中的任何原则。若违反是有意为之（被论证过的复杂度），必须在 plan 的"复杂度追踪"章节中记录。
 - **运行时开发指引**：环境搭建参考 `README.md`；分层与路由细节参考 `docs/architecture.md`；进行中的特性 spec 参考 `.specify/specs/<feature>/`。
 
-**版本**：2.2.0 | **批准日期**：2026-07-07 | **最近修订**：2026-07-20
+**版本**：3.0.0 | **批准日期**：2026-07-07 | **最近修订**：2026-07-30

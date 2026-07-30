@@ -13,10 +13,10 @@ import com.magi.tv.domain.model.PlaybackDecision
 import com.magi.tv.domain.model.PlaybackLine
 import com.magi.tv.domain.model.Programme
 import com.magi.tv.domain.repository.TvContentRepository
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 
 class DefaultTvContentRepository(
     private val remoteDataSource: MagiRemoteDataSource,
@@ -75,12 +75,18 @@ private fun ProgrammeDto.toDomain() = Programme(
     channelId = channelId,
     title = title,
     subTitle = subTitle,
-    startAt = startAt,
-    stopAt = stopAt,
+    startAt = startAt.parseEpochMsOrThrow(),
+    stopAt = stopAt.parseEpochMsOrThrow(),
     category = category,
 )
 
+/** Parse an ISO-8601 instant to epoch ms; tolerates with/without millis. */
+private fun String.parseEpochMsOrThrow(): Long = try {
+    Instant.parse(this).toEpochMilli()
+} catch (e: DateTimeParseException) {
+    // Fallback: tolerate ISO without the trailing 'Z' offset.
+    Instant.from(DateTimeFormatter.ISO_DATE_TIME.parse(this)).toEpochMilli()
+}
+
 private fun Long.toIsoUtc(): String =
-    SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
-        timeZone = TimeZone.getTimeZone("UTC")
-    }.format(Date(this))
+    DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(this).atOffset(ZoneOffset.UTC))

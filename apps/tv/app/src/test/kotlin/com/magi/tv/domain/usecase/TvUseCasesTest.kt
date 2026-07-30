@@ -46,20 +46,18 @@ class TvUseCasesTest {
     }
 
     @Test
-    fun `programme guide owns the twelve hour query window`() = runBlocking {
+    fun `programme guide passes explicit time range to repository`() = runBlocking {
         val repository = FakeTvContentRepository(
             playbackDecision = playableDecision(),
         )
-        val now = 1_700_000_000_000L
+        val from = 1_700_000_000_000L
+        val to = from + 24 * 60 * 60 * 1000L
 
-        GetProgrammeGuideUseCase(
-            repository = repository,
-            clock = Clock { now },
-        )("magi:channel-1")
+        GetProgrammeGuideUseCase(repository)("magi:channel-1", from, to)
 
         assertEquals("channel-1", repository.requestedGuideChannelId)
-        assertEquals(now, repository.requestedGuideFrom)
-        assertEquals(now + 12 * 60 * 60 * 1000L, repository.requestedGuideTo)
+        assertEquals(from, repository.requestedGuideFrom)
+        assertEquals(to, repository.requestedGuideTo)
         Unit
     }
 

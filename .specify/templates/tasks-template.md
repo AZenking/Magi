@@ -24,6 +24,8 @@ description: "Task list template for feature implementation"
 - **Single project**: `src/`, `tests/` at repository root
 - **Web app**: `backend/src/`, `frontend/src/`
 - **Mobile**: `api/src/`, `ios/src/` or `android/src/`
+- **Android TV**: `apps/tv/app/src/main/kotlin/`, unit tests under
+  `apps/tv/app/src/test/`, instrumented tests under `apps/tv/app/src/androidTest/`
 - Paths shown below assume single project - adjust based on plan.md structure
 
 <!--
@@ -157,6 +159,15 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
 - [ ] TXXX Security hardening
 - [ ] TXXX Run quickstart.md validation
+
+### Android TV Quality Tasks *(required when `apps/tv` is in scope)*
+
+- [ ] TXXX Add/update domain and ViewModel tests for state transitions and stale-result rejection
+- [ ] TXXX Verify every interactive element is reachable with D-pad/OK/Back only
+- [ ] TXXX Verify initial focus and focus restoration for each screen, sheet, dialog, and overlay
+- [ ] TXXX Verify offline, 401, no-line, decoder failure, retry, and reconfiguration flows
+- [ ] TXXX Run `cd apps/tv && ./gradlew :app:lintDebug :app:testDebugUnitTest :app:assembleDebug`
+- [ ] TXXX Record Android TV emulator and physical-device/remote acceptance results in quickstart.md
 
 ---
 

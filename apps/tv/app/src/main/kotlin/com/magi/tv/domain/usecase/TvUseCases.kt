@@ -45,20 +45,23 @@ class GetProgrammeGuideUseCase(
     private val repository: TvContentRepository,
     private val clock: Clock = SystemClock,
 ) {
-    suspend operator fun invoke(channelId: String?): List<Programme> {
-        val from = clock.nowEpochMs()
-        return repository.getProgrammeGuide(
-            channelId = channelId
-                ?.takeIf { it.isNotBlank() }
-                ?.removePrefix("magi:"),
-            fromEpochMs = from,
-            toEpochMs = from + GUIDE_WINDOW_MS,
-        )
-    }
-
-    private companion object {
-        const val GUIDE_WINDOW_MS = 12 * 60 * 60 * 1000L
-    }
+    /**
+     * Query the guide for [channelId] within an explicit [fromEpochMs, toEpochMs]
+     * window. The caller MUST pass the time range — no hidden 12h default — so
+     * the ViewModel's day-boundary computation is the single source of truth.
+     * Pass channelId=null for an all-channels query.
+     */
+    suspend operator fun invoke(
+        channelId: String?,
+        fromEpochMs: Long,
+        toEpochMs: Long,
+    ): List<Programme> = repository.getProgrammeGuide(
+        channelId = channelId
+            ?.takeIf { it.isNotBlank() }
+            ?.removePrefix("magi:"),
+        fromEpochMs = fromEpochMs,
+        toEpochMs = toEpochMs,
+    )
 }
 
 class SaveConnectionSettingsUseCase(

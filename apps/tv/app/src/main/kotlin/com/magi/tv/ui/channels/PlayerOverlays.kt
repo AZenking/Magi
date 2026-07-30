@@ -120,6 +120,7 @@ internal fun PlayerErrorOverlay(
 internal fun PlayerInfoOverlay(
     state: PlayerUiState,
     onOpenDiagnostics: () -> Unit = {},
+    onOpenStats: () -> Unit = {},
 ) {
     Box(
         modifier = Modifier
@@ -157,7 +158,7 @@ internal fun PlayerInfoOverlay(
                     Text(
                         text = "线路 ${state.lineIndex + 1}/${state.lineCount}",
                         color = MagiTvPalette.Muted,
-                        fontSize = 13.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
                     )
                 }
@@ -180,11 +181,17 @@ internal fun PlayerInfoOverlay(
                 )
                 Spacer(Modifier.height(7.dp))
                 Text(
-                    text = "按 OK 显示或隐藏信息",
+                    text = "方向键选择 · 返回关闭",
                     color = MagiTvPalette.Muted,
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                 )
                 Spacer(Modifier.height(10.dp))
+                MagiTvActionButton(
+                    label = "统计",
+                    onClick = onOpenStats,
+                    compact = true,
+                )
+                Spacer(Modifier.height(8.dp))
                 MagiTvActionButton(
                     label = "诊断",
                     onClick = onOpenDiagnostics,

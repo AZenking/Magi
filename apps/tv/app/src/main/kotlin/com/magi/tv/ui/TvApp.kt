@@ -54,6 +54,8 @@ fun TvApp(appContainer: AppContainer) {
     )
 
     var showDiagnostics by remember { mutableStateOf(false) }
+    var showReconfigure by remember { mutableStateOf(false) }
+
     if (showDiagnostics) {
         val diagnosticsViewModel: DiagnosticsViewModel = viewModel(
             factory = DiagnosticsViewModel.factory(appContainer.diagnosticsRepository),
@@ -64,8 +66,19 @@ fun TvApp(appContainer: AppContainer) {
         return
     }
 
+    if (showReconfigure) {
+        val setupViewModel: SetupViewModel = viewModel(
+            factory = SetupViewModel.factory(appContainer.saveConnectionSettings),
+        )
+        val setupState by setupViewModel.uiState.collectAsStateWithLifecycle()
+        androidx.activity.compose.BackHandler { showReconfigure = false }
+        SetupScreen(state = setupState, onAction = setupViewModel::onAction)
+        return
+    }
+
     LivePlaybackScreen(
         viewModel = liveViewModel,
         onOpenDiagnostics = { showDiagnostics = true },
+        onReconfigure = { showReconfigure = true },
     )
 }

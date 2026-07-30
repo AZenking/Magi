@@ -42,8 +42,9 @@ data class Programme(
     val channelId: String,
     val title: String?,
     val subTitle: String?,
-    val startAt: String,
-    val stopAt: String,
+    /** Epoch milliseconds. Parsed once in the data layer (Instant.parse). */
+    val startAt: Long,
+    val stopAt: Long,
     val category: String?,
 )
 

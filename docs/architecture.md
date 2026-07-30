@@ -179,6 +179,39 @@ TV客户端
 播放器
 ```
 
+技术边界：
+
+```txt
+Compose UI / ViewModel
+        ↓
+UseCase / Domain Port
+        ↓
+Data Repository / Platform Adapter
+        ↓
+Retrofit / DataStore / Media3
+```
+
+规则：
+
+- `domain/` 不依赖 Android、Compose、Retrofit、DataStore 或 Media3。
+- UI/ViewModel 不直接依赖 `data/` 具体类；最后频道、设置、诊断、播放器均通过
+  domain/application 接口或 UseCase。
+- Retrofit DTO 只存在于 data 层，并映射为 domain model。开放接口的跨语言真相源是
+  `/api/open.json`，不是手工复制的 TypeScript/Kotlin 接口。
+- Media3 播放器只有一个生命周期所有者。换台复用播放器，并拒绝旧请求或旧回调覆盖
+  新频道状态。
+- Composable 只渲染 `UiState` 与发送用户意图，不直接访问 MediaCodec、网络或存储。
+
+交互与可靠性：
+
+- 所有核心流程只依赖 D-pad、OK 和 Back；页面、侧栏、弹层必须定义初始焦点与恢复焦点。
+- Back 顺序固定为最上层弹层/侧栏、信息层、上一页面、退出应用。
+- 播放状态必须显式区分线路解析、缓冲、首帧、线路切换、可恢复错误和终止错误。
+- 配置保存前验证服务端与 API Key；应用内始终保留重新配置入口。
+- API Key 使用 Android Keystore 支持的加密存储，诊断与日志不得包含明文凭据或完整流地址。
+- 关键正文不小于 16sp、辅助正文不小于 14sp、交互目标不小于 48dp；焦点反馈不能只依赖颜色。
+- 焦点、Back 或播放链路变更必须通过模拟器与真实遥控器设备验收。
+
 ---
 
 # Shared Packages

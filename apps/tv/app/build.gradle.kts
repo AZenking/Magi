@@ -29,6 +29,7 @@ android {
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -60,7 +61,12 @@ dependencies {
     // components). Mixed with TV material3 for the focus/surface components.
     implementation("androidx.compose.material3:material3")
     // Coil for remote image loading (channel logos from the open API).
+    // Coil 3 splits out network support — coil-network is REQUIRED to load
+    // https:// URLs; without it AsyncImage silently fails (no error, no success).
     implementation("io.coil-kt.coil3:coil-compose:3.0.4")
+    implementation("io.coil-kt.coil3:coil-network-okhttp:3.0.4")
+    // Encrypted credential storage backed by Android Keystore (constitution VIII).
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     // Media3 / ExoPlayer — present on the classpath; full playback wiring lands
@@ -80,4 +86,7 @@ dependencies {
 
     testImplementation(kotlin("test"))
     testImplementation("junit:junit:4.13.2")
+
+    // Core library desugaring — enables java.time (Instant/LocalDate/ZoneId) on minSdk 23.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.3")
 }

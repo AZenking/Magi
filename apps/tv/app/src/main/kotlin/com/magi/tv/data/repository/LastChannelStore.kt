@@ -28,6 +28,7 @@ class LastChannelStore(context: Context) {
         store.edit { it[key] = channelId }
     }
 
+    /** Clear a stale last-channel record (e.g. channel no longer visible). */
     suspend fun clear() {
         store.edit { it.remove(key) }
     }

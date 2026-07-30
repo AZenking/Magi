@@ -1,4 +1,4 @@
-import { eq, and, sql, ilike, inArray } from "drizzle-orm";
+import { eq, and, sql, ilike, inArray, asc, isNull } from "drizzle-orm";
 import type { ICanonicalChannelRepository, CanonicalChannel, EpgStatus, OutputStatus, ChannelLifecycle } from "@/domain/output-composition";
 import { db } from "./connection";
 import { canonicalChannels } from "./schema";
@@ -40,8 +40,16 @@ export class CanonicalChannelRepository implements ICanonicalChannelRepository {
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
+    // Stable ordering so multi-page clients never see duplicates or gaps:
+    // channelNumber ASC NULLS LAST → standardName ASC → id ASC.
+    const orderBy = [
+      sql`${canonicalChannels.channelNumber} ASC NULLS LAST`,
+      asc(canonicalChannels.standardName),
+      asc(canonicalChannels.id),
+    ];
+
     const [items, countResult] = await Promise.all([
-      db.select().from(canonicalChannels).where(where).limit(pageSize).offset((page - 1) * pageSize),
+      db.select().from(canonicalChannels).where(where).orderBy(...orderBy).limit(pageSize).offset((page - 1) * pageSize),
       db.select({ count: sql<number>`count(*)::int` }).from(canonicalChannels).where(where),
     ]);
 
@@ -100,13 +108,15 @@ export class CanonicalChannelRepository implements ICanonicalChannelRepository {
   }
 
   async findGroups(): Promise<{ name: string; count: number }[]> {
+    // Count only active channels — same lifecycle scope as the open channels
+    // endpoint, so group counts match what the TV actually sees.
     const rows = await db
       .select({
         name: canonicalChannels.standardGroup,
         count: sql<number>`count(*)::int`,
       })
       .from(canonicalChannels)
-      .where(eq(canonicalChannels.hidden, false))
+      .where(eq(canonicalChannels.lifecycle, "active"))
       .groupBy(canonicalChannels.standardGroup);
     return rows.map((r) => ({ name: r.name ?? "未分组", count: r.count }));
   }

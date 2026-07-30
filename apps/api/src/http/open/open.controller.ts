@@ -75,7 +75,7 @@ export class OpenApiController {
     if (!parsed.success) {
       throw new BadRequestException({ code: "validation-failed", detail: parsed.error.flatten() });
     }
-    const { items } = await this.findChannels.execute({
+    const { items, total } = await this.findChannels.execute({
       page: parsed.data.page,
       pageSize: parsed.data.pageSize,
       group: parsed.data.group,
@@ -86,14 +86,16 @@ export class OpenApiController {
     // Double-guard with shouldBeInOutput() (FR-011) in case lifecycle is unset.
     const visible = items.filter((ch) => new CanonicalChannelModel(ch).shouldBeInOutput());
     const mapped = visible.map(toChannelVo);
+    // Return the REAL total (across all pages), not the current-page length,
+    // so multi-page clients can discover subsequent pages.
     return {
       success: true,
       data: {
         items: mapped,
-        total: mapped.length,
+        total,
         page: parsed.data.page,
         pageSize: parsed.data.pageSize,
-        totalPages: Math.ceil(mapped.length / parsed.data.pageSize) || 1,
+        totalPages: Math.ceil(total / parsed.data.pageSize) || 1,
       },
     };
   }

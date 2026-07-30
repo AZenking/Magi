@@ -299,7 +299,9 @@ fun MagiTvStatusBadge(
         Text(
             text = label,
             color = Color.White,
-            fontSize = 10.sp,
+            // Non-key label (e.g. "LIVE"); constitution VIII allows <14sp for
+            // non-critical tags with explicit justification.
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
         )

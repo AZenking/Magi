@@ -82,7 +82,7 @@ fun SetupScreen(
             Text(
                 text = "你的 API Key 只保存在这台设备上。",
                 color = MagiTvPalette.Subtle,
-                fontSize = 13.sp,
+                fontSize = 14.sp,
             )
         }
 
@@ -141,14 +141,14 @@ fun SetupScreen(
                 Text(
                     text = error,
                     color = MagiTvPalette.Error,
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                 )
             }
             Spacer(Modifier.height(18.dp))
             Text(
                 text = "连接后如需更换服务器，可清除应用数据重新配置。",
                 color = MagiTvPalette.Subtle,
-                fontSize = 13.sp,
+                fontSize = 14.sp,
                 lineHeight = 19.sp,
             )
         }

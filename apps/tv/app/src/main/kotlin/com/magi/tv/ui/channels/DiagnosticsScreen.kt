@@ -143,7 +143,7 @@ fun DiagnosticsScreen(
                 Text(
                     text = "诊断信息仅包含设备能力、错误分类与脱敏线路 ID，不记录播放地址或 API Key。",
                     color = MagiTvPalette.Subtle,
-                    fontSize = 11.sp,
+                    fontSize = 14.sp,
                     lineHeight = 16.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -170,7 +170,7 @@ fun DiagnosticsScreen(
                     Text(
                         text = "最多保留 50 条",
                         color = MagiTvPalette.Subtle,
-                        fontSize = 12.sp,
+                        fontSize = 14.sp,
                     )
                 }
                 Spacer(Modifier.height(16.dp))
@@ -255,7 +255,7 @@ private fun DiagnosticStatCard(
             Text(
                 text = label,
                 color = MagiTvPalette.Muted,
-                fontSize = 12.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
             )
             Spacer(Modifier.height(4.dp))
@@ -270,7 +270,7 @@ private fun DiagnosticStatCard(
             Text(
                 text = hint,
                 color = MagiTvPalette.Subtle,
-                fontSize = 11.sp,
+                fontSize = 14.sp,
                 maxLines = 1,
             )
         }
@@ -308,7 +308,7 @@ private fun DecoderCapabilityRow(
         Text(
             text = if (supported) "支持" else "不支持",
             color = if (supported) MagiTvPalette.Success else MagiTvPalette.Error,
-            fontSize = 13.sp,
+            fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
         )
     }
@@ -346,14 +346,14 @@ private fun DiagnosticEventRow(event: DiagnosticEvent) {
                 Text(
                     text = time,
                     color = MagiTvPalette.Subtle,
-                    fontSize = 11.sp,
+                    fontSize = 14.sp,
                 )
             }
             Spacer(Modifier.height(4.dp))
             Text(
                 text = event.message,
                 color = MagiTvPalette.Muted,
-                fontSize = 12.sp,
+                fontSize = 14.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -362,7 +362,7 @@ private fun DiagnosticEventRow(event: DiagnosticEvent) {
         Text(
             text = event.lineStreamId?.take(12) ?: "无线路 ID",
             color = MagiTvPalette.Subtle,
-            fontSize = 11.sp,
+            fontSize = 14.sp,
             maxLines = 1,
         )
     }

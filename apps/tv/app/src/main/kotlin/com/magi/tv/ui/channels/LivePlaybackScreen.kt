@@ -44,12 +44,15 @@ import kotlinx.coroutines.delay
 fun LivePlaybackScreen(
     viewModel: LivePlaybackViewModel,
     onOpenDiagnostics: () -> Unit,
+    onReconfigure: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val playerState by viewModel.session.state.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val stats by viewModel.session.stats.collectAsStateWithLifecycle()
 
     var showInfo by remember { mutableStateOf(false) }
+    var showStats by remember { mutableStateOf(false) }
     var showSideSheet by remember { mutableStateOf(false) }
     val playerFocus = remember { FocusRequester() }
     val context = LocalContext.current
@@ -70,14 +73,48 @@ fun LivePlaybackScreen(
     // (don't wait for a channel item to gain focus — focus may stay on the player).
     LaunchedEffect(showSideSheet) {
         if (showSideSheet && playerState.channelId.isNotBlank()) {
-            viewModel.loadGuide(playerState.channelId)
+            viewModel.onChannelFocused(playerState.channelId)
         }
     }
 
-    // P0 #2: Back key — close sheet → close info → exit app (priority order).
-    BackHandler(enabled = showSideSheet || showInfo) {
+    // pendingTune: close the side sheet only when the EXACT tuned channel
+    // reaches its first frame. Both ids are "magi:xxx" (from the open API),
+    // so compare directly — no prefix stripping.
+    LaunchedEffect(playerState.channelId, playerState.firstFrameMs, uiState.pendingTuneChannelId) {
+        val pending = uiState.pendingTuneChannelId
+        if (pending != null &&
+            playerState.channelId == pending &&
+            playerState.firstFrameMs != null &&
+            playerState.terminalError == null
+        ) {
+            viewModel.onTuneSucceeded()
+            showSideSheet = false
+        }
+    }
+
+    // Poll derived stats (buffer health + state) while the stats panel is open.
+    // Event-driven fields arrive via the AnalyticsListener; this only refreshes
+    // the values that must be read live from the player.
+    LaunchedEffect(showStats) {
+        while (showStats) {
+            viewModel.session.refreshDerivedStats()
+            delay(500)
+        }
+    }
+
+    // Back key — close sheet → close stats → close info → exit. When closing a
+    // sheet/panel, explicitly restore focus to the player (constitution VIII:
+    // deterministic focus).
+    BackHandler(enabled = showSideSheet || showStats || showInfo) {
         when {
-            showSideSheet -> showSideSheet = false
+            showSideSheet -> {
+                showSideSheet = false
+                runCatching { playerFocus.requestFocus() }
+            }
+            showStats -> {
+                showStats = false
+                runCatching { playerFocus.requestFocus() }
+            }
             showInfo -> showInfo = false
         }
     }
@@ -98,16 +135,27 @@ fun LivePlaybackScreen(
                     Key.DirectionDown -> {
                         if (showSideSheet) false else { viewModel.switchBy(1); true }
                     }
-                    // Toggle the channel+EPG side sheet.
+                    // Toggle the side sheet ONLY when closed. When open, Left
+                    // must fall through to the sheet (programme area uses Left
+                    // to return to the channel column — P0 fix).
                     Key.DirectionLeft -> {
-                        showSideSheet = !showSideSheet
-                        showInfo = false
-                        true
+                        if (showSideSheet) false else {
+                            showSideSheet = true
+                            showInfo = false
+                            true
+                        }
                     }
-                    // Toggle the info overlay (unless the sheet is open — then OK
-                    // selects a channel inside the sheet and isn't consumed here).
+                    // OK/Enter: toggle the info overlay ONLY when it's closed.
+                    // Once open, OK must fall through to the focused button inside
+                    // the overlay (统计 / 诊断) so it can be activated. Closing the
+                    // overlay is done via Back. The side sheet handles its own OK.
                     Key.DirectionCenter, Key.Enter -> {
-                        if (showSideSheet) false else { showInfo = !showInfo; true }
+                        when {
+                            showSideSheet -> false
+                            showStats -> false
+                            showInfo -> false
+                            else -> { showInfo = true; true }
+                        }
                     }
                     else -> false
                 }
@@ -115,25 +163,39 @@ fun LivePlaybackScreen(
             .focusable(),
     ) {
         // 1. The persistent video surface.
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    player = viewModel.session.player()
+        // CRITICAL: The PlayerView is created ONCE via remember { } and reused
+        // across recompositions. This prevents Compose from spawning multiple
+        // PlayerView instances (each attaching its own surface to the same
+        // ExoPlayer → double/triple video layers). The player is attached in
+        // a DisposableEffect (not in factory) so it survives recomposition.
+        val playerView = remember {
+            android.widget.FrameLayout(context).let { frame ->
+                PlayerView(frame.context).apply {
                     useController = false
                     setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+                    // Player attached via DisposableEffect below, not here.
                 }
-            },
+            }
+        }
+        val playerInstance = viewModel.session.player()
+        androidx.compose.runtime.DisposableEffect(playerInstance) {
+            playerView.player = playerInstance
+            onDispose { playerView.player = null }
+        }
+        AndroidView(
+            factory = { playerView },
             modifier = Modifier.fillMaxSize(),
         )
 
         // 2. Loading / error overlays (only when not playing).
+        val terminalErr = playerState.terminalError
         when {
-            playerState.terminalError != null -> PlayerErrorOverlay(
-                message = playerState.terminalError.orEmpty(),
+            terminalErr != null -> PlayerErrorOverlay(
+                message = terminalErr,
                 modifier = Modifier.align(Alignment.Center),
             )
             uiState.catalogError != null -> PlayerErrorOverlay(
-                message = uiState.catalogError.orEmpty(),
+                message = uiState.catalogError!!.message,
                 modifier = Modifier.align(Alignment.Center),
             )
             uiState.loading || playerState.firstFrameMs == null || playerState.switching ->
@@ -157,6 +219,10 @@ fun LivePlaybackScreen(
                         showInfo = false
                         onOpenDiagnostics()
                     },
+                    onOpenStats = {
+                        showInfo = false
+                        showStats = true
+                    },
                 )
             }
         }
@@ -164,15 +230,33 @@ fun LivePlaybackScreen(
         // 4. Channel + EPG side sheet (toggled by Left).
         ChannelEpgSideSheet(
             visible = showSideSheet,
-            channels = uiState.channels,
+            channels = viewModel.displayedChannelList(),
+            groups = uiState.groups,
+            selectedGroup = uiState.selectedGroup,
             currentChannelId = playerState.channelId,
+            currentChannelName = playerState.channelName,
             guide = uiState.guide,
             guideLoading = uiState.guideLoading,
-            onSelectChannel = { channel ->
-                viewModel.switchToChannel(channel)
-                showSideSheet = false
+            guideError = uiState.guideError,
+            guideStale = uiState.guideStale,
+            selectedDate = uiState.selectedDate,
+            onSelectGroup = { viewModel.selectGroup(it) },
+            onSelectDate = { viewModel.selectDate(it) },
+            onSelectChannel = { channel -> viewModel.requestTune(channel) },
+            onPlayCurrent = { viewModel.tuneCurrent() },
+            onChannelFocused = { channel -> viewModel.onChannelFocused(channel.id) },
+            onReconfigure = onReconfigure,
+            modifier = Modifier.fillMaxSize(),
+        )
+
+        // 5. Real-time "Stats for nerds" panel (opened from the info overlay).
+        PlaybackStatsPanel(
+            visible = showStats,
+            stats = stats,
+            onDismiss = {
+                showStats = false
+                runCatching { playerFocus.requestFocus() }
             },
-            onChannelFocused = { channel -> viewModel.loadGuide(channel.id) },
             modifier = Modifier.fillMaxSize(),
         )
     }
