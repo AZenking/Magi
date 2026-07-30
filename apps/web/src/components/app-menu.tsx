@@ -7,6 +7,7 @@ import {
   DesktopOutlined,
   FolderOpenOutlined,
   GlobalOutlined,
+  KeyOutlined,
   LinkOutlined,
   ProfileOutlined,
   ScheduleOutlined,
@@ -139,6 +140,20 @@ const NAV_SECTIONS: NavSection[] = [
     rootPath: "/dashboard/audit",
     prefixes: ["/dashboard/audit"],
     children: [],
+  },
+  {
+    id: "open-api",
+    label: "开放接口",
+    icon: <KeyOutlined />,
+    rootPath: "/dashboard/api-keys",
+    prefixes: ["/dashboard/api-keys"],
+    children: [
+      {
+        key: "/dashboard/api-keys",
+        label: "API Keys",
+        icon: <KeyOutlined />,
+      },
+    ],
   },
 ];
 
