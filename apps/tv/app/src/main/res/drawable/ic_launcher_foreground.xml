@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Simple "M" placeholder for Magi TV launcher icon. -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,78 L30,30 L42,30 L54,52 L66,30 L78,30 L78,78 L68,78 L68,46 L58,64 L50,64 L40,46 L40,78 Z" />
+</vector>
