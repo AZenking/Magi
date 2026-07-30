@@ -89,6 +89,7 @@ fun ChannelEpgSideSheet(
     guideLoading: Boolean,
     guideError: TvError?,
     guideStale: Boolean,
+    tuneError: String?,
     selectedDate: LocalDate,
     onSelectGroup: (String?) -> Unit,
     onSelectDate: (LocalDate) -> Unit,
@@ -129,6 +130,7 @@ fun ChannelEpgSideSheet(
                     selectedDate = selectedDate,
                     onSelectDate = onSelectDate,
                     currentChannelName = currentChannelName,
+                    tuneError = tuneError,
                     nowMs = nowMs,
                 )
 
@@ -172,6 +174,7 @@ private fun TopHeader(
     selectedDate: LocalDate,
     onSelectDate: (LocalDate) -> Unit,
     currentChannelName: String?,
+    tuneError: String?,
     nowMs: Long,
     modifier: Modifier = Modifier,
 ) {
@@ -206,6 +209,17 @@ private fun TopHeader(
         ) {
             Text("正在播放：${currentChannelName ?: "—"}",
                 color = MagiTvPalette.Primary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            if (tuneError != null) {
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = "⚠ 切换失败：$tuneError",
+                    color = MagiTvPalette.Error,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
         androidx.compose.foundation.lazy.LazyRow(
             horizontalArrangement = Arrangement.spacedBy(4.dp),

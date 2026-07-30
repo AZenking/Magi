@@ -53,6 +53,11 @@ data class LivePlaybackUiState(
      *  Using channelId (not Boolean) prevents an OLD channel's firstFrame from
      *  satisfying the close condition for a NEW channel. */
     val pendingTuneChannelId: String? = null,
+    /** When a tune initiated from the side sheet fails asynchronously (e.g.
+     *  ExoPlayer 404 / timeout after switchChannel returned), this holds the
+     *  error message so the side sheet can show it instead of silently
+     *  hanging. Cleared on the next tune attempt. */
+    val tuneError: String? = null,
 )
 
 /** A cache entry for EPG: programmes + expiry timestamp. */
@@ -100,6 +105,24 @@ class LivePlaybackViewModel(
 
     init {
         loadCatalogAndResume()
+        // Watch for asynchronous playback failures (e.g. ExoPlayer 404 / timeout).
+        // When the player reports a terminalError while a tune from the side
+        // sheet is pending, clear the pending id and surface the error so the
+        // sheet doesn't hang silently.
+        viewModelScope.launch {
+            session.state.collect { playerState ->
+                val pending = mutableUiState.value.pendingTuneChannelId
+                if (pending != null &&
+                    playerState.terminalError != null &&
+                    playerState.channelId == pending
+                ) {
+                    mutableUiState.value = mutableUiState.value.copy(
+                        pendingTuneChannelId = null,
+                        tuneError = playerState.terminalError,
+                    )
+                }
+            }
+        }
     }
 
     /** Derived channel list for the side sheet (group-filtered). */
@@ -179,13 +202,27 @@ class LivePlaybackViewModel(
     }
 
     /**
+     * Tune to the channel that currently has focus in the side sheet. Used by
+     * the OK key handler when the sheet is open (the parent's onPreviewKeyEvent
+     * can't always route OK to the LazyColumn item, so we drive it from here).
+     */
+    fun tuneFocusedChannel() {
+        val focusedId = mutableUiState.value.focusedChannelId ?: return
+        val channel = mutableUiState.value.allChannels.find { it.id == focusedId } ?: return
+        requestTune(channel)
+    }
+
+    /**
      * User pressed OK on a channel in the side sheet: set pendingTune, switch
      * playback, but do NOT close the sheet yet — the screen closes it only when
      * the new channel reaches its first frame (constitution VIII: failed tune
      * keeps the sheet open for retry).
      */
     fun requestTune(channel: Channel) {
-        mutableUiState.value = mutableUiState.value.copy(pendingTuneChannelId = channel.id)
+        mutableUiState.value = mutableUiState.value.copy(
+            pendingTuneChannelId = channel.id,
+            tuneError = null, // clear previous failure
+        )
         switchToChannel(channel)
     }
 

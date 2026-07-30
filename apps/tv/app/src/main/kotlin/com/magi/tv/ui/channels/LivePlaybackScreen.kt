@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -25,6 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.ui.PlayerView
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
 /**
@@ -52,7 +54,6 @@ fun LivePlaybackScreen(
     val stats by viewModel.session.stats.collectAsStateWithLifecycle()
 
     var showInfo by remember { mutableStateOf(false) }
-    var showStats by remember { mutableStateOf(false) }
     var showSideSheet by remember { mutableStateOf(false) }
     val playerFocus = remember { FocusRequester() }
     val context = LocalContext.current
@@ -92,27 +93,22 @@ fun LivePlaybackScreen(
         }
     }
 
-    // Poll derived stats (buffer health + state) while the stats panel is open.
+    // Poll derived stats (buffer health + state) for the always-on HUD.
     // Event-driven fields arrive via the AnalyticsListener; this only refreshes
     // the values that must be read live from the player.
-    LaunchedEffect(showStats) {
-        while (showStats) {
+    LaunchedEffect(Unit) {
+        while (true) {
             viewModel.session.refreshDerivedStats()
             delay(500)
         }
     }
 
-    // Back key — close sheet → close stats → close info → exit. When closing a
-    // sheet/panel, explicitly restore focus to the player (constitution VIII:
-    // deterministic focus).
-    BackHandler(enabled = showSideSheet || showStats || showInfo) {
+    // Back key — close sheet → close info → exit. When closing the sheet,
+    // explicitly restore focus to the player (constitution VIII: deterministic focus).
+    BackHandler(enabled = showSideSheet || showInfo) {
         when {
             showSideSheet -> {
                 showSideSheet = false
-                runCatching { playerFocus.requestFocus() }
-            }
-            showStats -> {
-                showStats = false
                 runCatching { playerFocus.requestFocus() }
             }
             showInfo -> showInfo = false
@@ -145,15 +141,15 @@ fun LivePlaybackScreen(
                             true
                         }
                     }
-                    // OK/Enter: toggle the info overlay ONLY when it's closed.
-                    // Once open, OK must fall through to the focused button inside
-                    // the overlay (统计 / 诊断) so it can be activated. Closing the
-                    // overlay is done via Back. The side sheet handles its own OK.
+                    // OK/Enter: when the side sheet is open, tune to the focused
+                    // channel (the parent onPreviewKeyEvent can't reliably route
+                    // OK to the LazyColumn item inside AnimatedVisibility, so we
+                    // drive it from here using focusedChannelId). When the sheet
+                    // is closed, toggle the info overlay.
                     Key.DirectionCenter, Key.Enter -> {
                         when {
-                            showSideSheet -> false
-                            showStats -> false
-                            showInfo -> false
+                            showSideSheet -> { viewModel.tuneFocusedChannel(); true }
+                            showInfo -> false // fall through to overlay buttons
                             else -> { showInfo = true; true }
                         }
                     }
@@ -219,10 +215,6 @@ fun LivePlaybackScreen(
                         showInfo = false
                         onOpenDiagnostics()
                     },
-                    onOpenStats = {
-                        showInfo = false
-                        showStats = true
-                    },
                 )
             }
         }
@@ -239,6 +231,7 @@ fun LivePlaybackScreen(
             guideLoading = uiState.guideLoading,
             guideError = uiState.guideError,
             guideStale = uiState.guideStale,
+            tuneError = uiState.tuneError,
             selectedDate = uiState.selectedDate,
             onSelectGroup = { viewModel.selectGroup(it) },
             onSelectDate = { viewModel.selectDate(it) },
@@ -249,15 +242,12 @@ fun LivePlaybackScreen(
             modifier = Modifier.fillMaxSize(),
         )
 
-        // 5. Real-time "Stats for nerds" panel (opened from the info overlay).
-        PlaybackStatsPanel(
-            visible = showStats,
+        // 5. Always-on "Stats for nerds" HUD (top-right, YouTube-style debug).
+        PlaybackStatsHud(
             stats = stats,
-            onDismiss = {
-                showStats = false
-                runCatching { playerFocus.requestFocus() }
-            },
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(16.dp),
         )
     }
 }
