@@ -1,9 +1,15 @@
 # Android TV 建设前的管理端准备清单
 
 > 文档状态：规划与进度评估  
-> 更新日期：2026-07-28  
+> 更新日期：2026-07-29  
 > 适用范围：以 Magi Server 为后台的 Android TV 直播客户端  
 > 本文只描述管理端与服务端准备，不涉及 Android 端代码实现。
+
+> **进度更新（2026-07-29）**：已完成通用**开放接口平台**（[`specs/005-open-channels-epg-api`](../specs/005-open-channels-epg-api/spec.md)）。
+> 任意客户端（含 Android TV、第三方、脚本）可凭管理员签发的 **API key** 只读访问频道列表与节目单（`/api/open/v1/*`），
+> 鉴权与后台 Session 物理隔离，附带 OpenAPI 契约（`/api/docs`、`/api/open.json`）。
+> 这覆盖了下文 §3.1「独立只读客户端 API」的数据读取与鉴权基础；但 TV 专属的配对流程、播放决策、Bootstrap 配置、
+> 版本管理、用户状态等仍属于待建设项。Android TV 客户端可直接作为开放接口的消费者先行验证。
 
 ## 1. 结论
 
