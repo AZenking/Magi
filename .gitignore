@@ -41,6 +41,9 @@ coverage/
 # CodeGraph
 .codegraph/
 
+# ZCode tooling
+.zcode/
+
 # Docker
 docker/.env
 .data/
