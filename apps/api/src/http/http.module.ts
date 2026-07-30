@@ -9,8 +9,10 @@ import { DashboardModule } from "./dashboard/dashboard.module";
 import { OperationModule } from "./operation/operation.module";
 import { BackupAuditModule } from "./backup/backup.module";
 import { AuditModule } from "./audit/audit.module";
+import { ApiKeyModule } from "./api-key/api-key.module";
+import { OpenModule } from "./open/open.module";
 
 @Module({
-  imports: [AuditModule, DashboardModule, ChannelModule, ProgrammeModule, TaskModule, SourceModule, OutputModule, EpgModule, OperationModule, BackupAuditModule],
+  imports: [AuditModule, DashboardModule, ChannelModule, ProgrammeModule, TaskModule, SourceModule, OutputModule, EpgModule, OperationModule, BackupAuditModule, ApiKeyModule, OpenModule],
 })
 export class HttpModule {}

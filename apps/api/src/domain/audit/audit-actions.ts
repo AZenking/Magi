@@ -47,6 +47,13 @@ export const AUDIT_ACTIONS = {
     create: "backup.create",
     download: "backup.download",
   },
+  apiKey: {
+    create: "api_key.created",
+    disable: "api_key.disabled",
+    enable: "api_key.enabled",
+    revoke: "api_key.revoked",
+    delete: "api_key.deleted",
+  },
 } as const;
 
 export function changedFieldNames(value: object): string[] {

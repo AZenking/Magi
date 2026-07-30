@@ -93,5 +93,16 @@ import { TaskModule } from "../task/task.module";
     EnqueueSyncUseCase,
     LogoUploadService,
   ],
+  // Expose the read-only use-cases consumed by the Open API module
+  // (005-open-channels-epg-api). They are pure @Injectable query objects with
+  // no mutation surface, so reuse is safe.
+  exports: [
+    FindCanonicalChannelsUseCase,
+    FindOutputChannelDetailUseCase,
+    FindOutputGuideUseCase,
+    // Repo tokens consumed by ResolvePlaybackUseCase (playback endpoint).
+    "CANONICAL_CHANNEL_REPOSITORY",
+    "CHANNEL_STREAM_REPOSITORY",
+  ],
 })
 export class OutputModule {}

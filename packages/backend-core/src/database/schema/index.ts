@@ -31,3 +31,6 @@ export { sourceChannelIdentityAliases } from "./source-channel-identity-aliases"
 export { scheduledJobConfigs } from "./scheduled-job-configs";
 export { configBackups } from "./config-backups";
 export { channelFailoverPolicies } from "./channel-failover-policies";
+
+// New: Open API client credentials (005-open-channels-epg-api).
+export { apiKeys } from "./api-keys";

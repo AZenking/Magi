@@ -22,6 +22,13 @@
       "when": 1785227366939,
       "tag": "0002_tense_zodiak",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785298639480,
+      "tag": "0003_salty_vanisher",
+      "breakpoints": true
     }
   ]
 }

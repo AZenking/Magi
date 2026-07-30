@@ -210,3 +210,77 @@ export interface TaskVo {
   jobDetail?: TaskJobDetailVo;
   createdAt: string;
 }
+
+// --- Open API (005-open-channels-epg-api) ---
+// Read-only product-view projections served by /api/open/v1/*. These expose
+// ONLY the public product fields (FR-012): never streamUrl, sourceId, health,
+// or internal lifecycle. Channel `id` is the stable `magi:{canonicalId}` form.
+
+/** Channel group with visible-channel count. */
+export interface OpenGroupVo {
+  name: string | null;
+  count: number;
+}
+
+/** Product-view channel. `id` is `magi:{canonicalId}`. */
+export interface OpenChannelVo {
+  id: string;
+  name: string;
+  group: string | null;
+  logo: string | null;
+  channelNumber: number | null;
+}
+
+/** Product-view programme. `channelId` is `magi:{canonicalId}`. */
+export interface OpenProgrammeVo {
+  channelId: string;
+  title: string | null;
+  subTitle: string | null;
+  startAt: string;
+  stopAt: string;
+  category: string | null;
+}
+
+/**
+ * Playback decision for a channel (005-open-channels-epg-api playback endpoint).
+ *
+ * Unlike the channel list (FR-012 hides URLs), this IS the playback surface, so
+ * line URLs are exposed — but ONLY the playable endpoint + format + health, never
+ * sourceId/sourceName/admin fields. `primary` is the server-chosen best line;
+ * `fallbacks` is the ordered rest for client-side failover (roadmap §10.3).
+ */
+export interface OpenPlaybackLineVo {
+  streamId: string;
+  url: string;
+  format: string | null;
+  health: string;
+}
+
+export interface OpenPlaybackVo {
+  channelId: string;
+  playable: boolean;
+  primary: OpenPlaybackLineVo | null;
+  fallbacks: OpenPlaybackLineVo[];
+  /** When this decision should be re-fetched (ISO 8601). */
+  decisionExpiresAt: string;
+  /** "direct" = client connects upstream directly (roadmap §10.1 default). */
+  deliveryMode: "direct";
+}
+
+/** API key list item — NEVER contains the plaintext key or hash (FR-003). */
+export interface ApiKeyVo {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  status: "active" | "disabled" | "revoked";
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+
+/** API key creation result — the ONLY response that includes the plaintext key (FR-001). */
+export interface ApiKeyCreatedVo extends ApiKeyVo {
+  /** Plaintext key. Shown once; never retrievable again. */
+  key: string;
+}
