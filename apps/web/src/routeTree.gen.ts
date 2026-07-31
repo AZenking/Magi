@@ -15,8 +15,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
 import { Route as DashboardOutputGuideRouteImport } from './routes/dashboard/output-guide'
 import { Route as DashboardOutputAddressesRouteImport } from './routes/dashboard/output-addresses'
+import { Route as DashboardOauthClientsRouteImport } from './routes/dashboard/oauth-clients'
 import { Route as DashboardEpgMatchingRouteImport } from './routes/dashboard/epg-matching'
-import { Route as DashboardApiKeysRouteImport } from './routes/dashboard/api-keys'
 import { Route as DashboardTasksIndexRouteImport } from './routes/dashboard/tasks/index'
 import { Route as DashboardChannelsIndexRouteImport } from './routes/dashboard/channels/index'
 import { Route as DashboardBackupsIndexRouteImport } from './routes/dashboard/backups/index'
@@ -59,14 +59,14 @@ const DashboardOutputAddressesRoute =
     path: '/output-addresses',
     getParentRoute: () => DashboardRoute,
   } as any)
+const DashboardOauthClientsRoute = DashboardOauthClientsRouteImport.update({
+  id: '/oauth-clients',
+  path: '/oauth-clients',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardEpgMatchingRoute = DashboardEpgMatchingRouteImport.update({
   id: '/epg-matching',
   path: '/epg-matching',
-  getParentRoute: () => DashboardRoute,
-} as any)
-const DashboardApiKeysRoute = DashboardApiKeysRouteImport.update({
-  id: '/api-keys',
-  path: '/api-keys',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardTasksIndexRoute = DashboardTasksIndexRouteImport.update({
@@ -127,8 +127,8 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/login': typeof LoginRoute
-  '/dashboard/api-keys': typeof DashboardApiKeysRoute
   '/dashboard/epg-matching': typeof DashboardEpgMatchingRoute
+  '/dashboard/oauth-clients': typeof DashboardOauthClientsRoute
   '/dashboard/output-addresses': typeof DashboardOutputAddressesRoute
   '/dashboard/output-guide': typeof DashboardOutputGuideRoute
   '/dashboard/': typeof DashboardIndexRoute
@@ -146,8 +146,8 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/dashboard/api-keys': typeof DashboardApiKeysRoute
   '/dashboard/epg-matching': typeof DashboardEpgMatchingRoute
+  '/dashboard/oauth-clients': typeof DashboardOauthClientsRoute
   '/dashboard/output-addresses': typeof DashboardOutputAddressesRoute
   '/dashboard/output-guide': typeof DashboardOutputGuideRoute
   '/dashboard': typeof DashboardIndexRoute
@@ -167,8 +167,8 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/login': typeof LoginRoute
-  '/dashboard/api-keys': typeof DashboardApiKeysRoute
   '/dashboard/epg-matching': typeof DashboardEpgMatchingRoute
+  '/dashboard/oauth-clients': typeof DashboardOauthClientsRoute
   '/dashboard/output-addresses': typeof DashboardOutputAddressesRoute
   '/dashboard/output-guide': typeof DashboardOutputGuideRoute
   '/dashboard/': typeof DashboardIndexRoute
@@ -189,8 +189,8 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/login'
-    | '/dashboard/api-keys'
     | '/dashboard/epg-matching'
+    | '/dashboard/oauth-clients'
     | '/dashboard/output-addresses'
     | '/dashboard/output-guide'
     | '/dashboard/'
@@ -208,8 +208,8 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
-    | '/dashboard/api-keys'
     | '/dashboard/epg-matching'
+    | '/dashboard/oauth-clients'
     | '/dashboard/output-addresses'
     | '/dashboard/output-guide'
     | '/dashboard'
@@ -228,8 +228,8 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/login'
-    | '/dashboard/api-keys'
     | '/dashboard/epg-matching'
+    | '/dashboard/oauth-clients'
     | '/dashboard/output-addresses'
     | '/dashboard/output-guide'
     | '/dashboard/'
@@ -295,18 +295,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardOutputAddressesRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/oauth-clients': {
+      id: '/dashboard/oauth-clients'
+      path: '/oauth-clients'
+      fullPath: '/dashboard/oauth-clients'
+      preLoaderRoute: typeof DashboardOauthClientsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/epg-matching': {
       id: '/dashboard/epg-matching'
       path: '/epg-matching'
       fullPath: '/dashboard/epg-matching'
       preLoaderRoute: typeof DashboardEpgMatchingRouteImport
-      parentRoute: typeof DashboardRoute
-    }
-    '/dashboard/api-keys': {
-      id: '/dashboard/api-keys'
-      path: '/api-keys'
-      fullPath: '/dashboard/api-keys'
-      preLoaderRoute: typeof DashboardApiKeysRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/tasks/': {
@@ -383,8 +383,8 @@ declare module '@tanstack/react-router' {
 }
 
 interface DashboardRouteChildren {
-  DashboardApiKeysRoute: typeof DashboardApiKeysRoute
   DashboardEpgMatchingRoute: typeof DashboardEpgMatchingRoute
+  DashboardOauthClientsRoute: typeof DashboardOauthClientsRoute
   DashboardOutputAddressesRoute: typeof DashboardOutputAddressesRoute
   DashboardOutputGuideRoute: typeof DashboardOutputGuideRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
@@ -401,8 +401,8 @@ interface DashboardRouteChildren {
 }
 
 const DashboardRouteChildren: DashboardRouteChildren = {
-  DashboardApiKeysRoute: DashboardApiKeysRoute,
   DashboardEpgMatchingRoute: DashboardEpgMatchingRoute,
+  DashboardOauthClientsRoute: DashboardOauthClientsRoute,
   DashboardOutputAddressesRoute: DashboardOutputAddressesRoute,
   DashboardOutputGuideRoute: DashboardOutputGuideRoute,
   DashboardIndexRoute: DashboardIndexRoute,

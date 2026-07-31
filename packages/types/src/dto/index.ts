@@ -85,5 +85,5 @@ export * from "./backup";
 export * from "./dashboard-operations";
 export * from "./problem-details";
 export * from "./concurrency";
-export * from "./api-key";
+export * from "./oauth-client";
 export * from "./open-api";

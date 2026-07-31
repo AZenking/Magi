@@ -1,18 +1,13 @@
 package com.magi.tv.domain.usecase
 
 import com.magi.tv.domain.model.ChannelCatalog
-import com.magi.tv.domain.model.ConnectionSettings
 import com.magi.tv.domain.model.PlaybackDecision
 import com.magi.tv.domain.model.PlaybackLine
 import com.magi.tv.domain.model.Programme
-import com.magi.tv.domain.repository.ConnectionSettingsRepository
 import com.magi.tv.domain.repository.TvContentRepository
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 
 class TvUseCasesTest {
@@ -60,26 +55,6 @@ class TvUseCasesTest {
         assertEquals(to, repository.requestedGuideTo)
         Unit
     }
-
-    @Test
-    fun `save settings validates and normalizes connection data`() = runBlocking {
-        val repository = FakeConnectionSettingsRepository()
-        val useCase = SaveConnectionSettingsUseCase(repository)
-
-        useCase(" https://magi.local/ ", " secret ")
-
-        assertEquals(
-            ConnectionSettings(
-                serverUrl = "https://magi.local",
-                apiKey = "secret",
-            ),
-            repository.saved,
-        )
-        assertFailsWith<IllegalArgumentException> {
-            useCase("magi.local", "secret")
-        }
-        Unit
-    }
 }
 
 private class FakeTvContentRepository(
@@ -107,17 +82,6 @@ private class FakeTvContentRepository(
         requestedGuideFrom = fromEpochMs
         requestedGuideTo = toEpochMs
         return emptyList()
-    }
-}
-
-private class FakeConnectionSettingsRepository : ConnectionSettingsRepository {
-    private val mutableSettings = MutableStateFlow(ConnectionSettings())
-    override val settings: Flow<ConnectionSettings> = mutableSettings
-    var saved: ConnectionSettings? = null
-
-    override suspend fun save(settings: ConnectionSettings) {
-        saved = settings
-        mutableSettings.value = settings
     }
 }
 

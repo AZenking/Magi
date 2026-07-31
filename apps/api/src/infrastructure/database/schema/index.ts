@@ -44,6 +44,7 @@ export {
   scheduledJobConfigs,
   configBackups,
   channelFailoverPolicies,
-  // Open API client credentials (005-open-channels-epg-api)
-  apiKeys,
+  // OAuth2 Client Credentials Grant (004-safe-operations, replaces api_keys)
+  oauthClients,
+  oauthAccessTokens,
 } from "@magi/backend-core";

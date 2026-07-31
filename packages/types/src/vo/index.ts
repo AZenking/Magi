@@ -267,20 +267,20 @@ export interface OpenPlaybackVo {
   deliveryMode: "direct";
 }
 
-/** API key list item — NEVER contains the plaintext key or hash (FR-003). */
-export interface ApiKeyVo {
+/** OAuth2 client list item — NEVER contains the plaintext secret or hash. */
+export interface OauthClientVo {
   id: string;
-  name: string;
-  keyPrefix: string;
+  clientId: string;
+  clientName: string;
+  secretPrefix: string;
   status: "active" | "disabled" | "revoked";
-  expiresAt: string | null;
   lastUsedAt: string | null;
   createdBy: string;
   createdAt: string;
 }
 
-/** API key creation result — the ONLY response that includes the plaintext key (FR-001). */
-export interface ApiKeyCreatedVo extends ApiKeyVo {
-  /** Plaintext key. Shown once; never retrievable again. */
-  key: string;
+/** OAuth2 client creation result — the ONLY response that includes the plaintext secret. */
+export interface OauthClientCreatedVo extends OauthClientVo {
+  /** Plaintext client_secret. Shown once; never retrievable again. */
+  clientSecret: string;
 }

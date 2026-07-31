@@ -67,9 +67,9 @@ async function bootstrap() {
     app,
     new DocumentBuilder()
       .setTitle("Magi Open API")
-      .setDescription("只读频道与节目单开放接口（需 API key）")
+      .setDescription("只读频道与节目单开放接口（需 access token，通过 Client Credentials Grant 获取）")
       .setVersion("1.0.0")
-      .addBearerAuth({ type: "apiKey", in: "header", name: "Authorization" }, "api-key")
+      .addBearerAuth({ type: "http", scheme: "bearer" }, "access-token")
       .build(),
     { include: [OpenModule] },
   );

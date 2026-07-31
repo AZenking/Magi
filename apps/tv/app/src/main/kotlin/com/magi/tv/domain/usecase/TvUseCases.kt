@@ -1,10 +1,8 @@
 package com.magi.tv.domain.usecase
 
 import com.magi.tv.domain.model.ChannelCatalog
-import com.magi.tv.domain.model.ConnectionSettings
 import com.magi.tv.domain.model.PlaybackDecision
 import com.magi.tv.domain.model.Programme
-import com.magi.tv.domain.repository.ConnectionSettingsRepository
 import com.magi.tv.domain.repository.TvContentRepository
 
 fun interface Clock {
@@ -62,23 +60,4 @@ class GetProgrammeGuideUseCase(
         fromEpochMs = fromEpochMs,
         toEpochMs = toEpochMs,
     )
-}
-
-class SaveConnectionSettingsUseCase(
-    private val repository: ConnectionSettingsRepository,
-) {
-    suspend operator fun invoke(serverUrl: String, apiKey: String) {
-        val normalizedUrl = serverUrl.trim().trimEnd('/')
-        val normalizedKey = apiKey.trim()
-        require(normalizedUrl.startsWith("http://") || normalizedUrl.startsWith("https://")) {
-            "服务器地址必须以 http:// 或 https:// 开头"
-        }
-        require(normalizedKey.isNotBlank()) { "API Key 不能为空" }
-        repository.save(
-            ConnectionSettings(
-                serverUrl = normalizedUrl,
-                apiKey = normalizedKey,
-            ),
-        )
-    }
 }

@@ -394,9 +394,19 @@ class LivePlaybackViewModel(
     }
 
     private fun classifyError(e: Exception): TvError {
+        // TokenException carries the exact reason (client disabled/revoked/invalid).
+        if (e is com.magi.tv.data.auth.TokenException) {
+            val msg = e.message.orEmpty()
+            return when {
+                "禁用" in msg -> TvError.Unauthorized(msg)
+                "吊销" in msg -> TvError.Unauthorized(msg)
+                "无效" in msg -> TvError.Unauthorized(msg)
+                else -> TvError.Other(msg.ifEmpty { "认证失败" })
+            }
+        }
         val msg = e.message.orEmpty()
         return when {
-            "401" in msg || "Unauthorized" in msg -> TvError.Unauthorized("API Key 无效或已过期，请重新配置")
+            "401" in msg || "Unauthorized" in msg -> TvError.Unauthorized("认证失败，客户端凭证可能无效或已被禁用")
             "Unable to resolve host" in msg || "timeout" in msg || "Network" in msg -> TvError.Network("网络连接失败，请检查网络后重试")
             else -> TvError.Other(msg.ifEmpty { "未知错误" })
         }

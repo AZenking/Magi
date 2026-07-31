@@ -1,7 +1,6 @@
 package com.magi.tv.domain.repository
 
 import com.magi.tv.domain.model.ChannelCatalog
-import com.magi.tv.domain.model.ConnectionSettings
 import com.magi.tv.domain.model.DiagnosticEvent
 import com.magi.tv.domain.model.PlaybackDecision
 import com.magi.tv.domain.model.Programme
@@ -18,12 +17,6 @@ interface TvContentRepository {
         fromEpochMs: Long,
         toEpochMs: Long,
     ): List<Programme>
-}
-
-interface ConnectionSettingsRepository {
-    val settings: Flow<ConnectionSettings>
-
-    suspend fun save(settings: ConnectionSettings)
 }
 
 interface DiagnosticsRepository {

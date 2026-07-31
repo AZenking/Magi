@@ -39,8 +39,9 @@ const sharedSchemaTables = [
   "scheduled-job-configs",
   "config-backups",
   "channel-failover-policies",
-  // Open API client credentials (005-open-channels-epg-api)
-  "api-keys",
+  // OAuth2 Client Credentials Grant (004-safe-operations, replaces api_keys)
+  "oauth-clients",
+  "oauth-access-tokens",
 ].map((f) => path.join(sharedSchemaDir, `${f}.ts`));
 
 export default defineConfig({

@@ -145,12 +145,12 @@ const NAV_SECTIONS: NavSection[] = [
     id: "open-api",
     label: "开放接口",
     icon: <KeyOutlined />,
-    rootPath: "/dashboard/api-keys",
-    prefixes: ["/dashboard/api-keys"],
+    rootPath: "/dashboard/oauth-clients",
+    prefixes: ["/dashboard/oauth-clients"],
     children: [
       {
-        key: "/dashboard/api-keys",
-        label: "API Keys",
+        key: "/dashboard/oauth-clients",
+        label: "客户端凭证",
         icon: <KeyOutlined />,
       },
     ],

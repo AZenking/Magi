@@ -48,14 +48,6 @@ data class Programme(
     val category: String?,
 )
 
-data class ConnectionSettings(
-    val serverUrl: String = "",
-    val apiKey: String = "",
-) {
-    val isConfigured: Boolean
-        get() = serverUrl.isNotBlank() && apiKey.isNotBlank()
-}
-
 enum class PlaybackErrorKind(val label: String) {
     Network("网络错误"),
     Http("HTTP 错误"),

@@ -32,5 +32,6 @@ export { scheduledJobConfigs } from "./scheduled-job-configs";
 export { configBackups } from "./config-backups";
 export { channelFailoverPolicies } from "./channel-failover-policies";
 
-// New: Open API client credentials (005-open-channels-epg-api).
-export { apiKeys } from "./api-keys";
+// OAuth2 Client Credentials Grant — replaces api_keys (004-safe-operations).
+export { oauthClients } from "./oauth-clients";
+export { oauthAccessTokens } from "./oauth-access-tokens";

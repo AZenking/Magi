@@ -16,6 +16,27 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+
+        // Compile-time configuration (004-safe-operations): server URL +
+        // OAuth2 client credentials are baked into the APK. Override via
+        // gradle.properties (magi.serverUrl, magi.clientId, magi.clientSecret)
+        // for different deployment environments. The TV client is zero-input:
+        // the user opens the app and it boots straight into live playback.
+        buildConfigField(
+            "String",
+            "MAGI_SERVER_URL",
+            "\"${project.findProperty("magi.serverUrl") ?: "http://10.0.2.2:3001"}\"",
+        )
+        buildConfigField(
+            "String",
+            "OAUTH_CLIENT_ID",
+            "\"${project.findProperty("magi.clientId") ?: "magi_tv_android"}\"",
+        )
+        buildConfigField(
+            "String",
+            "OAUTH_CLIENT_SECRET",
+            "\"${project.findProperty("magi.clientSecret") ?: "magi_secret_dev_change_me"}\"",
+        )
     }
 
     buildTypes {
@@ -40,6 +61,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

@@ -9,40 +9,24 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.magi.tv.di.AppContainer
-import com.magi.tv.domain.model.ConnectionSettings
 import com.magi.tv.ui.channels.DiagnosticsScreen
 import com.magi.tv.ui.channels.DiagnosticsViewModel
 import com.magi.tv.ui.channels.LivePlaybackScreen
 import com.magi.tv.ui.channels.LivePlaybackViewModel
-import com.magi.tv.ui.settings.SetupScreen
-import com.magi.tv.ui.settings.SetupViewModel
 
 /**
- * Presentation composition root.
+ * Presentation composition root (004-safe-operations).
  *
- * Until configured, the setup screen is shown. Once configured, the app boots
- * straight into the persistent live player (roadmap §9.2 "开机恢复上次频道").
+ * Zero-input launch: the app boots straight into the persistent live player.
+ * Configuration (serverUrl + OAuth2 credentials) is baked in at compile time,
+ * so there is no setup screen — the user opens the app and starts watching.
  */
 @Composable
 fun TvApp(appContainer: AppContainer) {
-    val settings by appContainer.settingsRepository.settings
-        .collectAsStateWithLifecycle(initialValue = ConnectionSettings())
-
-    if (!settings.isConfigured) {
-        val setupViewModel: SetupViewModel = viewModel(
-            factory = SetupViewModel.factory(appContainer.saveConnectionSettings),
-        )
-        val setupState by setupViewModel.uiState.collectAsStateWithLifecycle()
-        SetupScreen(state = setupState, onAction = setupViewModel::onAction)
-        return
-    }
-
     val context = LocalContext.current
-    val sessionDependencies = remember(settings.serverUrl, settings.apiKey) {
-        appContainer.createTvSession(settings)
-    }
+    val sessionDependencies = remember { appContainer.createTvSession() }
     val liveViewModel: LivePlaybackViewModel = viewModel(
-        key = "live-${settings.serverUrl}-${settings.apiKey.hashCode()}",
+        key = "live",
         factory = LivePlaybackViewModel.factory(
             context = context.applicationContext,
             getChannelCatalog = sessionDependencies.getChannelCatalog,
@@ -54,7 +38,6 @@ fun TvApp(appContainer: AppContainer) {
     )
 
     var showDiagnostics by remember { mutableStateOf(false) }
-    var showReconfigure by remember { mutableStateOf(false) }
 
     if (showDiagnostics) {
         val diagnosticsViewModel: DiagnosticsViewModel = viewModel(
@@ -66,19 +49,9 @@ fun TvApp(appContainer: AppContainer) {
         return
     }
 
-    if (showReconfigure) {
-        val setupViewModel: SetupViewModel = viewModel(
-            factory = SetupViewModel.factory(appContainer.saveConnectionSettings),
-        )
-        val setupState by setupViewModel.uiState.collectAsStateWithLifecycle()
-        androidx.activity.compose.BackHandler { showReconfigure = false }
-        SetupScreen(state = setupState, onAction = setupViewModel::onAction)
-        return
-    }
-
     LivePlaybackScreen(
         viewModel = liveViewModel,
         onOpenDiagnostics = { showDiagnostics = true },
-        onReconfigure = { showReconfigure = true },
+        onReconfigure = { /* no-op: zero-input, nothing to reconfigure */ },
     )
 }

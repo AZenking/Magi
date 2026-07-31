@@ -54,6 +54,13 @@ export const AUDIT_ACTIONS = {
     revoke: "api_key.revoked",
     delete: "api_key.deleted",
   },
+  oauthClient: {
+    create: "oauth_client.created",
+    disable: "oauth_client.disabled",
+    enable: "oauth_client.enabled",
+    revoke: "oauth_client.revoked",
+    delete: "oauth_client.deleted",
+  },
 } as const;
 
 export function changedFieldNames(value: object): string[] {

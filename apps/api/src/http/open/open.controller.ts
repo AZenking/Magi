@@ -1,7 +1,7 @@
 /**
  * OpenApiController — public read-only channels & EPG (005-open-channels-epg-api).
  *
- * Behind ApiKeyGuard (Bearer/x-api-key), physically isolated from the admin
+ * Behind AccessTokenGuard (Bearer token), physically isolated from the admin
  * AuthGuard (FR-019). Rate-limited per key (ThrottlerGuard). All responses are
  * PRODUCT-VIEW projections only — never streamUrl, sourceId, health, or
  * internal lifecycle (FR-012). The stable channel id is `magi:{canonicalId}`
@@ -30,7 +30,7 @@ import type {
   OpenPlaybackVo,
 } from "@magi/types";
 import { OpenChannelsQuerySchema, OpenChannelIdParamSchema, OpenEpgQuerySchema } from "@magi/types";
-import { ApiKeyGuard } from "../../shared/guards/api-key.guard";
+import { AccessTokenGuard } from "../../shared/guards/access-token.guard";
 import { FindCanonicalChannelsUseCase } from "../../application/output-composition/find-canonical-channels.use-case";
 import { FindOutputChannelDetailUseCase } from "../../application/output-composition/find-output-channel-detail.use-case";
 import { FindOutputGuideUseCase } from "../../application/output-composition/output-guide.use-case";
@@ -39,7 +39,7 @@ import type { CanonicalChannel } from "@/domain/output-composition";
 import { CanonicalChannelModel } from "@/domain/output-composition";
 
 @ApiTags("开放接口")
-@UseGuards(ApiKeyGuard, ThrottlerGuard)
+@UseGuards(AccessTokenGuard, ThrottlerGuard)
 @Controller("api/open/v1")
 export class OpenApiController {
   constructor(
