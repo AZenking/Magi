@@ -69,6 +69,7 @@ function makeController(items: { channel: CanonicalChannel; programmes: Programm
       execute: vi.fn(async () => ({ items, total: items.length })),
     } as never,
     { execute: vi.fn(async () => null) } as never,
+    { execute: vi.fn() } as never,
   );
 }
 

@@ -1,6 +1,7 @@
 package com.magi.tv
 
 import android.app.Application
+import androidx.lifecycle.ProcessLifecycleOwner
 import com.magi.tv.di.AppContainer
 
 /**
@@ -18,5 +19,6 @@ class MagiTvApp : Application() {
     override fun onCreate() {
         super.onCreate()
         appContainer = AppContainer(this)
+        ProcessLifecycleOwner.get().lifecycle.addObserver(appContainer.heartbeatCoordinator)
     }
 }

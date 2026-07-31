@@ -98,8 +98,10 @@ private class TokenAuthenticator(
         // Stop retrying if we already retried (prevents infinite loops).
         if (response.responseCount() >= 2) return null
 
+        val previousToken = response.request.header("Authorization")
+            ?.removePrefix("Bearer ")
         val newToken = try {
-            runBlocking { tokenManager.refreshToken() }
+            runBlocking { tokenManager.refreshTokenAfterUnauthorized(previousToken) }
         } catch (_: TokenException) {
             // Client disabled/revoked or network failure — can't recover.
             return null

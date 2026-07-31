@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "../db";
-import { xmltvSources, rawXmltvChannels, programmes } from "../schema";
+import { contentManifest, xmltvSources, rawXmltvChannels, programmes } from "../schema";
 import { downloadSource, parseXMLTV, parseXmltvDate, isInEpgWindow } from "@magi/backend-core";
 import type { SyncProgress } from "@magi/backend-core";
 
@@ -87,6 +87,20 @@ export async function processXmltvSync(sourceId: string, progress?: SyncProgress
         "write-programmes",
       );
     }
+
+    // Programme replacement is the atomic boundary for EPG invalidation.
+    // Seed at 2 so the first successful sync is visible to clients that
+    // started with the migration's initial revision 1.
+    await tx
+      .insert(contentManifest)
+      .values({ id: 1, epgRevision: 2, updatedAt: now })
+      .onConflictDoUpdate({
+        target: contentManifest.id,
+        set: {
+          epgRevision: sql`${contentManifest.epgRevision} + 1`,
+          updatedAt: now,
+        },
+      });
   });
 
   await progress?.updateProgress(90, "finalize");

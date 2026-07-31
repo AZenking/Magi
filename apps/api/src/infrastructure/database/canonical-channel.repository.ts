@@ -1,7 +1,7 @@
 import { eq, and, sql, ilike, inArray, asc, isNull } from "drizzle-orm";
 import type { ICanonicalChannelRepository, CanonicalChannel, EpgStatus, OutputStatus, ChannelLifecycle } from "@/domain/output-composition";
 import { db } from "./connection";
-import { canonicalChannels } from "./schema";
+import { canonicalChannels, contentManifest } from "./schema";
 
 function toDomain(row: typeof canonicalChannels.$inferSelect): CanonicalChannel {
   return {
@@ -61,6 +61,20 @@ export class CanonicalChannelRepository implements ICanonicalChannelRepository {
     return row ? toDomain(row) : null;
   }
 
+  async findByIds(ids: readonly string[]): Promise<CanonicalChannel[]> {
+    if (ids.length === 0) return [];
+    const rows = await db
+      .select()
+      .from(canonicalChannels)
+      .where(inArray(canonicalChannels.id, [...ids]))
+      .orderBy(
+        sql`${canonicalChannels.channelNumber} ASC NULLS LAST`,
+        asc(canonicalChannels.standardName),
+        asc(canonicalChannels.id),
+      );
+    return rows.map(toDomain);
+  }
+
   async findByEpgChannelId(epgChannelId: string): Promise<CanonicalChannel | null> {
     const [row] = await db.select().from(canonicalChannels).where(eq(canonicalChannels.epgChannelId, epgChannelId)).limit(1);
     return row ? toDomain(row) : null;
@@ -74,6 +88,7 @@ export class CanonicalChannelRepository implements ICanonicalChannelRepository {
   async createBatch(channels: Omit<CanonicalChannel, "id" | "createdAt" | "updatedAt">[]): Promise<CanonicalChannel[]> {
     if (channels.length === 0) return [];
     const rows = await db.insert(canonicalChannels).values(channels).returning();
+    await bumpContentRevisions();
     return rows.map(toDomain);
   }
 
@@ -83,11 +98,13 @@ export class CanonicalChannelRepository implements ICanonicalChannelRepository {
       .set({ ...data, updatedAt: new Date() })
       .where(eq(canonicalChannels.id, id))
       .returning();
+    if (row) await bumpContentRevisions();
     return row ? toDomain(row) : null;
   }
 
   async deleteAll(): Promise<number> {
     const result = await db.delete(canonicalChannels).returning();
+    if (result.length > 0) await bumpContentRevisions();
     return result.length;
   }
 
@@ -98,12 +115,14 @@ export class CanonicalChannelRepository implements ICanonicalChannelRepository {
       .set({ ...data, updatedAt: new Date() })
       .where(inArray(canonicalChannels.id, ids))
       .returning();
+    if (result.length > 0) await bumpContentRevisions();
     return result.length;
   }
 
   async batchDelete(ids: string[]): Promise<number> {
     if (ids.length === 0) return 0;
     const result = await db.delete(canonicalChannels).where(inArray(canonicalChannels.id, ids)).returning();
+    if (result.length > 0) await bumpContentRevisions();
     return result.length;
   }
 
@@ -137,6 +156,7 @@ export class CanonicalChannelRepository implements ICanonicalChannelRepository {
       })
       .where(and(eq(canonicalChannels.id, id), eq(canonicalChannels.version, expectedVersion)))
       .returning();
+    if (row) await bumpContentRevisions();
     return row ? toDomain(row) : null;
   }
 
@@ -162,5 +182,29 @@ export class CanonicalChannelRepository implements ICanonicalChannelRepository {
       out[key] = (out[key] ?? 0) + r.count;
     }
     return out;
+  }
+}
+
+/**
+ * Keep manual catalog edits on the same invalidation path as worker rebuilds.
+ * The cache is an optimization, so a rollout where the new table is not yet
+ * migrated must not turn an otherwise successful admin mutation into a 500.
+ */
+async function bumpContentRevisions(): Promise<void> {
+  try {
+    await db
+      .insert(contentManifest)
+      .values({ id: 1, catalogRevision: 2, epgRevision: 2, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: contentManifest.id,
+        set: {
+          catalogRevision: sql`${contentManifest.catalogRevision} + 1`,
+          epgRevision: sql`${contentManifest.epgRevision} + 1`,
+          updatedAt: new Date(),
+        },
+      });
+  } catch {
+    // Best effort during expand/contract deployment; the next worker sync
+    // restores a valid revision once the migration is available.
   }
 }

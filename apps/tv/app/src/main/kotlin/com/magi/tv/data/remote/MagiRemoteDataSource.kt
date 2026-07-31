@@ -37,6 +37,35 @@ class MagiRemoteDataSource(
             channelId = channelId,
         ).requireData().items
 
+    suspend fun getContentSnapshot(
+        include: String,
+        channelIds: List<String> = emptyList(),
+        fromIso: String? = null,
+        toIso: String? = null,
+        ifNoneMatch: String? = null,
+    ): RemoteContentSnapshot {
+        val response = api.contentSnapshot(
+            include = include,
+            channelIds = channelIds.map { it.removePrefix("magi:") },
+            from = fromIso,
+            to = toIso,
+            ifNoneMatch = ifNoneMatch,
+        )
+        val etag = response.headers()["ETag"]
+        if (response.code() == 304) {
+            return RemoteContentSnapshot(snapshot = null, etag = etag, notModified = true)
+        }
+        if (!response.isSuccessful) {
+            throw RemoteDataException("内容快照请求失败: HTTP ${response.code()}")
+        }
+        return RemoteContentSnapshot(
+            snapshot = response.body()?.requireData()
+                ?: throw RemoteDataException("服务返回了无效内容快照"),
+            etag = etag,
+            notModified = false,
+        )
+    }
+
     private fun <T> ApiEnvelopeDto<T>.requireData(): T {
         if (!success || data == null) {
             throw RemoteDataException("服务返回了无效响应")
@@ -44,5 +73,11 @@ class MagiRemoteDataSource(
         return data
     }
 }
+
+data class RemoteContentSnapshot(
+    val snapshot: ContentSnapshotDto?,
+    val etag: String?,
+    val notModified: Boolean,
+)
 
 class RemoteDataException(message: String) : IllegalStateException(message)

@@ -60,4 +60,26 @@ class GetProgrammeGuideUseCase(
         fromEpochMs = fromEpochMs,
         toEpochMs = toEpochMs,
     )
+
+    suspend fun batch(
+        channelIds: Collection<String>,
+        fromEpochMs: Long,
+        toEpochMs: Long,
+    ): Map<String, List<Programme>> = repository.getProgrammeGuideBatch(
+        channelIds = channelIds
+            .map { it.removePrefix("magi:") }
+            .distinct(),
+        fromEpochMs = fromEpochMs,
+        toEpochMs = toEpochMs,
+    )
+
+    suspend fun isStale(
+        channelId: String,
+        fromEpochMs: Long,
+        toEpochMs: Long,
+    ): Boolean = repository.isProgrammeGuideStale(
+        channelId = channelId.removePrefix("magi:"),
+        fromEpochMs = fromEpochMs,
+        toEpochMs = toEpochMs,
+    )
 }

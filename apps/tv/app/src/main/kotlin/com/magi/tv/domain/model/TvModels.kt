@@ -1,5 +1,16 @@
 package com.magi.tv.domain.model
 
+data class ContentRevision(
+    val catalog: String,
+    val epg: String,
+)
+
+data class ContentChange(
+    val revision: ContentRevision,
+    val catalogChanged: Boolean,
+    val epgChanged: Boolean,
+)
+
 /** Framework-free models consumed by the TV presentation layer. */
 data class ChannelGroup(
     val name: String?,

@@ -14,11 +14,15 @@ import {
   Get,
   Param,
   Query,
+  Req,
+  Res,
   Inject,
   UseGuards,
   NotFoundException,
   BadRequestException,
 } from "@nestjs/common";
+import type { Request, Response } from "express";
+import { createHash } from "node:crypto";
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from "@nestjs/swagger";
 import { ThrottlerGuard } from "@nestjs/throttler";
 import type {
@@ -29,7 +33,12 @@ import type {
   OpenProgrammeVo,
   OpenPlaybackVo,
 } from "@magi/types";
-import { OpenChannelsQuerySchema, OpenChannelIdParamSchema, OpenEpgQuerySchema } from "@magi/types";
+import {
+  ContentSnapshotQuerySchema,
+  OpenChannelsQuerySchema,
+  OpenChannelIdParamSchema,
+  OpenEpgQuerySchema,
+} from "@magi/types";
 import { AccessTokenGuard } from "../../shared/guards/access-token.guard";
 import { FindCanonicalChannelsUseCase } from "../../application/output-composition/find-canonical-channels.use-case";
 import { FindOutputChannelDetailUseCase } from "../../application/output-composition/find-output-channel-detail.use-case";
@@ -37,6 +46,7 @@ import { FindOutputGuideUseCase } from "../../application/output-composition/out
 import { ResolvePlaybackUseCase } from "../../application/open/resolve-playback.use-case";
 import type { CanonicalChannel } from "@/domain/output-composition";
 import { CanonicalChannelModel } from "@/domain/output-composition";
+import { FindContentSnapshotUseCase } from "../../application/output-composition/content-snapshot.use-case";
 
 @ApiTags("开放接口")
 @UseGuards(AccessTokenGuard, ThrottlerGuard)
@@ -51,6 +61,8 @@ export class OpenApiController {
     private readonly findGuide: FindOutputGuideUseCase,
     @Inject(ResolvePlaybackUseCase)
     private readonly resolvePlayback: ResolvePlaybackUseCase,
+    @Inject(FindContentSnapshotUseCase)
+    private readonly findSnapshot: FindContentSnapshotUseCase,
   ) {}
 
   /** Channel groups with visible-channel counts. */
@@ -168,6 +180,59 @@ export class OpenApiController {
   }
 
   /**
+   * Cache-aware batched content projection for TV clients. The heartbeat only
+   * carries revisions; this endpoint carries the actual catalog/guide data.
+   */
+  @Get("content/snapshot")
+  @ApiOperation({ summary: "频道和节目单快照" })
+  @ApiQuery({ name: "include", required: false, enum: ["catalog", "guide", "all"] })
+  @ApiQuery({ name: "channelId", required: false, type: String, isArray: true })
+  @ApiQuery({ name: "from", required: false, type: String, description: "ISO 8601; guide ≤ 24 hours" })
+  @ApiQuery({ name: "to", required: false, type: String, description: "ISO 8601; guide ≤ 24 hours" })
+  @ApiResponse({ status: 200, description: "内容快照" })
+  @ApiResponse({ status: 304, description: "内容未变化" })
+  async contentSnapshot(
+    @Query() query: unknown,
+    @Req() request: Request,
+    @Res() response: Response,
+  ): Promise<void> {
+    const parsed = ContentSnapshotQuerySchema.safeParse(query);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: "validation-failed",
+        detail: parsed.error.flatten(),
+      });
+    }
+
+    const snapshot = await this.findSnapshot.execute(parsed.data);
+    const etag = makeSnapshotEtag(snapshot, parsed.data);
+    response.setHeader("ETag", etag);
+    response.setHeader("Cache-Control", "private, max-age=0, must-revalidate");
+
+    const requestEtag = request.headers["if-none-match"];
+    const etagMatches = typeof requestEtag === "string" && requestEtag
+      .split(",")
+      .map((value) => value.trim())
+      .some((value) => value === etag || value === `W/${etag}`);
+    if (etagMatches) {
+      response.status(304).send();
+      return;
+    }
+
+    response.status(200).json({
+      success: true,
+      data: {
+        catalogRevision: snapshot.revision.catalog,
+        epgRevision: snapshot.revision.epg,
+        generatedAt: snapshot.generatedAt.toISOString(),
+        groups: snapshot.groups,
+        channels: snapshot.channels,
+        programmes: snapshot.programmes,
+      },
+    });
+  }
+
+  /**
    * Playback decision for a channel — the playable endpoint + ordered fallback
    * lines (roadmap §10.1/§10.3). Unlike the channel list, this surface exposes
    * line URLs (that is its purpose), but still never sourceId/admin fields.
@@ -229,4 +294,19 @@ function toProgrammeVo(
     stopAt: p.stopAt.toISOString(),
     category: p.category,
   };
+}
+
+function makeSnapshotEtag(
+  snapshot: { revision: { catalog: string; epg: string } },
+  query: { include: string; channelIds: readonly string[]; from?: Date; to?: Date },
+): string {
+  const signature = JSON.stringify({
+    catalog: query.include === "guide" ? null : snapshot.revision.catalog,
+    epg: query.include === "catalog" ? null : snapshot.revision.epg,
+    include: query.include,
+    channelIds: [...query.channelIds].sort(),
+    from: query.from?.toISOString() ?? null,
+    to: query.to?.toISOString() ?? null,
+  });
+  return `"${createHash("sha1").update(signature).digest("hex")}"`;
 }

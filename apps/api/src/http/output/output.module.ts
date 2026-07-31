@@ -103,6 +103,8 @@ import { TaskModule } from "../task/task.module";
     // Repo tokens consumed by ResolvePlaybackUseCase (playback endpoint).
     "CANONICAL_CHANNEL_REPOSITORY",
     "CHANNEL_STREAM_REPOSITORY",
+    "CANONICAL_EPG_BINDING_REPOSITORY",
+    "PROGRAMME_REPOSITORY",
   ],
 })
 export class OutputModule {}

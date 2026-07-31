@@ -59,6 +59,7 @@ function makeController(channels: CanonicalChannel[], detailChannel?: CanonicalC
     } as never,
     { execute: vi.fn(async () => ({ items: [], total: 0 })) } as never,
     { execute: vi.fn(async () => null) } as never,
+    { execute: vi.fn() } as never,
   );
 }
 
@@ -74,6 +75,7 @@ function makeControllerWithTotal(pageItems: CanonicalChannel[], total: number) {
     { execute: vi.fn(async () => ({ channel: pageItems[0]!, streams: [] })) } as never,
     { execute: vi.fn(async () => ({ items: [], total: 0 })) } as never,
     { execute: vi.fn(async () => null) } as never,
+    { execute: vi.fn() } as never,
   );
 }
 

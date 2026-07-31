@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "../db";
-import { channels, rawXmltvChannels, canonicalChannels, canonicalEpgBindings, channelOverrides, channelStreams, m3uSources } from "../schema";
+import { channels, rawXmltvChannels, canonicalChannels, canonicalEpgBindings, channelOverrides, channelStreams, contentManifest, m3uSources } from "../schema";
 import { EpgMatcher, computeMergeKey } from "@magi/backend-core";
 import type { SyncProgress } from "@magi/backend-core";
 
@@ -465,6 +465,20 @@ export async function processEpgMatch(sourceId: string, progress?: SyncProgress)
         }
       }
     }
+
+    // Canonical channels, bindings and stream composition changed together;
+    // expose one invalidation point for both catalog and guide consumers.
+    await tx
+      .insert(contentManifest)
+      .values({ id: 1, catalogRevision: 2, epgRevision: 2, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: contentManifest.id,
+        set: {
+          catalogRevision: sql`${contentManifest.catalogRevision} + 1`,
+          epgRevision: sql`${contentManifest.epgRevision} + 1`,
+          updatedAt: new Date(),
+        },
+      });
   });
 
   return {

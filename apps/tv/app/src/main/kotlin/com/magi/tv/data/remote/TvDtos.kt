@@ -60,3 +60,19 @@ data class ProgrammeDto(
     val stopAt: String,
     val category: String? = null,
 )
+
+@Serializable
+data class ContentRevisionDto(
+    val catalog: String,
+    val epg: String,
+)
+
+@Serializable
+data class ContentSnapshotDto(
+    val catalogRevision: String,
+    val epgRevision: String,
+    val generatedAt: String,
+    val groups: List<ChannelGroupDto> = emptyList(),
+    val channels: List<ChannelDto> = emptyList(),
+    val programmes: List<ProgrammeDto> = emptyList(),
+)

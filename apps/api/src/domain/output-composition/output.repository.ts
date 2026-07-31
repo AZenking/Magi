@@ -20,6 +20,7 @@ export interface ICanonicalChannelRepository {
     lifecycle?: string;
     sourcePresence?: string;
   }): Promise<{ items: CanonicalChannel[]; total: number }>;
+  findByIds(ids: readonly string[]): Promise<CanonicalChannel[]>;
   findById(id: string): Promise<CanonicalChannel | null>;
   findByEpgChannelId(epgChannelId: string): Promise<CanonicalChannel | null>;
   findByMergedFromId(mergedFromId: string): Promise<CanonicalChannel | null>;

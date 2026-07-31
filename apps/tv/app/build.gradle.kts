@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -17,11 +18,8 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
-        // Compile-time configuration (004-safe-operations): server URL +
-        // OAuth2 client credentials are baked into the APK. Override via
-        // gradle.properties (magi.serverUrl, magi.clientId, magi.clientSecret)
-        // for different deployment environments. The TV client is zero-input:
-        // the user opens the app and it boots straight into live playback.
+        // The server URL and public OAuth client id are not secrets. Device
+        // credentials are obtained by default-account registration at runtime.
         buildConfigField(
             "String",
             "MAGI_SERVER_URL",
@@ -29,13 +27,8 @@ android {
         )
         buildConfigField(
             "String",
-            "OAUTH_CLIENT_ID",
-            "\"${project.findProperty("magi.clientId") ?: "magi_tv_android"}\"",
-        )
-        buildConfigField(
-            "String",
-            "OAUTH_CLIENT_SECRET",
-            "\"${project.findProperty("magi.clientSecret") ?: "magi_secret_dev_change_me"}\"",
+            "MAGI_DEVICE_CLIENT_ID",
+            "\"${project.findProperty("magi.deviceClientId") ?: "magi_tv"}\"",
         )
     }
 
@@ -70,6 +63,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.activity.compose)
 
     // Compose (BOM-managed) + Compose for TV
@@ -105,9 +99,16 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
 
     testImplementation(kotlin("test"))
     testImplementation("junit:junit:4.13.2")
+    testImplementation(libs.okhttp.mockwebserver)
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     // Core library desugaring — enables java.time (Instant/LocalDate/ZoneId) on minSdk 23.
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.3")

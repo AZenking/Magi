@@ -1,61 +1,171 @@
 package com.magi.tv.data.auth
 
 import com.magi.tv.BuildConfig
+import com.magi.tv.domain.model.DeviceCredentials
+import com.magi.tv.domain.repository.ClientCredentialStore
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.logging.HttpLoggingInterceptor
+import retrofit2.HttpException
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 
 /**
- * Sealed result of a token issuance attempt. The TV UI uses these to show the
- * right message — e.g. "设备已被禁用" vs generic network error.
- */
-sealed interface TokenResult {
-    data class Success(val accessToken: String) : TokenResult
-    /** Client not found or secret mismatch. */
-    data object InvalidClient : TokenResult
-    /** Client is disabled — tokens can't be issued but old ones still work. */
-    data object ClientDisabled : TokenResult
-    /** Client is revoked — all tokens are invalidated. */
-    data object ClientRevoked : TokenResult
-    /** Network error, server down, etc. */
-    data class Error(val message: String) : TokenResult
-}
-
-/**
- * Manages the OAuth2 access token lifecycle for the TV client.
- *
- * Configuration (serverUrl, clientId, clientSecret) is baked in at compile time
- * via BuildConfig — the user never enters anything (004-safe-operations).
- *
- * - [getValidToken] returns a cached token if still valid, otherwise refreshes.
- * - [refreshToken] forces a new token (used by the OkHttp Authenticator on 401).
- * - Token refresh is serialised via a Mutex to avoid stampede on 401 storms.
+ * Owns the device OAuth lifecycle. The only durable credential is the rotating
+ * refresh token, encrypted by [ClientCredentialStore]; access tokens remain in
+ * memory and are recreated after process death.
  */
 class TokenManager(
-    context: android.content.Context,
+    private val credentialStore: ClientCredentialStore,
 ) {
-    private val store = TokenStore(context.applicationContext)
     private val refreshMutex = Mutex()
+    private val json = Json {
+        ignoreUnknownKeys = true
+        coerceInputValues = true
+        encodeDefaults = true
+        explicitNulls = false
+    }
+    private val tokenApi: TokenApi = createTokenApi()
+    private val mutableCredentials = MutableStateFlow<DeviceCredentials?>(null)
+    val credentials = mutableCredentials.asStateFlow()
 
-    private val tokenApi: TokenApi = run {
-        val json = Json {
-            ignoreUnknownKeys = true
-            coerceInputValues = true
-            encodeDefaults = true // serialize grant_type="client_credentials" (has a default)
+    @Volatile
+    private var accessToken: String? = null
+
+    @Volatile
+    private var accessTokenExpiresAtMs: Long = 0L
+
+    suspend fun hasCredentials(): Boolean {
+        val credentials = credentialStore.read()
+        mutableCredentials.value = credentials
+        return credentials != null
+    }
+
+    suspend fun clearCredentials() {
+        accessToken = null
+        accessTokenExpiresAtMs = 0L
+        credentialStore.clear()
+        mutableCredentials.value = null
+    }
+
+    suspend fun getValidToken(): String {
+        val cached = accessToken
+        if (cached != null && accessTokenExpiresAtMs - System.currentTimeMillis() > SAFETY_MARGIN_MS) {
+            return cached
         }
+        return refreshTokenBlocking(force = false)
+    }
+
+    /** Used by OkHttp's authenticator to force a single-flight refresh. */
+    suspend fun refreshToken(): String = refreshTokenBlocking(force = true)
+
+    /** Reuses a token another 401 waiter already installed, if it changed. */
+    suspend fun refreshTokenAfterUnauthorized(previousToken: String?): String {
+        val current = accessToken
+        if (
+            current != null && current != previousToken &&
+            accessTokenExpiresAtMs - System.currentTimeMillis() > SAFETY_MARGIN_MS
+        ) {
+            return current
+        }
+        return refreshTokenBlocking(force = true)
+    }
+
+    /** Legacy compatibility path for older RFC 8628 clients. */
+    suspend fun exchangeDeviceCode(deviceCode: String): TokenResponse {
+        return requestToken(
+            TokenRequest(
+                grantType = DEVICE_CODE_GRANT,
+                clientId = BuildConfig.MAGI_DEVICE_CLIENT_ID,
+                deviceCode = deviceCode,
+            ),
+        )
+    }
+
+    /** Persists a newly issued device refresh token and caches its access token. */
+    suspend fun saveDeviceToken(response: TokenResponse) {
+        val refresh = response.refreshToken
+            ?: throw TokenException("invalid_response", "认证响应缺少 refresh_token")
+        val deviceId = response.deviceClientId
+            ?: throw TokenException("invalid_response", "认证响应缺少 device_client_id")
+        val previous = credentialStore.read()
+        val credentials = DeviceCredentials(
+            deviceClientId = deviceId,
+            refreshToken = refresh,
+            familyId = previous?.familyId ?: deviceId,
+            generation = (previous?.generation ?: 0) + 1,
+        )
+        credentialStore.write(credentials)
+        mutableCredentials.value = credentials
+        cache(response)
+    }
+
+    private suspend fun refreshTokenBlocking(force: Boolean): String = refreshMutex.withLock {
+        val now = System.currentTimeMillis()
+        val cached = accessToken
+        if (!force && cached != null && accessTokenExpiresAtMs - now > SAFETY_MARGIN_MS) {
+            return@withLock cached
+        }
+        val credentials = credentialStore.read()
+            ?: throw TokenException("requires_registration", "设备尚未完成自动登记")
+        val response = try {
+            requestToken(
+                TokenRequest(
+                    grantType = REFRESH_TOKEN_GRANT,
+                    clientId = BuildConfig.MAGI_DEVICE_CLIENT_ID,
+                    refreshToken = credentials.refreshToken,
+                ),
+            )
+        } catch (error: TokenException) {
+            if (error.code in INVALID_CREDENTIAL_CODES) {
+                clearCredentials()
+            }
+            throw error
+        }
+        saveDeviceToken(response)
+        return@withLock response.accessToken
+    }
+
+    private suspend fun requestToken(request: TokenRequest): TokenResponse {
+        return try {
+            val envelope = tokenApi.token(request)
+            if (!envelope.success || envelope.data == null) {
+                throw TokenException("invalid_response", "服务返回了无效认证响应")
+            }
+            envelope.data
+        } catch (error: TokenException) {
+            throw error
+        } catch (error: HttpException) {
+            val code = extractErrorCode(error) ?: "http_${error.code()}"
+            throw TokenException(code, messageFor(code, error.code()))
+        } catch (error: Exception) {
+            throw TokenException("network", error.message ?: "网络连接失败")
+        }
+    }
+
+    private fun cache(response: TokenResponse) {
+        accessToken = response.accessToken
+        accessTokenExpiresAtMs = System.currentTimeMillis() + response.expiresIn * 1000L
+    }
+
+    private fun createTokenApi(): TokenApi {
         val client = OkHttpClient.Builder()
             .addInterceptor(
-                okhttp3.logging.HttpLoggingInterceptor().apply {
-                    level = okhttp3.logging.HttpLoggingInterceptor.Level.BASIC
+                HttpLoggingInterceptor().apply {
+                    level = HttpLoggingInterceptor.Level.BASIC
                 },
             )
             .build()
         val baseUrl = "${BuildConfig.MAGI_SERVER_URL.trim().trimEnd('/')}/"
-        Retrofit.Builder()
+        return Retrofit.Builder()
             .baseUrl(baseUrl)
             .client(client)
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
@@ -63,109 +173,39 @@ class TokenManager(
             .create(TokenApi::class.java)
     }
 
-    /**
-     * Returns a valid access token. If the cached token hasn't expired (with a
-     * 60s safety margin), returns it directly. Otherwise refreshes.
-     * Throws if the client is disabled/revoked or the network fails.
-     */
-    suspend fun getValidToken(): String {
-        val cached = store.getAccessToken()
-        val expiresAt = store.getExpiresAt()
-        val now = System.currentTimeMillis()
-        // 60s safety margin so the token doesn't expire mid-request.
-        if (cached != null && expiresAt - now > 60_000) {
-            return cached
-        }
-        return refreshTokenBlocking()
-    }
-
-    /**
-     * Forces a token refresh. Called by the OkHttp Authenticator on 401.
-     * Returns the new token or throws on failure.
-     */
-    suspend fun refreshToken(): String = refreshTokenBlocking()
-
-    private suspend fun refreshTokenBlocking(): String = refreshMutex.withLock {
-        // Double-check after acquiring the lock — another coroutine may have
-        // already refreshed while we were waiting.
-        val cached = store.getAccessToken()
-        val expiresAt = store.getExpiresAt()
-        val now = System.currentTimeMillis()
-        if (cached != null && expiresAt - now > 60_000) {
-            return@withLock cached
-        }
-
-        val result = issueToken()
-        when (result) {
-            is TokenResult.Success -> {
-                store.save(result.accessToken, now + TOKEN_TTL_MS)
-                result.accessToken
-            }
-            is TokenResult.InvalidClient ->
-                throw TokenException("客户端凭证无效，请联系管理员")
-            is TokenResult.ClientDisabled ->
-                throw TokenException("设备已被禁用，请联系管理员")
-            is TokenResult.ClientRevoked ->
-                throw TokenException("设备已被吊销，请联系管理员")
-            is TokenResult.Error ->
-                throw TokenException(result.message)
-        }
-    }
-
-    /** Issues a new token via the Client Credentials Grant. */
-    private suspend fun issueToken(): TokenResult {
+    private fun extractErrorCode(error: HttpException): String? {
         return try {
-            val envelope = tokenApi.token(
-                TokenRequest(
-                    clientId = BuildConfig.OAUTH_CLIENT_ID,
-                    clientSecret = BuildConfig.OAUTH_CLIENT_SECRET,
-                ),
-            )
-            val data = envelope.data
-            if (!envelope.success || data == null) {
-                TokenResult.Error("服务返回了无效响应")
-            } else {
-                TokenResult.Success(data.accessToken)
-            }
-        } catch (e: retrofit2.HttpException) {
-            // The backend returns 401 with a problem+json code field.
-            val code = extractErrorCode(e)
-            when (code) {
-                "invalid-client" -> TokenResult.InvalidClient
-                "client-disabled" -> TokenResult.ClientDisabled
-                "client-revoked" -> TokenResult.ClientRevoked
-                else -> TokenResult.Error("认证失败：${e.code()}")
-            }
-        } catch (e: Exception) {
-            TokenResult.Error(e.message ?: "网络连接失败")
-        }
-    }
-
-    /** Best-effort extraction of the `code` field from a problem+json error body. */
-    private fun extractErrorCode(e: retrofit2.HttpException): String? {
-        return try {
-            val raw = e.response()?.errorBody()?.string() ?: return null
-            val json = Json { ignoreUnknownKeys = true }
-            val parsed = json.parseToJsonElement(raw).jsonObject
-            parsed["code"]?.jsonPrimitive?.contentOrNull
+            val raw = error.response()?.errorBody()?.string() ?: return null
+            val parsed = json.parseToJsonElement(raw)
+            (parsed as? JsonObject)?.get("code")?.let { (it as? JsonPrimitive)?.contentOrNull }
         } catch (_: Exception) {
             null
         }
     }
 
+    private fun messageFor(code: String, status: Int): String = when (code) {
+        "invalid_grant", "expired_token" -> "设备凭据已失效，正在重新登记"
+        "device-client-revoked", "client-revoked" -> "设备已被吊销，请联系管理员"
+        "client-disabled" -> "设备客户端已被暂停，请联系管理员"
+        "invalid-client" -> "设备客户端配置无效"
+        "client-migration-required" -> "请升级电视应用并完成设备自动登记"
+        else -> "认证失败（$status）"
+    }
+
     companion object {
-        // Match ACCESS_TOKEN_TTL_SECONDS on the backend (3600s = 1h).
-        private const val TOKEN_TTL_MS = 3600L * 1000L
+        private const val SAFETY_MARGIN_MS = 60_000L
+        const val DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
+        const val REFRESH_TOKEN_GRANT = "refresh_token"
+        private val INVALID_CREDENTIAL_CODES = setOf(
+            "invalid_grant",
+            "expired_token",
+            "device-client-revoked",
+            "client-revoked",
+        )
     }
 }
 
-/** Thrown when token issuance fails (client disabled/revoked, network, etc.). */
-class TokenException(message: String) : Exception(message)
-
-// --- kotlinx.serialization helpers for error body parsing ---
-private val kotlinx.serialization.json.JsonElement.jsonObject
-    get() = this as kotlinx.serialization.json.JsonObject
-private val kotlinx.serialization.json.JsonElement.jsonPrimitive
-    get() = this as kotlinx.serialization.json.JsonPrimitive
-private val kotlinx.serialization.json.JsonPrimitive.contentOrNull: String?
-    get() = if (this.isString) this.content else null
+class TokenException(
+    val code: String,
+    message: String,
+) : Exception(message)

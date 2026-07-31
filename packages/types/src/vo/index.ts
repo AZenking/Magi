@@ -241,6 +241,22 @@ export interface OpenProgrammeVo {
   category: string | null;
 }
 
+/** Content invalidation versions returned by the TV heartbeat/snapshot APIs. */
+export interface ContentRevisionVo {
+  catalog: string;
+  epg: string;
+}
+
+/** Batched public TV content projection used by the cache-aware client. */
+export interface ContentSnapshotVo {
+  catalogRevision: string;
+  epgRevision: string;
+  generatedAt: string;
+  groups: OpenGroupVo[];
+  channels: OpenChannelVo[];
+  programmes: OpenProgrammeVo[];
+}
+
 /**
  * Playback decision for a channel (005-open-channels-epg-api playback endpoint).
  *

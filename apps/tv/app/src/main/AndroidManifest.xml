@@ -15,6 +15,7 @@
     <application
         android:name=".MagiTvApp"
         android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
         android:banner="@drawable/tv_banner"
         android:networkSecurityConfig="@xml/network_security_config"
         android:icon="@mipmap/ic_launcher"

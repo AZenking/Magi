@@ -3,10 +3,12 @@ package com.magi.tv.ui.channels
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.util.UnstableApi
 import com.magi.tv.data.repository.LastChannelStore
 import com.magi.tv.domain.model.Channel
 import com.magi.tv.domain.model.ChannelGroup
 import com.magi.tv.domain.model.Programme
+import com.magi.tv.domain.repository.ContentSyncRepository
 import com.magi.tv.domain.repository.DiagnosticsRepository
 import com.magi.tv.domain.usecase.GetChannelCatalogUseCase
 import com.magi.tv.domain.usecase.GetProgrammeGuideUseCase
@@ -72,6 +74,7 @@ private data class EpgCacheEntry(val programmes: List<Programme>, val expiresAt:
  * `displayedChannels` is derived locally (no re-fetch) from the selected group
  * — group filtering never changes the surf order.
  */
+@UnstableApi
 class LivePlaybackViewModel(
     context: Context,
     private val getChannelCatalog: GetChannelCatalogUseCase,
@@ -79,6 +82,7 @@ class LivePlaybackViewModel(
     private val getProgrammeGuide: GetProgrammeGuideUseCase,
     private val lastChannelStore: LastChannelStore,
     diagnosticsRepository: DiagnosticsRepository,
+    private val contentSyncRepository: ContentSyncRepository? = null,
 ) : ViewModel() {
 
     val session = Media3PlaybackSession(
@@ -105,6 +109,14 @@ class LivePlaybackViewModel(
 
     init {
         loadCatalogAndResume()
+        contentSyncRepository?.let { contentSync ->
+            viewModelScope.launch {
+                contentSync.changes.collect { change ->
+                    if (change.catalogChanged) reloadCatalogPreservingCurrent()
+                    if (change.epgChanged) refreshFocusedGuide()
+                }
+            }
+        }
         // Watch for asynchronous playback failures (e.g. ExoPlayer 404 / timeout).
         // When the player reports a terminalError while a tune from the side
         // sheet is pending, clear the pending id and surface the error so the
@@ -173,6 +185,45 @@ class LivePlaybackViewModel(
                 focusedChannelId = channels.getOrNull(startIndex)?.id,
             )
             playCurrent(initialPlay = !firstPlayDone)
+        }
+    }
+
+    /** Apply a catalog revision without resetting the current playback channel. */
+    private suspend fun reloadCatalogPreservingCurrent() {
+        val previousState = mutableUiState.value
+        val previousChannelId = previousState.allChannels
+            .getOrNull(previousState.currentIndex)?.id
+        val catalog = try {
+            getChannelCatalog(null)
+        } catch (_: Exception) {
+            return
+        }
+        if (catalog.channels.isEmpty()) return
+
+        val nextIndex = previousChannelId
+            ?.let { id -> catalog.channels.indexOfFirst { it.id == id } }
+            ?.takeIf { it >= 0 }
+            ?: previousState.currentIndex.coerceIn(0, catalog.channels.lastIndex)
+        val nextChannelId = catalog.channels.getOrNull(nextIndex)?.id
+        val nextFocusedId = previousState.focusedChannelId
+            ?.takeIf { id -> catalog.channels.any { it.id == id } }
+            ?: nextChannelId
+        mutableUiState.value = previousState.copy(
+            allChannels = catalog.channels,
+            groups = catalog.groups,
+            currentIndex = nextIndex,
+            focusedChannelId = nextFocusedId,
+            loading = false,
+            catalogError = null,
+        )
+        if (previousChannelId != nextChannelId) playCurrent(initialPlay = false)
+    }
+
+    private fun refreshFocusedGuide() {
+        val focusedId = mutableUiState.value.focusedChannelId ?: return
+        guideJob?.cancel()
+        guideJob = viewModelScope.launch {
+            loadGuideNow(focusedId, mutableUiState.value.selectedDate)
         }
     }
 
@@ -309,7 +360,7 @@ class LivePlaybackViewModel(
 
     private fun loadGuideDebounced(channelId: String) {
         val date = mutableUiState.value.selectedDate
-        val cacheKey = "$channelId-$date"
+        val cacheKey = guideCacheKey(channelId, date)
         // Cache hit?
         epgCache[cacheKey]?.let { entry ->
             if (entry.expiresAt > System.currentTimeMillis()) {
@@ -332,6 +383,7 @@ class LivePlaybackViewModel(
 
     /** The latest guide request key — stale responses are rejected. */
     private var currentGuideRequestKey: String? = null
+    private var prefetchJob: Job? = null
 
     private suspend fun loadGuideNow(channelId: String, date: LocalDate) {
         val requestKey = "$channelId-$date"
@@ -341,24 +393,29 @@ class LivePlaybackViewModel(
         val fromEpoch = date.atStartOfDay(zone).toInstant().toEpochMilli()
         val toEpoch = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
         try {
-            val programmes = getProgrammeGuide(channelId, fromEpoch, toEpoch)
+            val ids = adjacentChannelIds(channelId)
+            val programmesByChannel = getProgrammeGuide.batch(ids, fromEpoch, toEpoch)
+            val programmes = programmesByChannel[channelId.removePrefix("magi:")].orEmpty()
             // Reject stale response: if the user moved focus since this request,
             // don't overwrite the current guide state.
             if (currentGuideRequestKey != requestKey) return
             val ttl = if (date == LocalDate.now()) 5 * 60 * 1000L else 30 * 60 * 1000L
-            val cacheKey = "$channelId-$date"
-            epgCache[cacheKey] = EpgCacheEntry(programmes, System.currentTimeMillis() + ttl)
+            val expiresAt = System.currentTimeMillis() + ttl
+            programmesByChannel.forEach { (id, guide) ->
+                epgCache[guideCacheKey(id, date)] = EpgCacheEntry(guide, expiresAt)
+            }
+            val stale = getProgrammeGuide.isStale(channelId, fromEpoch, toEpoch)
             mutableUiState.value = mutableUiState.value.copy(
                 guide = programmes,
                 guideLoading = false,
                 guideError = null,
-                guideStale = false,
+                guideStale = stale,
             )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             // If cache exists, keep showing it but mark stale.
-            val cacheKey = "$channelId-$date"
+            val cacheKey = guideCacheKey(channelId, date)
             val cached = epgCache[cacheKey]?.programmes ?: emptyList()
             mutableUiState.value = mutableUiState.value.copy(
                 guide = cached,
@@ -372,26 +429,41 @@ class LivePlaybackViewModel(
 
     /** Prefetch EPG for neighbors of [channelId] in the displayed list. */
     private fun prefetchAdjacent(channelId: String) {
-        val list = displayedChannels
+        val list = mutableUiState.value.allChannels
         val idx = list.indexOfFirst { it.id == channelId }
         if (idx < 0) return
         val date = mutableUiState.value.selectedDate
-        listOfNotNull(list.getOrNull(idx - 1), list.getOrNull(idx + 1)).forEach { neighbor ->
-            val key = "${neighbor.id}-$date"
-            if (key !in epgCache) {
-                viewModelScope.launch {
-                    runCatching {
-                        val zone = ZoneId.systemDefault()
-                        val from = date.atStartOfDay(zone).toInstant().toEpochMilli()
-                        val to = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-                        val pg = getProgrammeGuide(neighbor.id, from, to)
-                        val ttl = if (date == LocalDate.now()) 5 * 60 * 1000L else 30 * 60 * 1000L
-                        epgCache[key] = EpgCacheEntry(pg, System.currentTimeMillis() + ttl)
-                    }
+        val neighbors = listOfNotNull(list.getOrNull(idx - 1), list.getOrNull(idx + 1))
+            .filter { guideCacheKey(it.id, date) !in epgCache }
+        if (neighbors.isEmpty()) return
+        prefetchJob?.cancel()
+        prefetchJob = viewModelScope.launch {
+            runCatching {
+                val zone = ZoneId.systemDefault()
+                val from = date.atStartOfDay(zone).toInstant().toEpochMilli()
+                val to = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+                val guides = getProgrammeGuide.batch(neighbors.map { it.id }, from, to)
+                val ttl = if (date == LocalDate.now()) 5 * 60 * 1000L else 30 * 60 * 1000L
+                val expiresAt = System.currentTimeMillis() + ttl
+                guides.forEach { (id, guide) ->
+                    epgCache[guideCacheKey(id, date)] = EpgCacheEntry(guide, expiresAt)
                 }
             }
         }
     }
+
+    private fun adjacentChannelIds(channelId: String): List<String> {
+        val list = mutableUiState.value.allChannels
+        val idx = list.indexOfFirst { it.id == channelId }
+        return listOfNotNull(
+            list.getOrNull(idx),
+            list.getOrNull(idx - 1),
+            list.getOrNull(idx + 1),
+        ).map { it.id.removePrefix("magi:") }.distinct()
+    }
+
+    private fun guideCacheKey(channelId: String, date: LocalDate): String =
+        "${channelId.removePrefix("magi:")}-$date"
 
     private fun classifyError(e: Exception): TvError {
         // TokenException carries the exact reason (client disabled/revoked/invalid).
@@ -425,6 +497,7 @@ class LivePlaybackViewModel(
             getProgrammeGuide: GetProgrammeGuideUseCase,
             lastChannelStore: LastChannelStore,
             diagnosticsRepository: DiagnosticsRepository,
+            contentSyncRepository: ContentSyncRepository? = null,
         ) = object : androidx.lifecycle.ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T = LivePlaybackViewModel(
@@ -434,6 +507,7 @@ class LivePlaybackViewModel(
                 getProgrammeGuide = getProgrammeGuide,
                 lastChannelStore = lastChannelStore,
                 diagnosticsRepository = diagnosticsRepository,
+                contentSyncRepository = contentSyncRepository,
             ) as T
         }
     }

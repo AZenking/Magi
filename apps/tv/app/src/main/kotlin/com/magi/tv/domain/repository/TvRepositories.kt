@@ -1,6 +1,8 @@
 package com.magi.tv.domain.repository
 
 import com.magi.tv.domain.model.ChannelCatalog
+import com.magi.tv.domain.model.ContentChange
+import com.magi.tv.domain.model.ContentRevision
 import com.magi.tv.domain.model.DiagnosticEvent
 import com.magi.tv.domain.model.PlaybackDecision
 import com.magi.tv.domain.model.Programme
@@ -17,6 +19,31 @@ interface TvContentRepository {
         fromEpochMs: Long,
         toEpochMs: Long,
     ): List<Programme>
+
+    /** Fetches several channels in one content-snapshot request when supported. */
+    suspend fun getProgrammeGuideBatch(
+        channelIds: Collection<String>,
+        fromEpochMs: Long,
+        toEpochMs: Long,
+    ): Map<String, List<Programme>> = channelIds
+        .map { it.removePrefix("magi:") }
+        .distinct()
+        .associateWith { channelId ->
+            getProgrammeGuide(channelId, fromEpochMs, toEpochMs)
+        }
+
+    suspend fun isProgrammeGuideStale(
+        channelId: String,
+        fromEpochMs: Long,
+        toEpochMs: Long,
+    ): Boolean = false
+}
+
+/** Receives content invalidation tokens from the foreground heartbeat. */
+interface ContentSyncRepository {
+    val changes: Flow<ContentChange>
+
+    suspend fun syncIfChanged(revision: ContentRevision)
 }
 
 interface DiagnosticsRepository {

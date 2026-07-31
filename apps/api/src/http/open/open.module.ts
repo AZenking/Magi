@@ -4,6 +4,9 @@ import { OpenApiController } from "./open.controller";
 import { OutputModule } from "../output/output.module";
 import { OauthModule } from "../oauth-client/oauth.module";
 import { ResolvePlaybackUseCase } from "../../application/open/resolve-playback.use-case";
+import { DeviceHeartbeatController } from "./device-heartbeat.controller";
+import { AuthController } from "./auth.controller";
+import { FindContentSnapshotUseCase } from "../../application/output-composition/content-snapshot.use-case";
 
 /**
  * OpenModule — public read-only API (005-open-channels-epg-api / 004-safe-operations).
@@ -18,11 +21,9 @@ import { ResolvePlaybackUseCase } from "../../application/open/resolve-playback.
   imports: [
     OutputModule,
     OauthModule,
-    ThrottlerModule.forRoot([
-      { ttl: 60_000, limit: 60 },
-    ]),
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 60 }]),
   ],
-  controllers: [OpenApiController],
-  providers: [ResolvePlaybackUseCase],
+  controllers: [OpenApiController, AuthController, DeviceHeartbeatController],
+  providers: [ResolvePlaybackUseCase, FindContentSnapshotUseCase],
 })
 export class OpenModule {}

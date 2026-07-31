@@ -7,6 +7,13 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.fail
+import com.magi.tv.data.auth.TokenRequest
+import com.magi.tv.data.auth.TokenResponse
+import com.magi.tv.data.remote.DeviceAuthorizationRequestDto
+import com.magi.tv.data.remote.DeviceAuthorizationResponseDto
+import com.magi.tv.data.remote.DeviceRegistrationRequestDto
+import com.magi.tv.data.remote.HeartbeatRequestDto
+import com.magi.tv.data.remote.HeartbeatResponseDto
 
 /**
  * Cross-language contract test (constitution II/V): verifies that the Kotlin
@@ -72,6 +79,72 @@ class OpenApiContractTest {
         expected("OpenGroupVo", serializer<ChannelGroupDto>()) {
             field("name", required = false)
             field("count", required = true)
+        }
+    }
+
+    @Test
+    fun `DeviceAuthorizationRequestDto matches device authorization contract`() {
+        expected("DeviceAuthorizationRequest", serializer<DeviceAuthorizationRequestDto>()) {
+            field("client_id", required = true)
+            field("device_type", required = true)
+            field("platform", required = true)
+            field("platform_version", required = true)
+            field("app_version", required = true)
+            field("identity_summary", required = true)
+            field("suggested_name", required = false)
+        }
+    }
+
+    @Test
+    fun `DeviceRegistrationRequestDto includes required installation id`() {
+        expected("DeviceRegistrationRequest", serializer<DeviceRegistrationRequestDto>()) {
+            field("client_id", required = true)
+            field("device_type", required = true)
+            field("platform", required = true)
+            field("platform_version", required = true)
+            field("app_version", required = true)
+            field("identity_summary", required = true)
+            field("suggested_name", required = false)
+            field("installation_id", required = true)
+        }
+    }
+
+    @Test
+    fun `device token and heartbeat DTOs preserve nullable and server fields`() {
+        expected("TokenResponse", serializer<TokenResponse>()) {
+            field("access_token", required = true)
+            field("token_type", required = true)
+            field("expires_in", required = true)
+            field("scope", required = true)
+            field("refresh_token", required = false)
+            field("refresh_expires_in", required = false)
+            field("device_client_id", required = false)
+        }
+        expected("TokenRequest", serializer<TokenRequest>()) {
+            field("grant_type", required = true)
+            field("client_id", required = true)
+            field("client_secret", required = false)
+            field("device_code", required = false)
+            field("refresh_token", required = false)
+        }
+        expected("DeviceAuthorizationResponse", serializer<DeviceAuthorizationResponseDto>()) {
+            field("device_code", required = true)
+            field("user_code", required = true)
+            field("verification_uri", required = true)
+            field("verification_uri_complete", required = false)
+            field("expires_in", required = true)
+            field("interval", required = true)
+        }
+        expected("HeartbeatRequest", serializer<HeartbeatRequestDto>()) {
+            field("app_version", required = true)
+            field("platform_version", required = true)
+        }
+        expected("HeartbeatResponse", serializer<HeartbeatResponseDto>()) {
+            field("server_time", required = true)
+            field("last_active_at", required = true)
+            field("next_heartbeat_in_seconds", required = true)
+            field("online_window_seconds", required = true)
+            field("content_revision", required = false)
         }
     }
 
