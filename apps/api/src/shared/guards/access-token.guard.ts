@@ -16,7 +16,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { hashSecret } from "../crypto/secret-utils";
-import { ACCESS_TOKEN_REPOSITORY } from "@/domain/oauth";
+import { ACCESS_TOKEN_REPOSITORY, type RequestPrincipal } from "@/domain/oauth";
 
 /** Shape attached to req.client on successful authentication. */
 export interface RequestClient {
@@ -27,7 +27,14 @@ export interface RequestClient {
   clientName: string;
 }
 
-function extractToken(req: { headers: Record<string, string | string[] | undefined> }): string | null {
+export type RequestWithPrincipal = {
+  principal?: RequestPrincipal;
+  client?: RequestClient;
+};
+
+function extractToken(req: {
+  headers: Record<string, string | string[] | undefined>;
+}): string | null {
   const auth = req.headers.authorization ?? req.headers.Authorization;
   if (typeof auth === "string" && auth.startsWith("Bearer ")) {
     return auth.slice(7).trim() || null;
@@ -37,7 +44,10 @@ function extractToken(req: { headers: Record<string, string | string[] | undefin
 
 @Injectable()
 export class AccessTokenGuard implements CanActivate {
-  constructor(@Inject(ACCESS_TOKEN_REPOSITORY) private readonly tokenRepo: import("@/domain/oauth").IAccessTokenRepository) {}
+  constructor(
+    @Inject(ACCESS_TOKEN_REPOSITORY)
+    private readonly tokenRepo: import("@/domain/oauth").IAccessTokenRepository,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
@@ -52,7 +62,9 @@ export class AccessTokenGuard implements CanActivate {
     }
 
     // Single join resolves token validity + client attribution.
-    const result = await this.tokenRepo.findActiveByHashWithClient(hashSecret(token));
+    const result = await this.tokenRepo.findActiveByHashWithClient(
+      hashSecret(token),
+    );
     if (!result) {
       // All failure modes (missing / revoked / expired) collapse to one code
       // to prevent token enumeration — same approach as the former ApiKeyGuard.
@@ -69,6 +81,23 @@ export class AccessTokenGuard implements CanActivate {
       clientName: result.clientName,
     };
     req.client = safe;
+    req.principal = result.deviceClientId
+      ? {
+          kind: "device",
+          oauthClientId: result.token.clientId,
+          clientId: result.clientId,
+          clientName: result.clientName,
+          deviceClientId: result.deviceClientId,
+          ownerUserId: result.ownerUserId ?? "",
+          scope: result.scope,
+        }
+      : {
+          kind: "integration",
+          oauthClientId: result.token.clientId,
+          clientId: result.clientId,
+          clientName: result.clientName,
+          scope: result.scope,
+        };
 
     // Best-effort lastUsedAt refresh — never block or fail the request on it.
     void this.tokenRepo.touchClientLastUsed(result.token.id).catch(() => {

@@ -14,16 +14,18 @@
  *   disable only stops NEW token issuance; revoke kills ALL existing tokens too.
  */
 export type ClientStatus = "active" | "disabled" | "revoked";
+export type ClientKind = "confidential" | "public_device";
 
 export interface OauthClient {
   id: string;
   /** Public client identifier, e.g. "magi_tv_android". */
   clientId: string;
   clientName: string;
+  clientKind: ClientKind;
   /** SHA-256(client_secret) hex. Never the plaintext. */
-  secretHash: string;
+  secretHash: string | null;
   /** Masked prefix, e.g. `magi_3f9…`. For list display only. */
-  secretPrefix: string;
+  secretPrefix: string | null;
   status: ClientStatus;
   lastUsedAt: Date | null;
   createdBy: string;

@@ -5,6 +5,7 @@ import { Logger } from "nestjs-pino";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
 import { OpenModule } from "./http/open/open.module";
+import { AccountClientModule } from "./http/account-client/account-client.module";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./infrastructure/auth/auth.config";
 
@@ -71,7 +72,7 @@ async function bootstrap() {
       .setVersion("1.0.0")
       .addBearerAuth({ type: "http", scheme: "bearer" }, "access-token")
       .build(),
-    { include: [OpenModule] },
+    { include: [OpenModule, AccountClientModule] },
   );
   SwaggerModule.setup("api/docs", app, swaggerDoc, {
     swaggerOptions: { docExpansion: "none" },

@@ -61,6 +61,13 @@ export const AUDIT_ACTIONS = {
     revoke: "oauth_client.revoked",
     delete: "oauth_client.deleted",
   },
+  deviceClient: {
+    register: "device_client.registered",
+    autoRegister: "device_client.auto_registered",
+    rename: "device_client.renamed",
+    revoke: "device_client.revoked",
+    revokedAccessRejected: "device_client.revoked_access_rejected",
+  },
 } as const;
 
 export function changedFieldNames(value: object): string[] {

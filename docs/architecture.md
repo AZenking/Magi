@@ -703,6 +703,27 @@ TV Focus
 
 ---
 
+# Device Client Management and Heartbeat
+
+设备客户端（`device_clients`）表示一个绑定到账户的安装实例；OAuth 客户端
+（`oauth_clients`）仍表示软件/集成凭证。二者通过 `device_client_id` 绑定设备令牌，
+管理页面只返回脱敏设备摘要，不返回任何 Token、Secret、完整 IP 或播放地址。
+
+新 Android TV 首次启动调用自动注册接口：电视携带公开的
+`magi_tv` client id 和稳定安装标识，服务端按默认管理员账户创建或复用设备记录并签发短期
+Access Token 与旋转 Refresh Token；不要求用户输入授权码或 Web 批准。RFC 8628 接口仅作为
+旧版本兼容入口。Refresh Token 仅以
+Android Keystore AES-GCM 密文写入 Preferences DataStore，Access Token 只保存在内存；
+Refresh Token family 重放会撤销整个 family 及其 Access Token。
+
+心跳由 `ProcessLifecycleOwner` 注册的单例协调器负责，仅在前台运行，每 60 秒发送一次；
+网络恢复或回到前台立即补发。失败使用带上限的随机扰动退避，并通过单飞互斥和 generation
+检查避免重复请求或旧回调写入。服务端以数据库接收时间更新 `last_heartbeat_at`，在
+150 秒内派生为在线，已撤销状态始终优先。账户撤销在一个 PostgreSQL 事务内同时终结设备、
+Access/Refresh Token、审计和 outbox 事件，撤销与并发心跳竞态时撤销优先。
+
+---
+
 # Design Principles
 
 ## Controller

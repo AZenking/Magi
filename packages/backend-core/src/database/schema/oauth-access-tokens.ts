@@ -6,8 +6,18 @@
  * A token is valid iff: revokedAt IS NULL AND expiresAt > now.
  * Expired rows are cleaned up periodically (deleteExpired).
  */
-import { pgTable, uuid, varchar, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import {
+  check,
+  pgTable,
+  uuid,
+  varchar,
+  timestamp,
+  uniqueIndex,
+  index,
+} from "drizzle-orm/pg-core";
 import { oauthClients } from "./oauth-clients";
+import { deviceClients } from "./device-clients";
 import { timestamps } from "./helpers";
 
 export const oauthAccessTokens = pgTable(
@@ -18,6 +28,14 @@ export const oauthAccessTokens = pgTable(
     clientId: uuid("client_id")
       .notNull()
       .references(() => oauthClients.id, { onDelete: "cascade" }),
+    deviceClientId: uuid("device_client_id").references(
+      () => deviceClients.id,
+      { onDelete: "cascade" },
+    ),
+    grantType: varchar("grant_type", { length: 64 })
+      .notNull()
+      .default("client_credentials"),
+    scope: varchar("scope", { length: 255 }).notNull().default("open:read"),
     /** SHA-256 hex of the access_token plaintext. */
     tokenHash: varchar("token_hash", { length: 64 }).notNull(),
     /** Masked prefix for debugging. */
@@ -31,5 +49,13 @@ export const oauthAccessTokens = pgTable(
   (t) => [
     uniqueIndex("oauth_tokens_hash_idx").on(t.tokenHash),
     index("oauth_tokens_client_expires_idx").on(t.clientId, t.expiresAt),
+    index("oauth_tokens_device_client_idx").on(t.deviceClientId),
+    check(
+      "oauth_tokens_grant_device_consistency_check",
+      sql`(
+        (${t.grantType} = 'client_credentials' AND ${t.deviceClientId} IS NULL)
+        OR (${t.grantType} IN ('device_code', 'refresh_token') AND ${t.deviceClientId} IS NOT NULL)
+      )`,
+    ),
   ],
 );

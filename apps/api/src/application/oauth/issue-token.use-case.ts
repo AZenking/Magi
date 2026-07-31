@@ -25,6 +25,10 @@ import {
   maskSecretPrefix,
   ACCESS_TOKEN_TTL_SECONDS,
 } from "@/shared/crypto/secret-utils";
+import {
+  DEVICE_CLIENT_CONFIG,
+  isLegacyClientCutover,
+} from "../../infrastructure/config/device-client.config";
 
 export interface IssueTokenCommand {
   clientId: string;
@@ -34,23 +38,42 @@ export interface IssueTokenCommand {
 export interface IssuedToken {
   accessToken: string;
   expiresIn: number;
+  scope: string;
 }
 
 @Injectable()
 export class IssueTokenUseCase {
   constructor(
-    @Inject(OAUTH_CLIENT_REPOSITORY) private readonly clientRepo: IOauthClientRepository,
-    @Inject(ACCESS_TOKEN_REPOSITORY) private readonly tokenRepo: IAccessTokenRepository,
+    @Inject(OAUTH_CLIENT_REPOSITORY)
+    private readonly clientRepo: IOauthClientRepository,
+    @Inject(ACCESS_TOKEN_REPOSITORY)
+    private readonly tokenRepo: IAccessTokenRepository,
   ) {}
 
   async execute(command: IssueTokenCommand): Promise<IssuedToken> {
     const client = await this.clientRepo.findByClientId(command.clientId);
     // Missing client and wrong-secret both collapse to invalid-client to
     // prevent clientId enumeration (same approach as the former ApiKeyGuard).
-    if (!client || client.secretHash !== hashSecret(command.clientSecret)) {
+    if (
+      !client ||
+      client.clientKind !== "confidential" ||
+      !client.secretHash ||
+      client.secretHash !== hashSecret(command.clientSecret)
+    ) {
       throw new UnauthorizedException({
         code: "invalid-client",
         title: "Client authentication failed",
+        status: 401,
+      });
+    }
+
+    if (
+      client.clientId === DEVICE_CLIENT_CONFIG.legacyClientId &&
+      isLegacyClientCutover()
+    ) {
+      throw new UnauthorizedException({
+        code: "client-migration-required",
+        title: "This shared client has reached its migration cutoff",
         status: 401,
       });
     }
@@ -78,11 +101,17 @@ export class IssueTokenUseCase {
       tokenHash: hashSecret(plaintext),
       tokenPrefix: maskSecretPrefix(plaintext),
       expiresAt,
+      grantType: "client_credentials",
+      scope: "open:read",
     });
 
     // Best-effort lastUsedAt — never block on it.
     void this.clientRepo.touchLastUsed(client.id).catch(() => {});
 
-    return { accessToken: plaintext, expiresIn: ACCESS_TOKEN_TTL_SECONDS };
+    return {
+      accessToken: plaintext,
+      expiresIn: ACCESS_TOKEN_TTL_SECONDS,
+      scope: "open:read",
+    };
   }
 }

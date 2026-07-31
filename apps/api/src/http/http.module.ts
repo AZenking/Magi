@@ -11,8 +11,23 @@ import { BackupAuditModule } from "./backup/backup.module";
 import { AuditModule } from "./audit/audit.module";
 import { OauthModule } from "./oauth-client/oauth.module";
 import { OpenModule } from "./open/open.module";
+import { AccountClientModule } from "./account-client/account-client.module";
 
 @Module({
-  imports: [AuditModule, DashboardModule, ChannelModule, ProgrammeModule, TaskModule, SourceModule, OutputModule, EpgModule, OperationModule, BackupAuditModule, OauthModule, OpenModule],
+  imports: [
+    AuditModule,
+    DashboardModule,
+    ChannelModule,
+    ProgrammeModule,
+    TaskModule,
+    SourceModule,
+    OutputModule,
+    EpgModule,
+    OperationModule,
+    BackupAuditModule,
+    OauthModule,
+    AccountClientModule,
+    OpenModule,
+  ],
 })
 export class HttpModule {}

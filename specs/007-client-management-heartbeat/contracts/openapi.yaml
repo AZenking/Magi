@@ -1,0 +1,949 @@
+openapi: 3.1.0
+info:
+  title: MAGI Device Client Management Contract
+  version: 0.1.0
+  description: >
+    Contract for account-owned device clients, automatic TV registration,
+    rotating refresh tokens, and foreground heartbeat. RFC 8628 authorization
+    remains available for legacy clients; existing open read operations and
+    confidential Client Credentials remain backward compatible.
+servers:
+  - url: /
+tags:
+  - name: Device Authorization
+  - name: Device Heartbeat
+  - name: Account Clients
+
+paths:
+  /api/open/v1/auth/device-register:
+    post:
+      tags: [Device Authorization]
+      operationId: registerDefaultDevice
+      summary: Register a TV to the configured default account
+      description: >
+        First-run TV clients use this endpoint without a user-entered code.
+        The server resolves the configured default account, creates or reuses
+        the installation record, and returns rotating device credentials.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceRegistrationRequest"
+      responses:
+        "200":
+          description: Device credentials issued
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Must be no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/InvalidPublicClient"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/open/v1/auth/device-authorization:
+    post:
+      tags: [Device Authorization]
+      operationId: beginDeviceAuthorization
+      summary: Start a short-lived TV device authorization
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceAuthorizationRequest"
+      responses:
+        "200":
+          description: Device and user codes created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceAuthorizationEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/InvalidPublicClient"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/open/v1/auth/token:
+    post:
+      tags: [Device Authorization]
+      operationId: issueOpenAccessToken
+      summary: >
+        Issue an access token from confidential client credentials, an approved
+        device code, or a rotating device refresh token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TokenGrantRequest"
+      responses:
+        "200":
+          description: Token issued
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Must be no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenEnvelope"
+        "400":
+          description: Pending, slowed, denied, expired, replayed, or malformed grant
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/OAuthProblem"
+        "401":
+          description: Invalid confidential client or revoked device
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/OAuthProblem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/open/v1/device-clients/heartbeat:
+    post:
+      tags: [Device Heartbeat]
+      operationId: recordDeviceHeartbeat
+      summary: Record foreground liveness for the authenticated device
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HeartbeatRequest"
+      responses:
+        "200":
+          description: Heartbeat accepted using server receive time
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeartbeatEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/InvalidAccessToken"
+        "403":
+          description: Valid integration token is not a device principal
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/account/device-authorizations/{userCode}:
+    get:
+      tags: [Account Clients]
+      operationId: inspectDeviceAuthorization
+      summary: Preview a pending device before approval
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UserCode"
+      responses:
+        "200":
+          description: Pending device summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceAuthorizationPreviewEnvelope"
+        "401":
+          $ref: "#/components/responses/SessionRequired"
+        "404":
+          $ref: "#/components/responses/AuthorizationCodeUnavailable"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/account/device-authorizations/{userCode}/approve:
+    post:
+      tags: [Account Clients]
+      operationId: approveDeviceAuthorization
+      summary: Bind the pending TV authorization to the logged-in account
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UserCode"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveDeviceAuthorizationRequest"
+      responses:
+        "200":
+          description: Approval recorded; TV may exchange its device code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceAuthorizationDecisionEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/SessionRequired"
+        "404":
+          $ref: "#/components/responses/AuthorizationCodeUnavailable"
+        "409":
+          $ref: "#/components/responses/AuthorizationAlreadyDecided"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/account/device-authorizations/{userCode}/deny:
+    post:
+      tags: [Account Clients]
+      operationId: denyDeviceAuthorization
+      summary: Deny a pending TV authorization
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UserCode"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Denial recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceAuthorizationDecisionEnvelope"
+        "401":
+          $ref: "#/components/responses/SessionRequired"
+        "404":
+          $ref: "#/components/responses/AuthorizationCodeUnavailable"
+        "409":
+          $ref: "#/components/responses/AuthorizationAlreadyDecided"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/account/clients:
+    get:
+      tags: [Account Clients]
+      operationId: listAccountDeviceClients
+      summary: List only device clients owned by the logged-in account
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            enum: [20, 50, 100]
+            default: 20
+      responses:
+        "200":
+          description: Stable presence-sorted page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceClientPageEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/SessionRequired"
+
+  /api/account/clients/{clientId}:
+    patch:
+      tags: [Account Clients]
+      operationId: renameAccountDeviceClient
+      summary: Rename an owned active device client
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ClientId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenameDeviceClientRequest"
+      responses:
+        "200":
+          description: Device renamed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceClientEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationProblem"
+        "401":
+          $ref: "#/components/responses/SessionRequired"
+        "404":
+          $ref: "#/components/responses/ClientNotFound"
+        "409":
+          description: Revoked clients cannot be renamed
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /api/account/clients/{clientId}/revoke:
+    post:
+      tags: [Account Clients]
+      operationId: revokeAccountDeviceClient
+      summary: Irreversibly revoke an owned device and every associated token
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ClientId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Revoked, or already revoked by an identical retry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevokeDeviceClientEnvelope"
+        "401":
+          $ref: "#/components/responses/SessionRequired"
+        "404":
+          $ref: "#/components/responses/ClientNotFound"
+        "409":
+          description: The same idempotency key was reused with a different request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: better-auth.session_token
+
+  parameters:
+    UserCode:
+      name: userCode
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[A-HJ-NP-Z2-9]{4}-?[A-HJ-NP-Z2-9]{4}$"
+      description: Short-lived code shown on the TV; normalized case-insensitively
+    ClientId:
+      name: clientId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 120
+
+  schemas:
+    DeviceAuthorizationRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - client_id
+        - device_type
+        - platform
+        - platform_version
+        - app_version
+        - identity_summary
+      properties:
+        client_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Registered public-device OAuth software client
+        device_type:
+          $ref: "#/components/schemas/DeviceType"
+        platform:
+          type: string
+          enum: [android]
+        platform_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+        app_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+        identity_summary:
+          type: string
+          minLength: 1
+          maxLength: 120
+          description: Non-sensitive model/manufacturer summary
+        suggested_name:
+          type: [string, "null"]
+          minLength: 1
+          maxLength: 64
+
+    DeviceRegistrationRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - client_id
+        - device_type
+        - platform
+        - platform_version
+        - app_version
+        - identity_summary
+        - installation_id
+      properties:
+        client_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        device_type:
+          $ref: "#/components/schemas/DeviceType"
+        platform:
+          type: string
+          enum: [android]
+        platform_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+        app_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+        identity_summary:
+          type: string
+          minLength: 1
+          maxLength: 120
+        suggested_name:
+          type: [string, "null"]
+          minLength: 1
+          maxLength: 64
+        installation_id:
+          type: string
+          format: uuid
+          description: Stable random identifier retained by one TV installation
+
+    DeviceAuthorizationResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - device_code
+        - user_code
+        - verification_uri
+        - expires_in
+        - interval
+      properties:
+        device_code:
+          type: string
+          minLength: 32
+          readOnly: true
+        user_code:
+          type: string
+          pattern: "^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$"
+        verification_uri:
+          type: string
+          format: uri
+        verification_uri_complete:
+          type: [string, "null"]
+          format: uri
+          readOnly: true
+        expires_in:
+          type: integer
+          const: 600
+        interval:
+          type: integer
+          minimum: 5
+
+    ClientCredentialsGrantRequest:
+      type: object
+      additionalProperties: false
+      required: [grant_type, client_id, client_secret]
+      properties:
+        grant_type:
+          type: string
+          const: client_credentials
+        client_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        client_secret:
+          type: string
+          minLength: 1
+          maxLength: 128
+
+    DeviceCodeGrantRequest:
+      type: object
+      additionalProperties: false
+      required: [grant_type, client_id, device_code]
+      properties:
+        grant_type:
+          type: string
+          const: "urn:ietf:params:oauth:grant-type:device_code"
+        client_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        device_code:
+          type: string
+          minLength: 32
+
+    RefreshTokenGrantRequest:
+      type: object
+      additionalProperties: false
+      required: [grant_type, client_id, refresh_token]
+      properties:
+        grant_type:
+          type: string
+          const: refresh_token
+        client_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        refresh_token:
+          type: string
+          minLength: 32
+
+    TokenGrantRequest:
+      oneOf:
+        - $ref: "#/components/schemas/ClientCredentialsGrantRequest"
+        - $ref: "#/components/schemas/DeviceCodeGrantRequest"
+        - $ref: "#/components/schemas/RefreshTokenGrantRequest"
+      discriminator:
+        propertyName: grant_type
+        mapping:
+          client_credentials: "#/components/schemas/ClientCredentialsGrantRequest"
+          "urn:ietf:params:oauth:grant-type:device_code": "#/components/schemas/DeviceCodeGrantRequest"
+          refresh_token: "#/components/schemas/RefreshTokenGrantRequest"
+
+    TokenResponse:
+      type: object
+      additionalProperties: false
+      required: [access_token, token_type, expires_in, scope]
+      properties:
+        access_token:
+          type: string
+          minLength: 32
+          readOnly: true
+        token_type:
+          type: string
+          const: Bearer
+        expires_in:
+          type: integer
+          const: 3600
+        scope:
+          type: string
+        refresh_token:
+          type: string
+          minLength: 32
+          readOnly: true
+          description: Required for device_code and refresh_token grants; absent for client_credentials
+        refresh_expires_in:
+          type: integer
+          const: 2592000
+        device_client_id:
+          type: string
+          format: uuid
+          description: Present only for device-bound grants
+
+    HeartbeatRequest:
+      type: object
+      additionalProperties: false
+      required: [app_version, platform_version]
+      properties:
+        app_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+        platform_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+
+    HeartbeatResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - server_time
+        - last_active_at
+        - next_heartbeat_in_seconds
+        - online_window_seconds
+      properties:
+        server_time:
+          type: string
+          format: date-time
+        last_active_at:
+          type: string
+          format: date-time
+        next_heartbeat_in_seconds:
+          type: integer
+          const: 60
+        online_window_seconds:
+          type: integer
+          const: 150
+
+    DeviceAuthorizationPreview:
+      type: object
+      additionalProperties: false
+      required:
+        - userCode
+        - deviceType
+        - platform
+        - platformVersion
+        - appVersion
+        - identitySummary
+        - expiresAt
+      properties:
+        userCode:
+          type: string
+        deviceType:
+          $ref: "#/components/schemas/DeviceType"
+        platform:
+          type: string
+        platformVersion:
+          type: string
+        appVersion:
+          type: string
+        identitySummary:
+          type: string
+        suggestedName:
+          type: [string, "null"]
+        expiresAt:
+          type: string
+          format: date-time
+
+    ApproveDeviceAuthorizationRequest:
+      type: object
+      additionalProperties: false
+      required: [displayName]
+      properties:
+        displayName:
+          $ref: "#/components/schemas/DisplayName"
+
+    DeviceAuthorizationDecision:
+      type: object
+      additionalProperties: false
+      required: [userCode, status, expiresAt]
+      properties:
+        userCode:
+          type: string
+        status:
+          type: string
+          enum: [approved, denied]
+        expiresAt:
+          type: string
+          format: date-time
+
+    DeviceType:
+      type: string
+      enum: [android_tv]
+
+    DisplayName:
+      type: string
+      minLength: 1
+      maxLength: 64
+      description: Trimmed printable Unicode; duplicate names are allowed
+
+    DeviceClientStatus:
+      type: string
+      enum: [online, offline, revoked]
+
+    DeviceClient:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - displayName
+        - deviceType
+        - platform
+        - platformVersion
+        - appVersion
+        - identitySummary
+        - status
+        - registeredAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          $ref: "#/components/schemas/DisplayName"
+        deviceType:
+          $ref: "#/components/schemas/DeviceType"
+        platform:
+          type: string
+        platformVersion:
+          type: string
+        appVersion:
+          type: string
+        identitySummary:
+          type: string
+        status:
+          $ref: "#/components/schemas/DeviceClientStatus"
+        registeredAt:
+          type: string
+          format: date-time
+        lastActiveAt:
+          type: [string, "null"]
+          format: date-time
+        revokedAt:
+          type: [string, "null"]
+          format: date-time
+
+    DeviceClientPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, page, pageSize, totalPages, asOf]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeviceClient"
+        total:
+          type: integer
+          minimum: 0
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+        totalPages:
+          type: integer
+          minimum: 1
+        asOf:
+          type: string
+          format: date-time
+          description: Single database time used for presence derivation
+
+    RenameDeviceClientRequest:
+      type: object
+      additionalProperties: false
+      required: [displayName]
+      properties:
+        displayName:
+          $ref: "#/components/schemas/DisplayName"
+
+    RevokeDeviceClientResult:
+      type: object
+      additionalProperties: false
+      required: [client, accessTokensRevoked, refreshTokensRevoked]
+      properties:
+        client:
+          $ref: "#/components/schemas/DeviceClient"
+        accessTokensRevoked:
+          type: integer
+          minimum: 0
+        refreshTokensRevoked:
+          type: integer
+          minimum: 0
+
+    Problem:
+      type: object
+      additionalProperties: true
+      required: [code, title, status]
+      properties:
+        code:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: [string, object, "null"]
+        requestId:
+          type: [string, "null"]
+          maxLength: 120
+
+    OAuthProblem:
+      allOf:
+        - $ref: "#/components/schemas/Problem"
+        - type: object
+          properties:
+            code:
+              type: string
+              enum:
+                - unsupported-grant-type
+                - invalid-client
+                - client-disabled
+                - client-revoked
+                - authorization_pending
+                - slow_down
+                - access_denied
+                - expired_token
+                - invalid_grant
+                - device-client-revoked
+
+    DeviceAuthorizationEnvelope:
+      $ref: "#/components/schemas/SuccessEnvelopeDeviceAuthorization"
+    TokenEnvelope:
+      $ref: "#/components/schemas/SuccessEnvelopeToken"
+    HeartbeatEnvelope:
+      $ref: "#/components/schemas/SuccessEnvelopeHeartbeat"
+    DeviceAuthorizationPreviewEnvelope:
+      $ref: "#/components/schemas/SuccessEnvelopeAuthorizationPreview"
+    DeviceAuthorizationDecisionEnvelope:
+      $ref: "#/components/schemas/SuccessEnvelopeAuthorizationDecision"
+    DeviceClientEnvelope:
+      $ref: "#/components/schemas/SuccessEnvelopeDeviceClient"
+    DeviceClientPageEnvelope:
+      $ref: "#/components/schemas/SuccessEnvelopeDeviceClientPage"
+    RevokeDeviceClientEnvelope:
+      $ref: "#/components/schemas/SuccessEnvelopeRevokeDeviceClient"
+
+    SuccessEnvelopeDeviceAuthorization:
+      type: object
+      additionalProperties: false
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          $ref: "#/components/schemas/DeviceAuthorizationResponse"
+    SuccessEnvelopeToken:
+      type: object
+      additionalProperties: false
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          $ref: "#/components/schemas/TokenResponse"
+    SuccessEnvelopeHeartbeat:
+      type: object
+      additionalProperties: false
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          $ref: "#/components/schemas/HeartbeatResponse"
+    SuccessEnvelopeAuthorizationPreview:
+      type: object
+      additionalProperties: false
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          $ref: "#/components/schemas/DeviceAuthorizationPreview"
+    SuccessEnvelopeAuthorizationDecision:
+      type: object
+      additionalProperties: false
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          $ref: "#/components/schemas/DeviceAuthorizationDecision"
+    SuccessEnvelopeDeviceClient:
+      type: object
+      additionalProperties: false
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          $ref: "#/components/schemas/DeviceClient"
+    SuccessEnvelopeDeviceClientPage:
+      type: object
+      additionalProperties: false
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          $ref: "#/components/schemas/DeviceClientPage"
+    SuccessEnvelopeRevokeDeviceClient:
+      type: object
+      additionalProperties: false
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          $ref: "#/components/schemas/RevokeDeviceClientResult"
+
+  responses:
+    ValidationProblem:
+      description: Request validation failed
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    InvalidPublicClient:
+      description: Public device client is unknown, inactive, or does not allow device grant
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    InvalidAccessToken:
+      description: Access token is missing, expired, revoked, or belongs to a revoked device
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    SessionRequired:
+      description: Valid better-auth session required
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    AuthorizationCodeUnavailable:
+      description: Code is unknown, expired, consumed, or unavailable
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    AuthorizationAlreadyDecided:
+      description: A conflicting approval or denial already won
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    ClientNotFound:
+      description: Client does not exist or is owned by another account
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    RateLimited:
+      description: Request rate exceeded
+      headers:
+        Retry-After:
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"

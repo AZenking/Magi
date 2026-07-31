@@ -18,6 +18,7 @@ import { oauthClients } from "./schema";
 function toDomain(row: typeof oauthClients.$inferSelect): OauthClient {
   return {
     ...row,
+    clientKind: row.clientKind as OauthClient["clientKind"],
     status: row.status as ClientStatus,
   };
 }
@@ -39,16 +40,26 @@ export class OauthClientRepository implements IOauthClientRepository {
   }
 
   async findById(id: string): Promise<OauthClient | null> {
-    const [row] = await db.select().from(oauthClients).where(eq(oauthClients.id, id)).limit(1);
+    const [row] = await db
+      .select()
+      .from(oauthClients)
+      .where(eq(oauthClients.id, id))
+      .limit(1);
     return row ? toDomain(row) : null;
   }
 
   async findByClientId(clientId: string): Promise<OauthClient | null> {
-    const [row] = await db.select().from(oauthClients).where(eq(oauthClients.clientId, clientId)).limit(1);
+    const [row] = await db
+      .select()
+      .from(oauthClients)
+      .where(eq(oauthClients.clientId, clientId))
+      .limit(1);
     return row ? toDomain(row) : null;
   }
 
-  async findPaginated(query: ListOauthClientsQuery): Promise<{ items: OauthClient[]; total: number }> {
+  async findPaginated(
+    query: ListOauthClientsQuery,
+  ): Promise<{ items: OauthClient[]; total: number }> {
     const { page, pageSize, status, search } = query;
     const conditions = [];
     if (status) conditions.push(eq(oauthClients.status, status));
@@ -56,14 +67,25 @@ export class OauthClientRepository implements IOauthClientRepository {
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
     const [items, countResult] = await Promise.all([
-      db.select().from(oauthClients).where(where).limit(pageSize).offset((page - 1) * pageSize),
-      db.select({ count: sql<number>`count(*)::int` }).from(oauthClients).where(where),
+      db
+        .select()
+        .from(oauthClients)
+        .where(where)
+        .limit(pageSize)
+        .offset((page - 1) * pageSize),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(oauthClients)
+        .where(where),
     ]);
 
     return { items: items.map(toDomain), total: countResult[0]?.count ?? 0 };
   }
 
-  async updateStatus(id: string, status: ClientStatus): Promise<OauthClient | null> {
+  async updateStatus(
+    id: string,
+    status: ClientStatus,
+  ): Promise<OauthClient | null> {
     const [row] = await db
       .update(oauthClients)
       .set({ status, updatedAt: new Date() })
@@ -73,11 +95,17 @@ export class OauthClientRepository implements IOauthClientRepository {
   }
 
   async touchLastUsed(id: string, at: Date = new Date()): Promise<void> {
-    await db.update(oauthClients).set({ lastUsedAt: at }).where(eq(oauthClients.id, id));
+    await db
+      .update(oauthClients)
+      .set({ lastUsedAt: at })
+      .where(eq(oauthClients.id, id));
   }
 
   async deleteById(id: string): Promise<boolean> {
-    const [row] = await db.delete(oauthClients).where(eq(oauthClients.id, id)).returning();
+    const [row] = await db
+      .delete(oauthClients)
+      .where(eq(oauthClients.id, id))
+      .returning();
     return !!row;
   }
 }

@@ -12,10 +12,13 @@ import type {
   IAccessTokenRepository,
 } from "@/domain/oauth";
 import { db } from "./connection";
-import { oauthAccessTokens, oauthClients } from "./schema";
+import { deviceClients, oauthAccessTokens, oauthClients } from "./schema";
 
 function toDomain(row: typeof oauthAccessTokens.$inferSelect): AccessToken {
-  return { ...row };
+  return {
+    ...row,
+    grantType: row.grantType as AccessToken["grantType"],
+  };
 }
 
 export class AccessTokenRepository implements IAccessTokenRepository {
@@ -24,6 +27,9 @@ export class AccessTokenRepository implements IAccessTokenRepository {
       .insert(oauthAccessTokens)
       .values({
         clientId: data.clientId,
+        deviceClientId: data.deviceClientId ?? null,
+        grantType: data.grantType ?? "client_credentials",
+        scope: data.scope ?? "open:read",
         tokenHash: data.tokenHash,
         tokenPrefix: data.tokenPrefix,
         expiresAt: data.expiresAt,
@@ -47,22 +53,35 @@ export class AccessTokenRepository implements IAccessTokenRepository {
     return row ? toDomain(row) : null;
   }
 
-  async findActiveByHashWithClient(
-    tokenHash: string,
-  ): Promise<{ token: AccessToken; clientId: string; clientName: string } | null> {
+  async findActiveByHashWithClient(tokenHash: string): Promise<{
+    token: AccessToken;
+    clientId: string;
+    clientName: string;
+    deviceClientId: string | null;
+    ownerUserId: string | null;
+    scope: string;
+  } | null> {
     const [row] = await db
       .select({
         token: oauthAccessTokens,
         clientPublicId: oauthClients.clientId,
         clientName: oauthClients.clientName,
+        deviceClientId: oauthAccessTokens.deviceClientId,
+        ownerUserId: deviceClients.ownerUserId,
+        deviceStatus: deviceClients.status,
       })
       .from(oauthAccessTokens)
       .innerJoin(oauthClients, eq(oauthAccessTokens.clientId, oauthClients.id))
+      .leftJoin(
+        deviceClients,
+        eq(oauthAccessTokens.deviceClientId, deviceClients.id),
+      )
       .where(
         and(
           eq(oauthAccessTokens.tokenHash, tokenHash),
           isNull(oauthAccessTokens.revokedAt),
           gt(oauthAccessTokens.expiresAt, new Date()),
+          sql`(${oauthAccessTokens.deviceClientId} IS NULL OR ${deviceClients.status} = 'active')`,
         ),
       )
       .limit(1);
@@ -71,14 +90,25 @@ export class AccessTokenRepository implements IAccessTokenRepository {
       token: toDomain(row.token),
       clientId: row.clientPublicId,
       clientName: row.clientName,
+      deviceClientId: row.deviceClientId,
+      ownerUserId: row.ownerUserId ?? null,
+      scope: row.token.scope,
     };
   }
 
-  async revokeByClientId(clientId: string, at: Date = new Date()): Promise<number> {
+  async revokeByClientId(
+    clientId: string,
+    at: Date = new Date(),
+  ): Promise<number> {
     const result = await db
       .update(oauthAccessTokens)
       .set({ revokedAt: at, updatedAt: at })
-      .where(and(eq(oauthAccessTokens.clientId, clientId), isNull(oauthAccessTokens.revokedAt)))
+      .where(
+        and(
+          eq(oauthAccessTokens.clientId, clientId),
+          isNull(oauthAccessTokens.revokedAt),
+        ),
+      )
       .returning({ id: oauthAccessTokens.id });
     return result.length;
   }

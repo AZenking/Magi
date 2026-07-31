@@ -25,6 +25,7 @@ export {
   canonicalEpgBindings,
   channelOverrides,
   channelStreams,
+  contentManifest,
   timestamps,
   createdAt,
   updatedAt,
@@ -47,4 +48,7 @@ export {
   // OAuth2 Client Credentials Grant (004-safe-operations, replaces api_keys)
   oauthClients,
   oauthAccessTokens,
+  deviceClients,
+  deviceAuthorizationGrants,
+  deviceRefreshTokens,
 } from "@magi/backend-core";

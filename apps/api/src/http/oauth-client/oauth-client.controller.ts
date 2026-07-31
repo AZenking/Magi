@@ -182,7 +182,7 @@ function toClientVo(c: OauthClient): OauthClientVo {
     id: c.id,
     clientId: c.clientId,
     clientName: c.clientName,
-    secretPrefix: c.secretPrefix,
+    secretPrefix: c.secretPrefix ?? "",
     status: c.status,
     lastUsedAt: c.lastUsedAt?.toISOString() ?? null,
     createdBy: c.createdBy,

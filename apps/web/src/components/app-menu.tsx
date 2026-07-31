@@ -8,6 +8,7 @@ import {
   FolderOpenOutlined,
   GlobalOutlined,
   KeyOutlined,
+  LaptopOutlined,
   LinkOutlined,
   ProfileOutlined,
   ScheduleOutlined,
@@ -140,6 +141,20 @@ const NAV_SECTIONS: NavSection[] = [
     rootPath: "/dashboard/audit",
     prefixes: ["/dashboard/audit"],
     children: [],
+  },
+  {
+    id: "account",
+    label: "账户",
+    icon: <LaptopOutlined />,
+    rootPath: "/dashboard/account/clients",
+    prefixes: ["/dashboard/account"],
+    children: [
+      {
+        key: "/dashboard/account/clients",
+        label: "客户端管理",
+        icon: <LaptopOutlined />,
+      },
+    ],
   },
   {
     id: "open-api",

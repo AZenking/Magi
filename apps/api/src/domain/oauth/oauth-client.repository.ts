@@ -31,7 +31,9 @@ export interface IOauthClientRepository {
   findById(id: string): Promise<OauthClient | null>;
   /** Lookup by public clientId — used by the token endpoint. */
   findByClientId(clientId: string): Promise<OauthClient | null>;
-  findPaginated(query: ListOauthClientsQuery): Promise<{ items: OauthClient[]; total: number }>;
+  findPaginated(
+    query: ListOauthClientsQuery,
+  ): Promise<{ items: OauthClient[]; total: number }>;
   updateStatus(id: string, status: ClientStatus): Promise<OauthClient | null>;
   /** Bump lastUsedAt without changing status/version (best-effort). */
   touchLastUsed(id: string, at?: Date): Promise<void>;

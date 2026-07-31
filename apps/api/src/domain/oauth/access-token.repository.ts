@@ -17,7 +17,14 @@ export interface IAccessTokenRepository {
    */
   findActiveByHash(tokenHash: string): Promise<AccessToken | null>;
   /** Find the owning client id for a token hash (for guard attribution). */
-  findActiveByHashWithClient(tokenHash: string): Promise<{ token: AccessToken; clientId: string; clientName: string } | null>;
+  findActiveByHashWithClient(tokenHash: string): Promise<{
+    token: AccessToken;
+    clientId: string;
+    clientName: string;
+    deviceClientId: string | null;
+    ownerUserId: string | null;
+    scope: string;
+  } | null>;
   /** Batch-revoke every token for a client. Used when a client is revoked. */
   revokeByClientId(clientId: string, at?: Date): Promise<number>;
   /** Delete expired tokens (housekeeping). Returns rows deleted. */

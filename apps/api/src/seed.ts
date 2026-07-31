@@ -73,6 +73,8 @@ async function seed() {
         ),
       );
 
+    await ensurePublicDeviceClient(adminId);
+
     logger.info(`Admin user "${adminUsername}" synchronized successfully.`);
     process.exit(0);
   }
@@ -86,8 +88,50 @@ async function seed() {
     },
   });
 
+  const [createdAdmin] = await db
+    .select({ id: schema.user.id })
+    .from(schema.user)
+    .where(eq(schema.user.username, adminUsername))
+    .limit(1);
+  if (createdAdmin) await ensurePublicDeviceClient(createdAdmin.id);
+
   logger.info(`Admin user "${adminUsername}" created successfully.`);
   process.exit(0);
+}
+
+/** The TV ships only the public software client id; no secret is persisted. */
+async function ensurePublicDeviceClient(createdBy: string) {
+  const clientId = process.env.MAGI_DEVICE_CLIENT_ID ?? "magi_tv";
+  const clientName = process.env.MAGI_DEVICE_CLIENT_NAME ?? "Magi TV";
+  const [existing] = await db
+    .select({ id: schema.oauthClients.id })
+    .from(schema.oauthClients)
+    .where(eq(schema.oauthClients.clientId, clientId))
+    .limit(1);
+
+  if (existing) {
+    await db
+      .update(schema.oauthClients)
+      .set({
+        clientName,
+        clientKind: "public_device",
+        secretHash: null,
+        secretPrefix: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.oauthClients.id, existing.id));
+    return;
+  }
+
+  await db.insert(schema.oauthClients).values({
+    clientId,
+    clientName,
+    clientKind: "public_device",
+    secretHash: null,
+    secretPrefix: null,
+    status: "active",
+    createdBy,
+  });
 }
 
 seed().catch((err) => {

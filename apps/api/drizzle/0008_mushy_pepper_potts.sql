@@ -1,0 +1,2 @@
+ALTER TABLE "device_clients" ADD COLUMN "installation_id" varchar(64);--> statement-breakpoint
+CREATE UNIQUE INDEX "device_clients_oauth_installation_idx" ON "device_clients" USING btree ("oauth_client_id","installation_id");
