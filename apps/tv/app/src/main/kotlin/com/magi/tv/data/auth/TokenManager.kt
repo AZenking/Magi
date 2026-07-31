@@ -42,8 +42,18 @@ class TokenManager(
     private val refreshMutex = Mutex()
 
     private val tokenApi: TokenApi = run {
-        val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
-        val client = OkHttpClient.Builder().build()
+        val json = Json {
+            ignoreUnknownKeys = true
+            coerceInputValues = true
+            encodeDefaults = true // serialize grant_type="client_credentials" (has a default)
+        }
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                okhttp3.logging.HttpLoggingInterceptor().apply {
+                    level = okhttp3.logging.HttpLoggingInterceptor.Level.BASIC
+                },
+            )
+            .build()
         val baseUrl = "${BuildConfig.MAGI_SERVER_URL.trim().trimEnd('/')}/"
         Retrofit.Builder()
             .baseUrl(baseUrl)

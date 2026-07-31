@@ -72,9 +72,10 @@ private class AuthInterceptor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val token = try {
             runBlocking { tokenManager.getValidToken() }
-        } catch (_: TokenException) {
-            // Token unavailable (client disabled/revoked). Proceed without a
-            // token — the server will return 401, and the caller handles it.
+        } catch (e: TokenException) {
+            // Token unavailable (client disabled/revoked/network error).
+            // Proceed without a token — the server will return 401, and the
+            // caller surfaces the error.
             return chain.proceed(chain.request())
         }
         val request = chain.request().newBuilder()
