@@ -78,6 +78,22 @@
 - What happens when [boundary condition]?
 - How does system handle [error scenario]?
 
+### Android TV Interaction & Recovery *(mandatory when TV is in scope)*
+
+<!--
+  Describe behavior, not Compose implementation details. Every path must be testable with only
+  D-pad, OK, and Back.
+-->
+
+- **Focus entry**: [Initial focus when the screen/sheet/dialog opens]
+- **Directional map**: [What Up/Down/Left/Right do in every visible state]
+- **Focus restoration**: [Where focus returns after closing or navigating back]
+- **Back hierarchy**: [Overlay/sheet → information layer → previous screen → app exit]
+- **Playback lifecycle**: [Player ownership, channel-switch cancellation, stale-result handling]
+- **Recovery actions**: [Offline, unauthorized, no playable line, decoder failure, retry/settings]
+- **10-foot UI**: [Typography sizes, 48dp targets, safe area, focus indication]
+- **Device acceptance**: [Android TV emulator and physical-device/remote scenarios]
+
 ## Requirements *(mandatory)*
 
 <!--
@@ -92,6 +108,11 @@
 - **FR-003**: Users MUST be able to [key interaction, e.g., "reset their password"]
 - **FR-004**: System MUST [data requirement, e.g., "persist user preferences"]
 - **FR-005**: System MUST [behavior, e.g., "log all security events"]
+
+<!--
+  TV features MUST include requirements for deterministic focus, Back behavior, explicit error
+  recovery, and protection of API keys/playback URLs where applicable.
+-->
 
 *Example of marking unclear requirements:*
 

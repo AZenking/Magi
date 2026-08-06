@@ -2,6 +2,7 @@ import { Controller, Get, Inject, UseGuards } from "@nestjs/common";
 import type { ApiResponse, OperationsSummaryVo } from "@magi/types";
 import type { IM3uSourceRepository, IXmltvSourceRepository } from "@/domain/source-management";
 import type { IChannelRepository, IProgrammeRepository } from "@/domain/channel-catalog";
+import { CONTENT_MANIFEST_REPOSITORY, type ContentManifestRepository } from "@/domain/content";
 import { GetHealthSummaryUseCase } from "../../application/dashboard/get-health-summary.use-case";
 import { GetOperationsSummaryUseCase } from "../../application/dashboard/get-operations-summary.use-case";
 import { AuthGuard } from "../../shared/guards/auth.guard";
@@ -22,6 +23,8 @@ export class DashboardController {
     private readonly healthSummaryUc: GetHealthSummaryUseCase,
     @Inject(GetOperationsSummaryUseCase)
     private readonly operationsSummaryUc: GetOperationsSummaryUseCase,
+    @Inject(CONTENT_MANIFEST_REPOSITORY)
+    private readonly contentManifest: ContentManifestRepository,
   ) {}
 
   @Get("stats")
@@ -80,5 +83,41 @@ export class DashboardController {
         issues: s.issues,
       },
     };
+  }
+
+  @Get("content-health")
+  async getContentHealth(): Promise<
+    ApiResponse<{
+      available: boolean;
+      catalogRevision: string | null;
+      epgRevision: string | null;
+      checkedAt: string;
+      errorCode?: string;
+    }>
+  > {
+    const checkedAt = new Date().toISOString();
+    try {
+      const revision = await this.contentManifest.getCurrent();
+      return {
+        success: true,
+        data: {
+          available: true,
+          catalogRevision: revision.catalog,
+          epgRevision: revision.epg,
+          checkedAt,
+        },
+      };
+    } catch {
+      return {
+        success: true,
+        data: {
+          available: false,
+          catalogRevision: null,
+          epgRevision: null,
+          checkedAt,
+          errorCode: "content-manifest-unavailable",
+        },
+      };
+    }
   }
 }

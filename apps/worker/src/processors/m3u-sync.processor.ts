@@ -11,7 +11,63 @@ interface SyncResult {
   removedCount: number;
 }
 
-export async function processM3uSync(sourceId: string, progress?: SyncProgress): Promise<SyncResult> {
+/**
+ * Batch result when a scheduled sync fans out across all enabled sources
+ * (008-pipeline-reliability T013).
+ */
+interface SyncBatchResult {
+  totalSources: number;
+  succeededSources: number;
+  failedSources: number;
+  results: Array<{ sourceId: string; status: "success" | "failed"; error?: string }>;
+}
+
+/**
+ * Process an M3U source sync. When `sourceId` is null (scheduled/timer
+ * invocation), fans out across all enabled M3U sources — each source is
+ * synced independently so a single source failure does not block others.
+ */
+export async function processM3uSync(
+  sourceId: string | null,
+  progress?: SyncProgress,
+): Promise<SyncResult | SyncBatchResult> {
+  // Fan-out: scheduled jobs arrive with sourceId=null. Iterate all enabled
+  // sources and sync each one independently.
+  if (!sourceId) {
+    const enabledSources = await db
+      .select({ id: m3uSources.id })
+      .from(m3uSources)
+      .where(eq(m3uSources.enabled, true));
+
+    const results: SyncBatchResult["results"] = [];
+    let succeeded = 0;
+    let failed = 0;
+
+    for (let i = 0; i < enabledSources.length; i++) {
+      const sid = enabledSources[i]!.id;
+      try {
+        await processM3uSync(sid, undefined);
+        succeeded++;
+        results.push({ sourceId: sid, status: "success" });
+      } catch (error) {
+        failed++;
+        results.push({
+          sourceId: sid,
+          status: "failed",
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      // Coarse progress across the batch.
+      await progress?.updateProgress(
+        Math.round(((i + 1) / enabledSources.length) * 100),
+        "batch-sync",
+      );
+    }
+
+    return { totalSources: enabledSources.length, succeededSources: succeeded, failedSources: failed, results };
+  }
+
+  // Single-source sync (manual trigger or fan-out child).
   const [source] = await db.select().from(m3uSources).where(eq(m3uSources.id, sourceId)).limit(1);
   if (!source || !source.enabled) {
     throw new Error("Source not found or disabled");
@@ -82,6 +138,13 @@ export async function processM3uSync(sourceId: string, progress?: SyncProgress):
       await tx.insert(channels).values(channelData);
     }
   });
+
+  await progress?.updateProgress(80, "reconcile-canonical");
+
+  // 008-pipeline-reliability T017: rebuild canonical channels immediately
+  // after M3U sync so output is visible without a manual EPG match trigger.
+  const { reconcileCanonicals } = await import("./reconcile-canonicals");
+  await reconcileCanonicals();
 
   await progress?.updateProgress(90, "finalize");
 

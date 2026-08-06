@@ -9,6 +9,7 @@
 | Frontend | TanStack Start (Vite), TanStack Router, React 19, antd v6, TanStack Query, TanStack Table, Zustand |
 | Auth | better-auth (邮箱密码) |
 | Backend | NestJS, Drizzle ORM, PostgreSQL, Redis, BullMQ, Zod |
+| Android TV | Kotlin, Jetpack Compose for TV, Media3/ExoPlayer, Retrofit, DataStore + Android Keystore |
 | Infra | Docker, Docker Compose, Turborepo, pnpm |
 
 ## Project Structure
@@ -19,7 +20,7 @@ magi/
 │   ├── web/          # TanStack Start 管理后台
 │   ├── api/          # NestJS 核心 API
 │   ├── worker/       # BullMQ 异步任务
-│   └── tv/           # Android TV (Phase 2，尚未创建)
+│   └── tv/           # Android TV 客户端 (Kotlin + Compose for TV + Media3，Gradle 工程，不进 pnpm/turbo)
 ├── packages/
 │   ├── types/        # 共享类型 + Zod Schema
 │   ├── ui/           # 共享 UI 组件 (antd v6)
@@ -112,6 +113,20 @@ bash scripts/docker-down.sh
 
 Base URL: `http://localhost:3001`。除 `/api/auth/*` 外，接口需登录（better-auth session）。
 
+### 开放接口（API Key 鉴权）
+
+面向外部客户端（Android TV、第三方播放器、脚本）的只读频道与节目单接口。鉴权方式为 `Authorization: Bearer magi_...` 或 `x-api-key`，与后台 Session 物理隔离。API key 在后台「开放接口 · API Keys」页签发。
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/open/v1/groups` | 频道分组列表 |
+| `GET /api/open/v1/channels` | 分页频道列表（仅对外可见，`?group=` `?search=`） |
+| `GET /api/open/v1/channels/:id` | 频道详情（产品视图，不含线路） |
+| `GET /api/open/v1/epg` | 节目单（时间窗，最长 7 天，`?from=` `?to=`） |
+| `GET /api/docs` | Swagger UI（交互式文档） |
+| `GET /api/open.json` | OpenAPI 规范（机器可读，可生成客户端） |
+| `POST /api/admin/api-keys` | 创建 API key（明文仅返回一次，需管理员登录） |
+
 ### Dashboard
 
 | Endpoint | Description |
@@ -179,6 +194,40 @@ Base URL: `http://localhost:3001`。除 `/api/auth/*` 外，接口需登录（be
 | `GET /tasks/scheduled` | 列出定时任务 |
 | `PUT /tasks/scheduled/:jobId` | 更新定时任务 |
 | `POST /tasks/scheduled/:jobId/trigger` | 手动触发定时任务 |
+
+## Android TV 客户端 (`apps/tv`)
+
+Android TV 客户端是独立的 **Gradle 工程**(Kotlin + Jetpack Compose for TV + Media3),**不参与** pnpm/turbo 构建(JS 工具链与 Android 无关)。
+
+### 构建
+
+需要 JDK 17–21(本机推荐 JBR 21)和 Android SDK(`ANDROID_HOME` 或 `local.properties` 里的 `sdk.dir`)。
+
+```bash
+cd apps/tv
+export JAVA_HOME="$(/usr/libexec/java_home -v 21)"   # 或指向你的 JDK 17–21
+./gradlew :app:assembleDebug
+# 产物: app/build/outputs/apk/debug/app-debug.apk
+```
+
+涉及 `apps/tv` 的变更在合并前必须通过：
+
+```bash
+cd apps/tv
+./gradlew :app:lintDebug :app:testDebugUnitTest :app:assembleDebug
+```
+
+涉及遥控器焦点、Back、换台、播放器或覆盖层的变更，还必须在 Android TV 模拟器和至少
+一台真实遥控器设备上验证。TV 端分层、D-pad 可达性、播放恢复、10-foot UI 与凭据保护
+的强制规则见 [项目宪法](.specify/memory/constitution.md) 原则 VIII。
+
+### 接入
+
+1. 在 Web 后台「开放接口 · API Keys」签发一把 API key。
+2. 启动 Magi TV,在配置页填入 Magi Server 地址(如 `http://<server-ip>:3001`)和 API key。
+3. 应用通过开放接口(`/api/open/v1/*`,见上文「开放接口」章节)拉取频道与播放决策。
+
+详见 [`specs/006-magi-tv-v0.1`](specs/006-magi-tv-v0.1/spec.md) 与 [`docs/magi-tv-product-roadmap.md`](docs/magi-tv-product-roadmap.md)。
 
 ## License
 

@@ -33,6 +33,7 @@ export const channelStreams = pgTable(
     responseTime: integer("response_time"),
     lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
     lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+    lastPlaybackReportAt: timestamp("last_playback_report_at", { withTimezone: true }),
     consecutiveFailures: integer("consecutive_failures")
       .notNull()
       .default(0),

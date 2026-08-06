@@ -9,6 +9,11 @@ module.exports = [
       "**/dist/**",
       "**/node_modules/**",
       "**/*.tsbuildinfo",
+      // Test files are intentionally excluded from package production
+      // tsconfig projects; keep ESLint's type-aware parser in agreement.
+      "**/__tests__/**",
+      "**/*.test.{ts,tsx}",
+      "**/*.spec.{ts,tsx}",
     ],
   },
   {

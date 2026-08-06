@@ -10,8 +10,10 @@ import { GetHealthSummaryUseCase } from "../../application/dashboard/get-health-
 import { GetOperationsSummaryUseCase } from "../../application/dashboard/get-operations-summary.use-case";
 import type { IHealthStatsRepository } from "@/domain/output-composition";
 import type { ITaskRepository } from "@/domain/task-execution";
+import { OauthModule } from "../oauth-client/oauth.module";
 
 @Module({
+  imports: [OauthModule],
   controllers: [DashboardController],
   providers: [
     { provide: "M3U_SOURCE_REPOSITORY", useClass: M3uSourceRepository },

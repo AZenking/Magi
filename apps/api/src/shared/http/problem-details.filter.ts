@@ -33,6 +33,7 @@ const STATUS_TEXT: Record<number, string> = {
   412: "Precondition Failed",
   422: "Unprocessable Entity",
   428: "Precondition Required",
+  429: "Too Many Requests",
   500: "Internal Server Error",
   503: "Service Unavailable",
 };
@@ -53,6 +54,8 @@ function statusToCode(status: number): string {
       return "validation-failed";
     case 428:
       return "precondition-required";
+    case 429:
+      return "rate-limit-exceeded";
     case 503:
       return "operation-capacity-unavailable";
     default:

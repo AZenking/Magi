@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "../db";
-import { xmltvSources, rawXmltvChannels, programmes } from "../schema";
+import { contentManifest, xmltvSources, rawXmltvChannels, programmes } from "../schema";
 import { downloadSource, parseXMLTV, parseXmltvDate, isInEpgWindow } from "@magi/backend-core";
 import type { SyncProgress } from "@magi/backend-core";
 
@@ -13,7 +13,55 @@ interface SyncResult {
   removedCount: number;
 }
 
-export async function processXmltvSync(sourceId: string, progress?: SyncProgress): Promise<SyncResult> {
+interface SyncBatchResult {
+  totalSources: number;
+  succeededSources: number;
+  failedSources: number;
+  results: Array<{ sourceId: string; status: "success" | "failed"; error?: string }>;
+}
+
+/**
+ * Process an XMLTV source sync. When `sourceId` is null (scheduled/timer
+ * invocation), fans out across all enabled XMLTV sources (008-pipeline-
+ * reliability T014).
+ */
+export async function processXmltvSync(
+  sourceId: string | null,
+  progress?: SyncProgress,
+): Promise<SyncResult | SyncBatchResult> {
+  if (!sourceId) {
+    const enabledSources = await db
+      .select({ id: xmltvSources.id })
+      .from(xmltvSources)
+      .where(eq(xmltvSources.enabled, true));
+
+    const results: Array<{ sourceId: string; status: "success" | "failed"; error?: string }> = [];
+    let succeeded = 0;
+    let failed = 0;
+
+    for (let i = 0; i < enabledSources.length; i++) {
+      const sid = enabledSources[i]!.id;
+      try {
+        await processXmltvSync(sid, undefined);
+        succeeded++;
+        results.push({ sourceId: sid, status: "success" });
+      } catch (error) {
+        failed++;
+        results.push({
+          sourceId: sid,
+          status: "failed",
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      await progress?.updateProgress(
+        Math.round(((i + 1) / enabledSources.length) * 100),
+        "batch-sync",
+      );
+    }
+
+    return { totalSources: enabledSources.length, succeededSources: succeeded, failedSources: failed, results };
+  }
+
   const [source] = await db.select().from(xmltvSources).where(eq(xmltvSources.id, sourceId)).limit(1);
   if (!source || !source.enabled) {
     throw new Error("Source not found or disabled");
@@ -87,6 +135,20 @@ export async function processXmltvSync(sourceId: string, progress?: SyncProgress
         "write-programmes",
       );
     }
+
+    // Programme replacement is the atomic boundary for EPG invalidation.
+    // Seed at 2 so the first successful sync is visible to clients that
+    // started with the migration's initial revision 1.
+    await tx
+      .insert(contentManifest)
+      .values({ id: 1, epgRevision: 2, updatedAt: now })
+      .onConflictDoUpdate({
+        target: contentManifest.id,
+        set: {
+          epgRevision: sql`${contentManifest.epgRevision} + 1`,
+          updatedAt: now,
+        },
+      });
   });
 
   await progress?.updateProgress(90, "finalize");

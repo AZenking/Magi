@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type {
   CanonicalEpgBinding,
   CanonicalEpgBindingStatus,
@@ -6,7 +6,7 @@ import type {
   ICanonicalEpgBindingRepository,
 } from "@/domain/output-composition";
 import { db } from "./connection";
-import { canonicalEpgBindings, xmltvSources } from "./schema";
+import { canonicalEpgBindings, contentManifest, xmltvSources } from "./schema";
 
 function toDomain(
   row: typeof canonicalEpgBindings.$inferSelect,
@@ -90,6 +90,7 @@ export class CanonicalEpgBindingRepository
           ),
         )
         .returning();
+      if (updated) await bumpEpgRevision();
       return updated ? toDomain(updated) : null;
     }
 
@@ -98,6 +99,7 @@ export class CanonicalEpgBindingRepository
       .insert(canonicalEpgBindings)
       .values({ canonicalChannelId, ...data })
       .returning();
+    if (created) await bumpEpgRevision();
     return created ? toDomain(created) : null;
   }
 
@@ -134,5 +136,23 @@ export class CanonicalEpgBindingRepository
       sourceFreshnessThresholdMinutes:
         row.sourceFreshnessThresholdMinutes,
     }));
+  }
+}
+
+async function bumpEpgRevision(): Promise<void> {
+  try {
+    await db
+      .insert(contentManifest)
+      .values({ id: 1, epgRevision: 2, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: contentManifest.id,
+        set: {
+          epgRevision: sql`${contentManifest.epgRevision} + 1`,
+          updatedAt: new Date(),
+        },
+      });
+  } catch {
+    // See canonical-channel.repository.ts: cache invalidation is best effort
+    // while the additive migration is being rolled out.
   }
 }

@@ -179,6 +179,39 @@ TV客户端
 播放器
 ```
 
+技术边界：
+
+```txt
+Compose UI / ViewModel
+        ↓
+UseCase / Domain Port
+        ↓
+Data Repository / Platform Adapter
+        ↓
+Retrofit / DataStore / Media3
+```
+
+规则：
+
+- `domain/` 不依赖 Android、Compose、Retrofit、DataStore 或 Media3。
+- UI/ViewModel 不直接依赖 `data/` 具体类；最后频道、设置、诊断、播放器均通过
+  domain/application 接口或 UseCase。
+- Retrofit DTO 只存在于 data 层，并映射为 domain model。开放接口的跨语言真相源是
+  `/api/open.json`，不是手工复制的 TypeScript/Kotlin 接口。
+- Media3 播放器只有一个生命周期所有者。换台复用播放器，并拒绝旧请求或旧回调覆盖
+  新频道状态。
+- Composable 只渲染 `UiState` 与发送用户意图，不直接访问 MediaCodec、网络或存储。
+
+交互与可靠性：
+
+- 所有核心流程只依赖 D-pad、OK 和 Back；页面、侧栏、弹层必须定义初始焦点与恢复焦点。
+- Back 顺序固定为最上层弹层/侧栏、信息层、上一页面、退出应用。
+- 播放状态必须显式区分线路解析、缓冲、首帧、线路切换、可恢复错误和终止错误。
+- 配置保存前验证服务端与 API Key；应用内始终保留重新配置入口。
+- API Key 使用 Android Keystore 支持的加密存储，诊断与日志不得包含明文凭据或完整流地址。
+- 关键正文不小于 16sp、辅助正文不小于 14sp、交互目标不小于 48dp；焦点反馈不能只依赖颜色。
+- 焦点、Back 或播放链路变更必须通过模拟器与真实遥控器设备验收。
+
 ---
 
 # Shared Packages
@@ -670,6 +703,27 @@ TV Focus
 
 ---
 
+# Device Client Management and Heartbeat
+
+设备客户端（`device_clients`）表示一个绑定到账户的安装实例；OAuth 客户端
+（`oauth_clients`）仍表示软件/集成凭证。二者通过 `device_client_id` 绑定设备令牌，
+管理页面只返回脱敏设备摘要，不返回任何 Token、Secret、完整 IP 或播放地址。
+
+新 Android TV 首次启动调用自动注册接口：电视携带公开的
+`magi_tv` client id 和稳定安装标识，服务端按默认管理员账户创建或复用设备记录并签发短期
+Access Token 与旋转 Refresh Token；不要求用户输入授权码或 Web 批准。RFC 8628 接口仅作为
+旧版本兼容入口。Refresh Token 仅以
+Android Keystore AES-GCM 密文写入 Preferences DataStore，Access Token 只保存在内存；
+Refresh Token family 重放会撤销整个 family 及其 Access Token。
+
+心跳由 `ProcessLifecycleOwner` 注册的单例协调器负责，仅在前台运行，每 60 秒发送一次；
+网络恢复或回到前台立即补发。失败使用带上限的随机扰动退避，并通过单飞互斥和 generation
+检查避免重复请求或旧回调写入。服务端以数据库接收时间更新 `last_heartbeat_at`，在
+150 秒内派生为在线，已撤销状态始终优先。账户撤销在一个 PostgreSQL 事务内同时终结设备、
+Access/Refresh Token、审计和 outbox 事件，撤销与并发心跳竞态时撤销优先。
+
+---
+
 # Design Principles
 
 ## Controller
@@ -820,3 +874,43 @@ Worker 专注异步任务
 - 个人长期维护项目
 
 目标是在保证开发效率的同时，获得长期可维护性与可扩展性。
+
+## 数据管线可靠性与播放反馈闭环 (008-pipeline-reliability)
+
+### Canonical 生成解耦
+
+Canonical channels 的生成（归一化、合并、覆盖、线路创建）不再强耦合到 EPG 匹配。
+M3U 同步完成后自动调用 `reconcileCanonicals()`（`apps/worker/src/processors/reconcile-canonicals.ts`），
+使输出频道立即可见——无需手动触发 EPG 匹配。EPG 匹配仅负责补充 EPG 绑定信息。
+
+- `reconcileCanonicals()` 接受可选的 EPG 更新数据（从 EPG 匹配调用时提供）
+- 使用 `channelIdentity`（稳定串）而非 `channel.id`（易变 UUID）作为 membership key
+- 频道合并、survivor 选择、人工覆盖保留逻辑与之前一致，仅改变触发时机
+
+### 定时同步 fan-out
+
+定时同步任务（sourceId=null）不再因缺少源标识符而失败。Worker processor 检测到 null
+时遍历所有已启用的源（M3U 和 XMLTV），为每个源独立同步，单个源失败不阻塞其他源。
+
+### Safe Operations Worker 激活
+
+移除了 `main.ts` 中的 inline shadowing handler，激活了 7 个已实现的 Safe Operations
+worker use case（通过 `registerOperationHandlers` 注入 5 个 Drizzle adapter）：
+
+- `operation-prepare`: 无副作用预览（PrepareM3uSync / PrepareEpgMatch）
+- `operation-apply`: 原子应用变更集 + canonical reconcile + 恢复点写入
+- `operation-restore`: 通过恢复点回滚
+- `operation-cleanup`: 24h 过期清理
+
+### Playback Report + 自动换线闭环
+
+新增 `POST /api/open/v1/playback/report` 接口，让 TV 客户端上报播放结果（失败/成功）。
+两种健康度信号（主动探测 + 被动上报）写入同一组列（`consecutiveFailures`、`healthStatus`），
+自然合并。主线路连续失败达到阈值（默认 3）时自动切换主备标记：
+
+- **API 端路径**：`ReportPlaybackUseCase` 更新健康度后调用 `EvaluateStreamFailoverUseCase`
+- **Worker 端路径**：`stream-check.processor` 的 `recomputeCanonicalStatus()` 后调用
+  `decideFailoverTarget` 纯函数（下沉到 `@magi/backend-core`）
+
+TV 端在 `Media3PlaybackSession.handleLineError` 中触发上报，网络失败时暂存到内存队列
+（容量 20），心跳成功后自动重传。

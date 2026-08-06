@@ -42,6 +42,23 @@
 
 [Gates determined based on constitution file]
 
+### Android TV Gate *(required when `apps/tv` is in scope)*
+
+- **Layering**: UI/ViewModel depends on UseCases/domain ports, not concrete `data/` stores or
+  Android platform implementations.
+- **Contract**: Open API changes update OpenAPI and define Kotlin DTO compatibility or contract
+  tests.
+- **Focus map**: Initial focus, directional movement, modal/sheet focus transfer, restoration,
+  and Back behavior are documented.
+- **Playback state**: Ownership and lifecycle of Media3 are explicit; cancellation/ordering for
+  rapid channel switching and stale callbacks is defined.
+- **Recovery**: Loading, empty, offline, 401, no-line, decoder failure, retry, and reconfiguration
+  behavior are specified.
+- **10-foot UI**: Typography, 48dp targets, safe areas, and non-color-only focus indication meet
+  Principle VIII.
+- **Validation**: Unit/integration coverage plus emulator and physical-remote acceptance scenarios
+  are planned.
+
 ## Project Structure
 
 ### Documentation (this feature)

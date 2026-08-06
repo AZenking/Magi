@@ -26,7 +26,6 @@ import { catchError, tap } from "rxjs/operators";
 import type { Request } from "express";
 import { createHash } from "node:crypto";
 import { IdempotencyRepository } from "@/infrastructure/database/idempotency.repository";
-import { currentRequestId } from "./request-context.middleware";
 
 export const IDEMPOTENCY_KEY = "safe-ops:idempotency-command";
 
@@ -86,7 +85,17 @@ export class IdempotencyInterceptor implements NestInterceptor {
           status: 409,
         });
       }
-      // Replay the cached response (e.g. the original TaskRef).
+      if (!hit.responseRef) {
+        throw new ConflictException({
+          code: "idempotency-request-in-progress",
+          title: "An identical request is still being processed",
+          status: 409,
+          retryable: true,
+        });
+      }
+      // Replay the exact response body saved after the original handler. The
+      // interceptor is also used by synchronous account commands, so do not
+      // expose the repository's internal `{ data, requestId }` cache wrapper.
       return new Observable<unknown>((subscriber) => {
         subscriber.next(hit.responseRef);
         subscriber.complete();
@@ -97,7 +106,13 @@ export class IdempotencyInterceptor implements NestInterceptor {
     return next.handle().pipe(
       tap((data) => {
         const status = 202; // accepted background commands return 202 + TaskRef
-        void this.idempotency.saveResponse(actorId, command, key, status, { data, requestId: currentRequestId() });
+        void this.idempotency.saveResponse(
+          actorId,
+          command,
+          key,
+          status,
+          data as Record<string, unknown>,
+        );
       }),
       catchError((err) => {
         // On failure, evict the pending record so the caller can retry with the same key.

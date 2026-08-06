@@ -3,7 +3,16 @@
  *
  * Encapsulates failover decision logic: thresholds, cooldown, restore mode.
  * Pure — no framework/Drizzle imports (constitution III).
+ *
+ * Decision logic delegates to the shared pure function in @magi/backend-core
+ * (008-pipeline-reliability T001) so the Worker can reuse the exact same logic.
  */
+import {
+  decideFailoverTarget,
+  isFailoverAutomatic,
+  shouldRestorePrimary,
+} from "@magi/backend-core";
+
 export type FailoverMode = "manual_only" | "auto_keep_fallback" | "auto_restore_primary";
 
 export interface FailoverPolicyData {
@@ -30,22 +39,17 @@ export class ChannelFailoverPolicyModel {
 
   /** Decide the target stream after a health event. Returns null for output loss. */
   decideTarget(primary: StreamForFailover, backups: readonly StreamForFailover[]): string | null {
-    if (primary.consecutiveFailures < this.policy.failureThreshold) return primary.id;
-    if (this.policy.mode === "manual_only") return primary.id;
-    const eligible = backups
-      .filter((b) => b.eligibleForFailover)
-      .sort((a, b) => a.position - b.position);
-    return eligible[0]?.id ?? null;
+    return decideFailoverTarget(primary, backups, this.policy);
   }
 
   /** Whether the policy allows automatic switching at all. */
   isAutomatic(): boolean {
-    return this.policy.mode !== "manual_only";
+    return isFailoverAutomatic(this.policy);
   }
 
   /** Whether primary should be restored once it recovers. */
   shouldRestorePrimary(): boolean {
-    return this.policy.mode === "auto_restore_primary";
+    return shouldRestorePrimary(this.policy);
   }
 
   toObject(): FailoverPolicyData {

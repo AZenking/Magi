@@ -210,3 +210,98 @@ export interface TaskVo {
   jobDetail?: TaskJobDetailVo;
   createdAt: string;
 }
+
+// --- Open API (005-open-channels-epg-api) ---
+// Read-only product-view projections served by /api/open/v1/*. These expose
+// ONLY the public product fields (FR-012): never streamUrl, sourceId, health,
+// or internal lifecycle. Channel `id` is the stable `magi:{canonicalId}` form.
+
+/** Channel group with visible-channel count. */
+export interface OpenGroupVo {
+  name: string | null;
+  count: number;
+}
+
+/** Product-view channel. `id` is `magi:{canonicalId}`. */
+export interface OpenChannelVo {
+  id: string;
+  name: string;
+  group: string | null;
+  logo: string | null;
+  channelNumber: number | null;
+}
+
+/** Product-view programme. `channelId` is `magi:{canonicalId}`. */
+export interface OpenProgrammeVo {
+  channelId: string;
+  title: string | null;
+  subTitle: string | null;
+  startAt: string;
+  stopAt: string;
+  category: string | null;
+}
+
+/** Content invalidation versions returned by the TV heartbeat/snapshot APIs. */
+export interface ContentRevisionVo {
+  catalog: string;
+  epg: string;
+}
+
+/** Batched public TV content projection used by the cache-aware client. */
+export interface ContentSnapshotVo {
+  catalogRevision: string;
+  epgRevision: string;
+  generatedAt: string;
+  groups: OpenGroupVo[];
+  channels: OpenChannelVo[];
+  programmes: OpenProgrammeVo[];
+}
+
+/**
+ * Playback decision for a channel (005-open-channels-epg-api playback endpoint).
+ *
+ * Unlike the channel list (FR-012 hides URLs), this IS the playback surface, so
+ * line URLs are exposed — but ONLY the playable endpoint + format + health, never
+ * sourceId/sourceName/admin fields. `primary` is the server-chosen best line;
+ * `fallbacks` is the ordered rest for client-side failover (roadmap §10.3).
+ */
+export interface OpenPlaybackLineVo {
+  streamId: string;
+  url: string;
+  format: string | null;
+  health: string;
+}
+
+export interface OpenPlaybackVo {
+  channelId: string;
+  playable: boolean;
+  primary: OpenPlaybackLineVo | null;
+  fallbacks: OpenPlaybackLineVo[];
+  /** When this decision should be re-fetched (ISO 8601). */
+  decisionExpiresAt: string;
+  /** "direct" = client connects upstream directly (roadmap §10.1 default). */
+  deliveryMode: "direct";
+}
+
+/** OAuth2 client list item — NEVER contains the plaintext secret or hash. */
+export interface OauthClientVo {
+  id: string;
+  clientId: string;
+  clientName: string;
+  clientKind: "confidential" | "public_device";
+  /** Built-in device clients cannot be disabled, revoked, or deleted. */
+  isProtected: boolean;
+  /** Effective token scope; currently policy-controlled by client kind. */
+  scope: string;
+  secretPrefix: string;
+  status: "active" | "disabled" | "revoked";
+  lastUsedAt: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+
+/** OAuth2 client creation result — the ONLY response that includes the plaintext secret. */
+export interface OauthClientCreatedVo extends OauthClientVo {
+  /** Plaintext client_secret. Shown once; never retrievable again. */
+  clientSecret: string;
+}

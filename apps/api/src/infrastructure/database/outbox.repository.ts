@@ -64,7 +64,7 @@ export class OutboxRepository {
       .where(
         and(
           eq(outboxEvents.status, "pending"),
-          sql`${outboxEvents.availableAt} <= ${now}`,
+          sql`${outboxEvents.availableAt} <= ${sql.param(now, outboxEvents.availableAt)}`,
         ),
       )
       .orderBy(asc(outboxEvents.availableAt))

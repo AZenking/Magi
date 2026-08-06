@@ -15,6 +15,8 @@
   - Feature requirements from spec.md
   - Technical context from plan.md
   - Implementation details from tasks.md
+  - For Android TV scope: Principle VIII focus paths, Back hierarchy, playback lifecycle,
+    recovery states, 10-foot UI, credential redaction, and physical-remote acceptance
   
   DO NOT keep these sample items in the generated checklist file.
   ============================================================================

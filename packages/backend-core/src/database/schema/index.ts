@@ -10,11 +10,19 @@ export { canonicalChannels } from "./canonical-channels";
 export { canonicalEpgBindings } from "./canonical-epg-bindings";
 export { channelOverrides } from "./channel-overrides";
 export { channelStreams } from "./channel-streams";
+export { contentManifest } from "./content-manifest";
 export { timestamps, createdAt, updatedAt } from "./helpers";
+export { user, session, account, verification } from "./auth";
 
 // New: operation preview/apply (T015).
-export { sourceImportSnapshots, sourceImportSnapshotItems } from "./source-import-snapshots";
-export { operationChangeSets, operationChangeItems } from "./operation-change-sets";
+export {
+  sourceImportSnapshots,
+  sourceImportSnapshotItems,
+} from "./source-import-snapshots";
+export {
+  operationChangeSets,
+  operationChangeItems,
+} from "./operation-change-sets";
 export { operationLeases } from "./operation-leases";
 
 // New: recovery / audit / outbox / idempotency (T016).
@@ -31,3 +39,12 @@ export { sourceChannelIdentityAliases } from "./source-channel-identity-aliases"
 export { scheduledJobConfigs } from "./scheduled-job-configs";
 export { configBackups } from "./config-backups";
 export { channelFailoverPolicies } from "./channel-failover-policies";
+
+// OAuth2 Client Credentials Grant — replaces api_keys (004-safe-operations).
+export { oauthClients } from "./oauth-clients";
+export { oauthAccessTokens } from "./oauth-access-tokens";
+export {
+  deviceClients,
+  deviceAuthorizationGrants,
+  deviceRefreshTokens,
+} from "./device-clients";

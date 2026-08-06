@@ -47,6 +47,29 @@ export const AUDIT_ACTIONS = {
     create: "backup.create",
     download: "backup.download",
   },
+  apiKey: {
+    create: "api_key.created",
+    disable: "api_key.disabled",
+    enable: "api_key.enabled",
+    revoke: "api_key.revoked",
+    delete: "api_key.deleted",
+  },
+  oauthClient: {
+    create: "oauth_client.created",
+    disable: "oauth_client.disabled",
+    enable: "oauth_client.enabled",
+    revoke: "oauth_client.revoked",
+    delete: "oauth_client.deleted",
+    rotateSecret: "oauth_client.secret_rotated",
+  },
+  deviceClient: {
+    register: "device_client.registered",
+    autoRegister: "device_client.auto_registered",
+    rename: "device_client.renamed",
+    revoke: "device_client.revoked",
+    restore: "device_client.restored",
+    revokedAccessRejected: "device_client.revoked_access_rejected",
+  },
 } as const;
 
 export function changedFieldNames(value: object): string[] {

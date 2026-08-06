@@ -29,7 +29,16 @@ export class SchedulerService implements OnModuleInit {
         { sourceId: null, sourceType: "m3u", taskType: "m3u-sync" },
         { repeat: { every: sourceSyncInterval }, jobId: "scheduled-source-sync" },
       );
-      this.logger.log(`Scheduled source-sync every ${sourceSyncInterval}ms`);
+      this.logger.log(`Scheduled m3u source-sync every ${sourceSyncInterval}ms`);
+
+      // 008-pipeline-reliability T019: schedule XMLTV sync alongside M3U so
+      // both source types get periodic refresh without manual triggers.
+      await this.sourceSyncQueue.add(
+        "xmltv-sync",
+        { sourceId: null, sourceType: "xmltv", taskType: "xmltv-sync" },
+        { repeat: { every: sourceSyncInterval }, jobId: "scheduled-xmltv-sync" },
+      );
+      this.logger.log(`Scheduled xmltv source-sync every ${sourceSyncInterval}ms`);
     }
 
     // Daily cleanup

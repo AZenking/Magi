@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+      Allow cleartext (HTTP) app-wide for self-hosted Magi servers.
+      Magi Server commonly runs on http://<lan-ip>:3001 without TLS in home/
+      LAN deployments. When the server is served over HTTPS this permit is a
+      no-op (HTTPS is still preferred by OkHttp).
+    -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

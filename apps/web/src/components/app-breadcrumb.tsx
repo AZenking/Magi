@@ -14,6 +14,9 @@ const LABELS: Record<string, string> = {
   tasks: "任务",
   backups: "备份",
   audit: "审计",
+  account: "账户",
+  clients: "客户端管理",
+  authorize: "客户端管理",
 };
 
 type AppBreadcrumbProps = {

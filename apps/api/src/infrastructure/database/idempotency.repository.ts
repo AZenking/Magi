@@ -32,25 +32,54 @@ export class IdempotencyRepository {
     requestFingerprint: string;
     expiresAt: Date;
   }): Promise<{ recorded: true } | { recorded: false; hit: IdempotencyHit }> {
-    const existing = await this.find(params.actorId, params.command, params.idempotencyKey);
-    if (existing) {
+    // Insert-first with the unique key as the arbiter. A read-then-insert
+    // sequence lets two concurrent retries both pass the read and one fail
+    // with a raw unique-constraint error instead of deterministic replay.
+    const [inserted] = await db
+      .insert(idempotencyRecords)
+      .values({
+        actorId: params.actorId,
+        command: params.command,
+        idempotencyKey: params.idempotencyKey,
+        requestFingerprint: params.requestFingerprint,
+        expiresAt: params.expiresAt,
+      })
+      .onConflictDoNothing({
+        target: [
+          idempotencyRecords.actorId,
+          idempotencyRecords.command,
+          idempotencyRecords.idempotencyKey,
+        ],
+      })
+      .returning({ id: idempotencyRecords.id });
+    if (inserted) return { recorded: true };
+
+    const existing = await this.find(
+      params.actorId,
+      params.command,
+      params.idempotencyKey,
+    );
+    if (!existing) {
+      // The row may have expired and been removed between the insert conflict
+      // and the follow-up read. Treat this as a retryable conflict rather than
+      // claiming a command was accepted without a durable record.
       return {
         recorded: false,
         hit: {
-          responseStatus: existing.responseStatus,
-          responseRef: existing.responseRef as Record<string, unknown> | null,
-          matchedFingerprint: existing.requestFingerprint === params.requestFingerprint,
+          responseStatus: null,
+          responseRef: null,
+          matchedFingerprint: false,
         },
       };
     }
-    await db.insert(idempotencyRecords).values({
-      actorId: params.actorId,
-      command: params.command,
-      idempotencyKey: params.idempotencyKey,
-      requestFingerprint: params.requestFingerprint,
-      expiresAt: params.expiresAt,
-    });
-    return { recorded: true };
+    return {
+      recorded: false,
+      hit: {
+        responseStatus: existing.responseStatus,
+        responseRef: existing.responseRef as Record<string, unknown> | null,
+        matchedFingerprint: existing.requestFingerprint === params.requestFingerprint,
+      },
+    };
   }
 
   /** Update the cached response once the command's TaskRef is known. */

@@ -26,4 +26,5 @@ export {
   scheduledJobConfigs,
   configBackups,
   channelFailoverPolicies,
+  contentManifest,
 } from "@magi/backend-core";

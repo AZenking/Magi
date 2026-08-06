@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
 import { Route as DashboardOutputGuideRouteImport } from './routes/dashboard/output-guide'
 import { Route as DashboardOutputAddressesRouteImport } from './routes/dashboard/output-addresses'
+import { Route as DashboardOauthClientsRouteImport } from './routes/dashboard/oauth-clients'
 import { Route as DashboardEpgMatchingRouteImport } from './routes/dashboard/epg-matching'
 import { Route as DashboardTasksIndexRouteImport } from './routes/dashboard/tasks/index'
 import { Route as DashboardChannelsIndexRouteImport } from './routes/dashboard/channels/index'
@@ -26,6 +27,8 @@ import { Route as DashboardSourcesProgrammesRouteImport } from './routes/dashboa
 import { Route as DashboardSourcesM3uRouteImport } from './routes/dashboard/sources/m3u'
 import { Route as DashboardSourcesChannelsRouteImport } from './routes/dashboard/sources/channels'
 import { Route as DashboardChannelsChannelIdRouteImport } from './routes/dashboard/channels/$channelId'
+import { Route as DashboardAccountClientsIndexRouteImport } from './routes/dashboard/account/clients/index'
+import { Route as DashboardAccountClientsAuthorizeRouteImport } from './routes/dashboard/account/clients/authorize'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -58,6 +61,11 @@ const DashboardOutputAddressesRoute =
     path: '/output-addresses',
     getParentRoute: () => DashboardRoute,
   } as any)
+const DashboardOauthClientsRoute = DashboardOauthClientsRouteImport.update({
+  id: '/oauth-clients',
+  path: '/oauth-clients',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardEpgMatchingRoute = DashboardEpgMatchingRouteImport.update({
   id: '/epg-matching',
   path: '/epg-matching',
@@ -116,12 +124,25 @@ const DashboardChannelsChannelIdRoute =
     path: '/channels/$channelId',
     getParentRoute: () => DashboardRoute,
   } as any)
+const DashboardAccountClientsIndexRoute =
+  DashboardAccountClientsIndexRouteImport.update({
+    id: '/account/clients/',
+    path: '/account/clients/',
+    getParentRoute: () => DashboardRoute,
+  } as any)
+const DashboardAccountClientsAuthorizeRoute =
+  DashboardAccountClientsAuthorizeRouteImport.update({
+    id: '/account/clients/authorize',
+    path: '/account/clients/authorize',
+    getParentRoute: () => DashboardRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/login': typeof LoginRoute
   '/dashboard/epg-matching': typeof DashboardEpgMatchingRoute
+  '/dashboard/oauth-clients': typeof DashboardOauthClientsRoute
   '/dashboard/output-addresses': typeof DashboardOutputAddressesRoute
   '/dashboard/output-guide': typeof DashboardOutputGuideRoute
   '/dashboard/': typeof DashboardIndexRoute
@@ -135,11 +156,14 @@ export interface FileRoutesByFullPath {
   '/dashboard/backups/': typeof DashboardBackupsIndexRoute
   '/dashboard/channels/': typeof DashboardChannelsIndexRoute
   '/dashboard/tasks/': typeof DashboardTasksIndexRoute
+  '/dashboard/account/clients/authorize': typeof DashboardAccountClientsAuthorizeRoute
+  '/dashboard/account/clients/': typeof DashboardAccountClientsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/dashboard/epg-matching': typeof DashboardEpgMatchingRoute
+  '/dashboard/oauth-clients': typeof DashboardOauthClientsRoute
   '/dashboard/output-addresses': typeof DashboardOutputAddressesRoute
   '/dashboard/output-guide': typeof DashboardOutputGuideRoute
   '/dashboard': typeof DashboardIndexRoute
@@ -153,6 +177,8 @@ export interface FileRoutesByTo {
   '/dashboard/backups': typeof DashboardBackupsIndexRoute
   '/dashboard/channels': typeof DashboardChannelsIndexRoute
   '/dashboard/tasks': typeof DashboardTasksIndexRoute
+  '/dashboard/account/clients/authorize': typeof DashboardAccountClientsAuthorizeRoute
+  '/dashboard/account/clients': typeof DashboardAccountClientsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -160,6 +186,7 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRouteWithChildren
   '/login': typeof LoginRoute
   '/dashboard/epg-matching': typeof DashboardEpgMatchingRoute
+  '/dashboard/oauth-clients': typeof DashboardOauthClientsRoute
   '/dashboard/output-addresses': typeof DashboardOutputAddressesRoute
   '/dashboard/output-guide': typeof DashboardOutputGuideRoute
   '/dashboard/': typeof DashboardIndexRoute
@@ -173,6 +200,8 @@ export interface FileRoutesById {
   '/dashboard/backups/': typeof DashboardBackupsIndexRoute
   '/dashboard/channels/': typeof DashboardChannelsIndexRoute
   '/dashboard/tasks/': typeof DashboardTasksIndexRoute
+  '/dashboard/account/clients/authorize': typeof DashboardAccountClientsAuthorizeRoute
+  '/dashboard/account/clients/': typeof DashboardAccountClientsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -181,6 +210,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/dashboard/epg-matching'
+    | '/dashboard/oauth-clients'
     | '/dashboard/output-addresses'
     | '/dashboard/output-guide'
     | '/dashboard/'
@@ -194,11 +224,14 @@ export interface FileRouteTypes {
     | '/dashboard/backups/'
     | '/dashboard/channels/'
     | '/dashboard/tasks/'
+    | '/dashboard/account/clients/authorize'
+    | '/dashboard/account/clients/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login'
     | '/dashboard/epg-matching'
+    | '/dashboard/oauth-clients'
     | '/dashboard/output-addresses'
     | '/dashboard/output-guide'
     | '/dashboard'
@@ -212,12 +245,15 @@ export interface FileRouteTypes {
     | '/dashboard/backups'
     | '/dashboard/channels'
     | '/dashboard/tasks'
+    | '/dashboard/account/clients/authorize'
+    | '/dashboard/account/clients'
   id:
     | '__root__'
     | '/'
     | '/dashboard'
     | '/login'
     | '/dashboard/epg-matching'
+    | '/dashboard/oauth-clients'
     | '/dashboard/output-addresses'
     | '/dashboard/output-guide'
     | '/dashboard/'
@@ -231,6 +267,8 @@ export interface FileRouteTypes {
     | '/dashboard/backups/'
     | '/dashboard/channels/'
     | '/dashboard/tasks/'
+    | '/dashboard/account/clients/authorize'
+    | '/dashboard/account/clients/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -281,6 +319,13 @@ declare module '@tanstack/react-router' {
       path: '/output-addresses'
       fullPath: '/dashboard/output-addresses'
       preLoaderRoute: typeof DashboardOutputAddressesRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/oauth-clients': {
+      id: '/dashboard/oauth-clients'
+      path: '/oauth-clients'
+      fullPath: '/dashboard/oauth-clients'
+      preLoaderRoute: typeof DashboardOauthClientsRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/epg-matching': {
@@ -360,11 +405,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardChannelsChannelIdRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/account/clients/': {
+      id: '/dashboard/account/clients/'
+      path: '/account/clients'
+      fullPath: '/dashboard/account/clients/'
+      preLoaderRoute: typeof DashboardAccountClientsIndexRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/account/clients/authorize': {
+      id: '/dashboard/account/clients/authorize'
+      path: '/account/clients/authorize'
+      fullPath: '/dashboard/account/clients/authorize'
+      preLoaderRoute: typeof DashboardAccountClientsAuthorizeRouteImport
+      parentRoute: typeof DashboardRoute
+    }
   }
 }
 
 interface DashboardRouteChildren {
   DashboardEpgMatchingRoute: typeof DashboardEpgMatchingRoute
+  DashboardOauthClientsRoute: typeof DashboardOauthClientsRoute
   DashboardOutputAddressesRoute: typeof DashboardOutputAddressesRoute
   DashboardOutputGuideRoute: typeof DashboardOutputGuideRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
@@ -378,10 +438,13 @@ interface DashboardRouteChildren {
   DashboardBackupsIndexRoute: typeof DashboardBackupsIndexRoute
   DashboardChannelsIndexRoute: typeof DashboardChannelsIndexRoute
   DashboardTasksIndexRoute: typeof DashboardTasksIndexRoute
+  DashboardAccountClientsAuthorizeRoute: typeof DashboardAccountClientsAuthorizeRoute
+  DashboardAccountClientsIndexRoute: typeof DashboardAccountClientsIndexRoute
 }
 
 const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardEpgMatchingRoute: DashboardEpgMatchingRoute,
+  DashboardOauthClientsRoute: DashboardOauthClientsRoute,
   DashboardOutputAddressesRoute: DashboardOutputAddressesRoute,
   DashboardOutputGuideRoute: DashboardOutputGuideRoute,
   DashboardIndexRoute: DashboardIndexRoute,
@@ -395,6 +458,8 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardBackupsIndexRoute: DashboardBackupsIndexRoute,
   DashboardChannelsIndexRoute: DashboardChannelsIndexRoute,
   DashboardTasksIndexRoute: DashboardTasksIndexRoute,
+  DashboardAccountClientsAuthorizeRoute: DashboardAccountClientsAuthorizeRoute,
+  DashboardAccountClientsIndexRoute: DashboardAccountClientsIndexRoute,
 }
 
 const DashboardRouteWithChildren = DashboardRoute._addFileChildren(
