@@ -49,7 +49,8 @@ export function buildJobRunner(): JobRunner {
  * Returns a shutdown function.
  */
 export async function startWorkers(options: BootstrapOptions): Promise<() => Promise<void>> {
-  const runner = buildJobRunner();
+  const taskRepo = new DrizzleJobExecutionRepository();
+  const runner = new JobRunner({ taskRepo });
   options.registerHandlers(runner);
 
   // Register Safe Operations handlers + start the cleanup worker (T041).
@@ -67,10 +68,22 @@ export async function startWorkers(options: BootstrapOptions): Promise<() => Pro
     const worker = new Worker(
       cfg.queue,
       async (bullJob: Job) => {
-        const payload = bullJob.data as JobPayload;
-        if (!payload || !payload.taskId) {
-          throw new Error(`Invalid job payload on ${cfg.queue}/${bullJob.name}: missing taskId`);
+        const raw = bullJob.data as (JobPayload & { taskId?: string }) | undefined;
+        if (!raw) {
+          throw new Error(`Invalid job payload on ${cfg.queue}/${bullJob.name}: empty`);
         }
+        // Scheduled repeatable jobs (e.g. scheduled-cleanup) are enqueued by the
+        // API scheduler without a taskId because they don't go through
+        // BullmqTaskQueueAdapter.enqueue (which would pre-create the sync_logs
+        // row). Lazily allocate one here so the worker can track their lifecycle.
+        const taskId = raw.taskId ?? (await taskRepo.create({
+          sourceType: (raw.sourceType as string | undefined) ?? "system",
+          taskType: (raw.taskType as string | undefined) ?? (bullJob.name as string),
+          sourceId: (raw.sourceId as string | null | undefined) ?? null,
+          jobName: bullJob.name as string,
+          queueName: cfg.queue,
+        })).id;
+        const payload: JobPayload = { ...raw, taskId };
         const job: import("@/domain/job-execution").Job = {
           id: bullJob.id ?? "",
           name: bullJob.name as JobKind,
@@ -79,7 +92,7 @@ export async function startWorkers(options: BootstrapOptions): Promise<() => Pro
         logger.info("Processing job", {
           queue: cfg.queue,
           name: job.name,
-          taskId: payload.taskId,
+          taskId,
           requestId: payload.requestId ?? null,
         });
         return runner.run(job);

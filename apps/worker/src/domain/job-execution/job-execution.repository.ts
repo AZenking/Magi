@@ -8,6 +8,13 @@
 import type { JobResult } from "./job.model";
 
 export interface IJobExecutionRepository {
+  create(input: {
+    sourceType: string;
+    taskType: string;
+    sourceId: string | null;
+    jobName: string;
+    queueName: string;
+  }): Promise<{ id: string }>;
   markRunning(taskId: string, step: string): Promise<void>;
   updateProgress(taskId: string, percent: number, step: string): Promise<void>;
   markSucceeded(taskId: string, result: JobResult): Promise<void>;

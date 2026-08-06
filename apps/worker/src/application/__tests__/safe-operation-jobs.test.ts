@@ -16,6 +16,7 @@ import type { JobResult } from "@/domain/job-execution";
 function mockTaskRepo(): IJobExecutionRepository {
   const events: { taskId: string; status: string }[] = [];
   return {
+    create: async () => ({ id: `t-${events.length + 1}` }),
     markRunning: async (taskId, _step) => { events.push({ taskId, status: "running" }); },
     updateProgress: async () => {},
     markSucceeded: async (taskId) => { events.push({ taskId, status: "success" }); },

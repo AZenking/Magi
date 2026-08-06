@@ -12,6 +12,39 @@ import { db } from "../../db";
 import { syncLogs } from "../../schema";
 
 export class DrizzleJobExecutionRepository implements IJobExecutionRepository {
+  async create(input: {
+    sourceType: string;
+    taskType: string;
+    sourceId: string | null;
+    jobName: string;
+    queueName: string;
+  }): Promise<{ id: string }> {
+    const now = new Date();
+    const [row] = await db.insert(syncLogs).values({
+      sourceType: input.sourceType,
+      taskType: input.taskType,
+      sourceId: input.sourceId,
+      status: "running",
+      startedAt: now,
+      finishedAt: null,
+      error: null,
+      progress: 0,
+      currentStep: "starting",
+      executionLog: null,
+      importedCount: 0,
+      addedCount: 0,
+      updatedCount: 0,
+      removedCount: 0,
+      queueName: input.queueName,
+      jobName: input.jobName,
+      jobId: null,
+      attemptsMade: 0,
+      processedOn: now,
+    }).returning({ id: syncLogs.id });
+    if (!row) throw new Error("Failed to create sync_logs row");
+    return { id: row.id };
+  }
+
   async markRunning(taskId: string, step: string): Promise<void> {
     await db
       .update(syncLogs)
