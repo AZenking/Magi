@@ -35,6 +35,11 @@ export interface IOauthClientRepository {
     query: ListOauthClientsQuery,
   ): Promise<{ items: OauthClient[]; total: number }>;
   updateStatus(id: string, status: ClientStatus): Promise<OauthClient | null>;
+  rotateSecret(
+    id: string,
+    secretHash: string,
+    secretPrefix: string,
+  ): Promise<OauthClient | null>;
   /** Bump lastUsedAt without changing status/version (best-effort). */
   touchLastUsed(id: string, at?: Date): Promise<void>;
   deleteById(id: string): Promise<boolean>;

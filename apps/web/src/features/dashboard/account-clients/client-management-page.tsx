@@ -1,5 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Empty, Flex, Result, Space, Tag, Typography } from "antd";
+import {
+  Button,
+  Descriptions,
+  Drawer,
+  Empty,
+  Flex,
+  Input,
+  Popconfirm,
+  Result,
+  Select,
+  Space,
+  Tag,
+  Typography,
+} from "antd";
 import type { ProColumns } from "@ant-design/pro-components";
 import type { DeviceClient } from "@magi/types";
 import {
@@ -10,9 +23,14 @@ import {
 import { PageHeader, PageStack } from "@/components/page-layout";
 import { ProTableWrapper } from "@/components/pro-table-wrapper";
 import { useFeedback } from "@/lib/feedback";
-import { useAccountDeviceClients } from "./client-queries";
+import {
+  useAccountDeviceClient,
+  useAccountDeviceClients,
+  useRestoreDeviceClient,
+} from "./client-queries";
 import { RenameClientModal } from "./rename-client-modal";
 import { RevokeClientModal } from "./revoke-client-modal";
+import { formatApiError } from "@/services/api";
 
 const STATUS_META: Record<
   DeviceClient["status"],
@@ -34,8 +52,14 @@ export function ClientManagementPage() {
   const [pageSize, setPageSize] = useState<20 | 50 | 100>(20);
   const [renaming, setRenaming] = useState<DeviceClient | null>(null);
   const [revoking, setRevoking] = useState<DeviceClient | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<DeviceClient["status"] | undefined>();
   const renameTrigger = useRef<HTMLButtonElement | null>(null);
-  const query = { page, pageSize } as const;
+  const restoreMutation = useRestoreDeviceClient();
+  const detailResult = useAccountDeviceClient(detailId, !!detailId);
+  const query = { page, pageSize, search: search || undefined, status } as const;
   const result = useAccountDeviceClients(query);
   const data = result.data?.data;
   const rows = data?.items ?? [];
@@ -97,13 +121,33 @@ export function ClientManagementPage() {
       {
         title: "操作",
         key: "actions",
-        width: 180,
+        width: 300,
         fixed: "right",
-        render: (_, record) =>
-          record.status === "revoked" ? (
-            <Typography.Text type="secondary">无可用操作</Typography.Text>
-          ) : (
-            <Space size="small">
+        render: (_, record) => (
+          <Space size="small" wrap>
+            <Button size="small" onClick={() => setDetailId(record.id)}>
+              详情
+            </Button>
+            {record.status === "revoked" ? (
+              <Popconfirm
+                title="允许客户端重新登记？"
+                description="这会解除撤销状态；设备下次登记时会重新轮换凭证。"
+                okText="解除撤销"
+                cancelText="取消"
+                onConfirm={() => {
+                  restoreMutation.mutate(record.id, {
+                    onSuccess: () => message.success("已允许重新登记"),
+                    onError: (error) =>
+                      message.error(formatApiError(error, "解除撤销失败")),
+                  });
+                }}
+              >
+                <Button size="small" loading={restoreMutation.isPending}>
+                  允许重新登记
+                </Button>
+              </Popconfirm>
+            ) : (
+              <>
               <Button
                 size="small"
                 onClick={(event) => {
@@ -121,14 +165,16 @@ export function ClientManagementPage() {
                   renameTrigger.current = event.currentTarget;
                   setRevoking(record);
                 }}
-              >
-                撤销访问
-              </Button>
-            </Space>
-          ),
+                >
+                  撤销访问
+                </Button>
+              </>
+            )}
+          </Space>
+        ),
       },
     ],
-    [],
+    [message, restoreMutation],
   );
 
   if (result.isError && !data) {
@@ -136,7 +182,7 @@ export function ClientManagementPage() {
       <Result
         status="error"
         title="客户端列表加载失败"
-        subTitle="请检查登录状态或服务状态后重试。"
+        subTitle={formatApiError(result.error, "请检查登录状态或服务状态后重试。")}
         extra={
           <Button type="primary" onClick={refresh}>
             重试
@@ -188,6 +234,33 @@ export function ClientManagementPage() {
             },
           }}
           toolBarRender={() => [
+            <Input.Search
+              key="search"
+              allowClear
+              value={searchInput}
+              placeholder="搜索名称、设备、平台或版本"
+              onChange={(event) => setSearchInput(event.target.value)}
+              onSearch={(value) => {
+                setPage(1);
+                setSearch(value.trim());
+              }}
+              style={{ width: 240 }}
+            />,
+            <Select
+              key="status"
+              allowClear
+              placeholder="状态"
+              value={status}
+              onChange={(value) => {
+                setPage(1);
+                setStatus(value);
+              }}
+              options={Object.entries(STATUS_META).map(([value, meta]) => ({
+                value,
+                label: meta.label,
+              }))}
+              style={{ width: 120 }}
+            />,
             <Button key="refresh" icon={<ReloadOutlined />} onClick={refresh}>
               刷新
             </Button>,
@@ -211,6 +284,50 @@ export function ClientManagementPage() {
           renameTrigger.current?.focus();
         }}
       />
+      <Drawer
+        title="客户端心跳诊断"
+        open={!!detailId}
+        onClose={() => setDetailId(null)}
+        width={440}
+      >
+        {detailResult.isLoading ? (
+          <Typography.Text type="secondary">加载中…</Typography.Text>
+        ) : detailResult.isError ? (
+          <Typography.Text type="danger">
+            {formatApiError(detailResult.error, "详情加载失败")}
+          </Typography.Text>
+        ) : detailResult.data?.data ? (
+          <Descriptions column={1} bordered size="small">
+            <Descriptions.Item label="名称">
+              {detailResult.data.data.displayName}
+            </Descriptions.Item>
+            <Descriptions.Item label="状态">
+              {STATUS_META[detailResult.data.data.status].label}
+            </Descriptions.Item>
+            <Descriptions.Item label="设备">
+              {detailResult.data.data.identitySummary}
+            </Descriptions.Item>
+            <Descriptions.Item label="平台">
+              {detailResult.data.data.platform} {detailResult.data.data.platformVersion}
+            </Descriptions.Item>
+            <Descriptions.Item label="应用版本">
+              {detailResult.data.data.appVersion}
+            </Descriptions.Item>
+            <Descriptions.Item label="首次注册">
+              {formatDatetime(detailResult.data.data.registeredAt)}
+            </Descriptions.Item>
+            <Descriptions.Item label="最后心跳">
+              {formatDatetime(detailResult.data.data.lastActiveAt)}
+            </Descriptions.Item>
+            <Descriptions.Item label="心跳规则">
+              每 60 秒一次；最近 150 秒内视为在线
+            </Descriptions.Item>
+            <Descriptions.Item label="撤销时间">
+              {formatDatetime(detailResult.data.data.revokedAt)}
+            </Descriptions.Item>
+          </Descriptions>
+        ) : null}
+      </Drawer>
     </PageStack>
   );
 }

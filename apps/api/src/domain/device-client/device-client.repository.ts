@@ -18,6 +18,8 @@ export interface ListDeviceClientsQuery {
   ownerUserId: string;
   page: number;
   pageSize: number;
+  search?: string;
+  status?: "online" | "offline" | "revoked";
   asOf?: Date;
 }
 
@@ -131,6 +133,13 @@ export interface DeviceClientRepository {
     refreshTokensRevoked: number;
     alreadyRevoked: boolean;
   } | null>;
+  restoreOwned(
+    id: string,
+    ownerUserId: string,
+    restoredBy: string,
+    at?: Date,
+    requestId?: string | null,
+  ): Promise<DeviceClient | null>;
   recordHeartbeat(input: {
     deviceClientId: string;
     appVersion: string;

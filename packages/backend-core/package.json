@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./processors/failover-policy": {
+      "types": "./dist/processors/failover-policy.d.ts",
+      "default": "./dist/processors/failover-policy.js"
     }
   },
   "scripts": {

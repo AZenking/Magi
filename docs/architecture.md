@@ -874,3 +874,43 @@ Worker 专注异步任务
 - 个人长期维护项目
 
 目标是在保证开发效率的同时，获得长期可维护性与可扩展性。
+
+## 数据管线可靠性与播放反馈闭环 (008-pipeline-reliability)
+
+### Canonical 生成解耦
+
+Canonical channels 的生成（归一化、合并、覆盖、线路创建）不再强耦合到 EPG 匹配。
+M3U 同步完成后自动调用 `reconcileCanonicals()`（`apps/worker/src/processors/reconcile-canonicals.ts`），
+使输出频道立即可见——无需手动触发 EPG 匹配。EPG 匹配仅负责补充 EPG 绑定信息。
+
+- `reconcileCanonicals()` 接受可选的 EPG 更新数据（从 EPG 匹配调用时提供）
+- 使用 `channelIdentity`（稳定串）而非 `channel.id`（易变 UUID）作为 membership key
+- 频道合并、survivor 选择、人工覆盖保留逻辑与之前一致，仅改变触发时机
+
+### 定时同步 fan-out
+
+定时同步任务（sourceId=null）不再因缺少源标识符而失败。Worker processor 检测到 null
+时遍历所有已启用的源（M3U 和 XMLTV），为每个源独立同步，单个源失败不阻塞其他源。
+
+### Safe Operations Worker 激活
+
+移除了 `main.ts` 中的 inline shadowing handler，激活了 7 个已实现的 Safe Operations
+worker use case（通过 `registerOperationHandlers` 注入 5 个 Drizzle adapter）：
+
+- `operation-prepare`: 无副作用预览（PrepareM3uSync / PrepareEpgMatch）
+- `operation-apply`: 原子应用变更集 + canonical reconcile + 恢复点写入
+- `operation-restore`: 通过恢复点回滚
+- `operation-cleanup`: 24h 过期清理
+
+### Playback Report + 自动换线闭环
+
+新增 `POST /api/open/v1/playback/report` 接口，让 TV 客户端上报播放结果（失败/成功）。
+两种健康度信号（主动探测 + 被动上报）写入同一组列（`consecutiveFailures`、`healthStatus`），
+自然合并。主线路连续失败达到阈值（默认 3）时自动切换主备标记：
+
+- **API 端路径**：`ReportPlaybackUseCase` 更新健康度后调用 `EvaluateStreamFailoverUseCase`
+- **Worker 端路径**：`stream-check.processor` 的 `recomputeCanonicalStatus()` 后调用
+  `decideFailoverTarget` 纯函数（下沉到 `@magi/backend-core`）
+
+TV 端在 `Media3PlaybackSession.handleLineError` 中触发上报，网络失败时暂存到内存队列
+（容量 20），心跳成功后自动重传。

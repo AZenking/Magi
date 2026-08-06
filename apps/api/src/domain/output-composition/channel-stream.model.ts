@@ -12,6 +12,7 @@ export interface ChannelStream {
   responseTime: number | null;
   lastCheckedAt: Date | null;
   lastSuccessAt: Date | null;
+  lastPlaybackReportAt?: Date | null;
   consecutiveFailures: number;
   successRate: number | null;
   streamError: string | null;

@@ -87,7 +87,9 @@ export class MatchEpgUseCase {
           standardGroup: best.groupTitle,
           standardLogo: best.tvgLogo,
           channelNumber: null,
-          hidden: false,
+          // New canonical channels default to hidden — operators opt-in per channel.
+          hidden: true,
+          lifecycle: "hidden",
           starred: false,
           disabled: false,
           epgChannelId,

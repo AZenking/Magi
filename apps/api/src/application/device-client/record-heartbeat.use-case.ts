@@ -13,6 +13,8 @@ import {
   CONTENT_MANIFEST_REPOSITORY,
   type ContentManifestRepository,
 } from "@/domain/content";
+import { AppendAuditEventUseCase } from "@/application/audit/append-audit-event.use-case";
+import { AUDIT_ACTIONS } from "@/domain/audit/audit-actions";
 
 @Injectable()
 export class RecordHeartbeatUseCase {
@@ -22,12 +24,16 @@ export class RecordHeartbeatUseCase {
     @Optional()
     @Inject(CONTENT_MANIFEST_REPOSITORY)
     private readonly contentManifest?: ContentManifestRepository,
+    @Optional()
+    @Inject(AppendAuditEventUseCase)
+    private readonly audit?: AppendAuditEventUseCase,
   ) {}
 
   async execute(command: {
     deviceClientId?: string;
     appVersion: string;
     platformVersion: string;
+    requestId?: string | null;
   }) {
     if (!command.deviceClientId) {
       throw new ForbiddenException({
@@ -41,6 +47,24 @@ export class RecordHeartbeatUseCase {
       platformVersion: command.platformVersion,
     });
     if (result.kind === "revoked") {
+      // FR-016: a revoked client attempting to use protected access is a
+      // security-relevant lifecycle event. Best-effort; never blocks the
+      // rejection itself.
+      void this.audit
+        ?.execute({
+          actorType: "system",
+          actorId: "system",
+          action: AUDIT_ACTIONS.deviceClient.revokedAccessRejected,
+          targetType: "device_client",
+          targetId: command.deviceClientId,
+          displayName: null,
+          result: "failed",
+          requestId: command.requestId ?? null,
+          summary: { reason: "heartbeat-after-revoke" },
+        })
+        .catch(() => {
+          /* intentionally swallowed: observability must not change the response */
+        });
       throw new UnauthorizedException({
         code: "device-client-revoked",
         status: 401,

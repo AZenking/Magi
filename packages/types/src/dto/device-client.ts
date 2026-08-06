@@ -156,6 +156,8 @@ export const AccountClientListQuerySchema = z
         message: "pageSize must be 20, 50, or 100",
       })
       .default(20),
+    search: z.string().trim().max(120).optional(),
+    status: DeviceClientStatusSchema.optional(),
   })
   .strict();
 export type AccountClientListQuery = z.infer<
@@ -247,6 +249,13 @@ export const RevokeDeviceClientResultSchema = z
   .strict();
 export type RevokeDeviceClientResult = z.infer<
   typeof RevokeDeviceClientResultSchema
+>;
+
+export const RestoreDeviceClientResultSchema = z
+  .object({ client: DeviceClientSchema })
+  .strict();
+export type RestoreDeviceClientResult = z.infer<
+  typeof RestoreDeviceClientResultSchema
 >;
 
 export const DeviceClientProblemCodeSchema = z.enum([

@@ -60,12 +60,14 @@ export const AUDIT_ACTIONS = {
     enable: "oauth_client.enabled",
     revoke: "oauth_client.revoked",
     delete: "oauth_client.deleted",
+    rotateSecret: "oauth_client.secret_rotated",
   },
   deviceClient: {
     register: "device_client.registered",
     autoRegister: "device_client.auto_registered",
     rename: "device_client.renamed",
     revoke: "device_client.revoked",
+    restore: "device_client.restored",
     revokedAccessRejected: "device_client.revoked_access_rejected",
   },
 } as const;

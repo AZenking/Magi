@@ -1,5 +1,6 @@
 package com.magi.tv.ui.client
 
+import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.magi.tv.domain.model.DeviceAuthorizationChallenge
@@ -24,6 +25,12 @@ class ClientAuthorizationViewModel(
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(ClientAuthorizationUiState())
     val uiState = mutableState.asStateFlow()
+
+    /** Test hook: drive the UI state without coroutine timing. */
+    @VisibleForTesting
+    fun setStateForTest(state: ClientAuthorizationUiState) {
+        mutableState.value = state
+    }
     private var authorizationJob: Job? = null
 
     fun start() {

@@ -1,0 +1,12 @@
+{
+  "extends": "@magi/tsconfig/base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["@playwright/test", "node"],
+    "noEmit": true,
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["./**/*.ts"],
+  "exclude": ["node_modules"]
+}

@@ -16,6 +16,7 @@ function makeController(playbackResult: unknown) {
     { execute: vi.fn(async () => ({ items: [], total: 0 })) } as never,
     { execute: vi.fn(async () => playbackResult) } as never,
     { execute: vi.fn() } as never,
+    { execute: vi.fn(async () => ({ accepted: true })) } as never,
   );
 }
 

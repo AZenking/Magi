@@ -11,6 +11,8 @@ export const user = pgTable("user", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   username: text("username").unique(),
   displayUsername: text("display_username"),
+  /** Application authorization role; Better Auth still owns authentication. */
+  role: text("role").notNull().default("user"),
 });
 
 export const session = pgTable("session", {

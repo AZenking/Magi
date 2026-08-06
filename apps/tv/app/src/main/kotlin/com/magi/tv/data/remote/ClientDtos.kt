@@ -56,3 +56,13 @@ data class ClientApiEnvelope<T>(
     val success: Boolean = false,
     val data: T? = null,
 )
+
+@Serializable
+data class PlaybackReportRequestDto(
+    @SerialName("channel_id") val channelId: String,
+    @SerialName("stream_id") val streamId: String,
+    val outcome: String,
+    @SerialName("error_kind") val errorKind: String? = null,
+    @SerialName("played_duration_ms") val playedDurationMs: Long = 0,
+    @SerialName("reported_at") val reportedAt: String? = null,
+)

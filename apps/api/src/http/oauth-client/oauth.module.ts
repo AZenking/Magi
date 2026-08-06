@@ -8,13 +8,14 @@
  *   - IssueTokenUseCase (token endpoint)
  *   - Client management use-cases (create / list / transition / delete)
  *   - AuthController (POST /api/open/v1/auth/token)
- *   - OauthClientAdminController (admin CRUD + disable/enable/revoke)
+ *   - OauthClientAdminController (role-protected CRUD + status/secret safety)
  */
 import { Module } from "@nestjs/common";
 import { OauthClientAdminController } from "./oauth-client.controller";
 import { OauthClientRepository } from "../../infrastructure/database/oauth-client.repository";
 import { AccessTokenRepository } from "../../infrastructure/database/access-token.repository";
 import { AccessTokenGuard } from "../../shared/guards/access-token.guard";
+import { AdminGuard } from "../../shared/guards/admin.guard";
 import {
   OAUTH_CLIENT_REPOSITORY,
   ACCESS_TOKEN_REPOSITORY,
@@ -24,6 +25,7 @@ import { CreateOauthClientUseCase } from "../../application/oauth/create-oauth-c
 import { ListOauthClientsUseCase } from "../../application/oauth/list-oauth-clients.use-case";
 import { TransitionOauthClientStatusUseCase } from "../../application/oauth/transition-oauth-client-status.use-case";
 import { DeleteOauthClientUseCase } from "../../application/oauth/delete-oauth-client.use-case";
+import { RotateOauthClientSecretUseCase } from "../../application/oauth/rotate-oauth-client-secret.use-case";
 import { DeviceClientRepositoryImpl } from "../../infrastructure/database/device-client.repository";
 import {
   DEFAULT_DEVICE_OWNER_REPOSITORY,
@@ -36,9 +38,11 @@ import { DecideDeviceAuthorizationUseCase } from "../../application/device-clien
 import { ExchangeDeviceCodeUseCase } from "../../application/device-client/exchange-device-code.use-case";
 import { RefreshDeviceTokenUseCase } from "../../application/device-client/refresh-device-token.use-case";
 import { ListDeviceClientsUseCase } from "../../application/device-client/list-device-clients.use-case";
+import { GetDeviceClientUseCase } from "../../application/device-client/get-device-client.use-case";
 import { RecordHeartbeatUseCase } from "../../application/device-client/record-heartbeat.use-case";
 import { RenameDeviceClientUseCase } from "../../application/device-client/rename-device-client.use-case";
 import { RevokeDeviceClientUseCase } from "../../application/device-client/revoke-device-client.use-case";
+import { RestoreDeviceClientUseCase } from "../../application/device-client/restore-device-client.use-case";
 import { RegisterDefaultDeviceUseCase } from "../../application/device-client/register-default-device.use-case";
 import { ContentManifestRepository } from "../../infrastructure/database/content-manifest.repository";
 import { CONTENT_MANIFEST_REPOSITORY } from "@/domain/content";
@@ -54,20 +58,24 @@ import { CONTENT_MANIFEST_REPOSITORY } from "@/domain/content";
       useClass: DefaultDeviceOwnerRepository,
     },
     AccessTokenGuard,
+    AdminGuard,
     IssueTokenUseCase,
     CreateOauthClientUseCase,
     ListOauthClientsUseCase,
     TransitionOauthClientStatusUseCase,
     DeleteOauthClientUseCase,
+    RotateOauthClientSecretUseCase,
     BeginDeviceAuthorizationUseCase,
     InspectDeviceAuthorizationUseCase,
     DecideDeviceAuthorizationUseCase,
     ExchangeDeviceCodeUseCase,
     RefreshDeviceTokenUseCase,
     ListDeviceClientsUseCase,
+    GetDeviceClientUseCase,
     RecordHeartbeatUseCase,
     RenameDeviceClientUseCase,
     RevokeDeviceClientUseCase,
+    RestoreDeviceClientUseCase,
     RegisterDefaultDeviceUseCase,
     { provide: CONTENT_MANIFEST_REPOSITORY, useClass: ContentManifestRepository },
   ],
@@ -83,9 +91,11 @@ import { CONTENT_MANIFEST_REPOSITORY } from "@/domain/content";
     ExchangeDeviceCodeUseCase,
     RefreshDeviceTokenUseCase,
     ListDeviceClientsUseCase,
+    GetDeviceClientUseCase,
     RecordHeartbeatUseCase,
     RenameDeviceClientUseCase,
     RevokeDeviceClientUseCase,
+    RestoreDeviceClientUseCase,
     RegisterDefaultDeviceUseCase,
     CONTENT_MANIFEST_REPOSITORY,
   ],

@@ -12,14 +12,19 @@
 import {
   Controller,
   Get,
+  Post,
   Param,
+  Body,
   Query,
   Req,
   Res,
   Inject,
   UseGuards,
+  HttpCode,
+  HttpStatus,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { createHash } from "node:crypto";
@@ -39,11 +44,13 @@ import {
   OpenChannelIdParamSchema,
   OpenEpgQuerySchema,
 } from "@magi/types";
-import { AccessTokenGuard } from "../../shared/guards/access-token.guard";
+import { AccessTokenGuard, type RequestWithPrincipal } from "../../shared/guards/access-token.guard";
 import { FindCanonicalChannelsUseCase } from "../../application/output-composition/find-canonical-channels.use-case";
 import { FindOutputChannelDetailUseCase } from "../../application/output-composition/find-output-channel-detail.use-case";
 import { FindOutputGuideUseCase } from "../../application/output-composition/output-guide.use-case";
 import { ResolvePlaybackUseCase } from "../../application/open/resolve-playback.use-case";
+import { ReportPlaybackUseCase } from "../../application/open/report-playback.use-case";
+import { PlaybackReportRequestSchema } from "@magi/types";
 import type { CanonicalChannel } from "@/domain/output-composition";
 import { CanonicalChannelModel } from "@/domain/output-composition";
 import { FindContentSnapshotUseCase } from "../../application/output-composition/content-snapshot.use-case";
@@ -63,6 +70,8 @@ export class OpenApiController {
     private readonly resolvePlayback: ResolvePlaybackUseCase,
     @Inject(FindContentSnapshotUseCase)
     private readonly findSnapshot: FindContentSnapshotUseCase,
+    @Inject(ReportPlaybackUseCase)
+    private readonly reportPlaybackUc: ReportPlaybackUseCase,
   ) {}
 
   /** Channel groups with visible-channel counts. */
@@ -263,6 +272,38 @@ export class OpenApiController {
         deliveryMode: "direct",
       },
     };
+  }
+
+  /**
+   * Report playback outcome (failure or success) for a stream.
+   * Requires a device principal. Updates stream health metrics.
+   * (008-pipeline-reliability T035, US3)
+   */
+  @Post("playback/report")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "上报播放结果" })
+  async reportPlayback(
+    @Body() body: unknown,
+    @Req() req: RequestWithPrincipal,
+  ): Promise<ApiEnvelope<{ accepted: true }>> {
+    const parsed = PlaybackReportRequestSchema.safeParse(body);
+    if (!parsed.success)
+      throw new BadRequestException({
+        code: "validation-failed",
+        detail: parsed.error.flatten(),
+      });
+    const principal = req.principal;
+    if (!principal || principal.kind !== "device") {
+      throw new ForbiddenException({
+        code: "device-principal-required",
+        status: 403,
+      });
+    }
+    await this.reportPlaybackUc.execute({
+      ...parsed.data,
+      deviceClientId: principal.deviceClientId,
+    });
+    return { success: true, data: { accepted: true } };
   }
 }
 

@@ -47,6 +47,7 @@ function makeController(snapshot = makeSnapshotUseCase()) {
     { execute: vi.fn() } as never,
     { execute: vi.fn() } as never,
     snapshot as never,
+    { execute: vi.fn(async () => ({ accepted: true })) } as never,
   );
 }
 

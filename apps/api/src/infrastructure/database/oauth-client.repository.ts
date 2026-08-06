@@ -4,7 +4,7 @@
  * Implements IOauthClientRepository against `oauth_clients` (constitution III:
  * the port lives in domain/, this concrete class lives in infrastructure/).
  */
-import { eq, and, sql, ilike } from "drizzle-orm";
+import { eq, and, or, sql, ilike } from "drizzle-orm";
 import type {
   OauthClient,
   ClientStatus,
@@ -63,7 +63,14 @@ export class OauthClientRepository implements IOauthClientRepository {
     const { page, pageSize, status, search } = query;
     const conditions = [];
     if (status) conditions.push(eq(oauthClients.status, status));
-    if (search) conditions.push(ilike(oauthClients.clientName, `%${search}%`));
+    if (search) {
+      conditions.push(
+        or(
+          ilike(oauthClients.clientName, `%${search}%`),
+          ilike(oauthClients.clientId, `%${search}%`),
+        )!,
+      );
+    }
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
     const [items, countResult] = await Promise.all([
@@ -89,6 +96,24 @@ export class OauthClientRepository implements IOauthClientRepository {
     const [row] = await db
       .update(oauthClients)
       .set({ status, updatedAt: new Date() })
+      .where(eq(oauthClients.id, id))
+      .returning();
+    return row ? toDomain(row) : null;
+  }
+
+  async rotateSecret(
+    id: string,
+    secretHash: string,
+    secretPrefix: string,
+  ): Promise<OauthClient | null> {
+    const [row] = await db
+      .update(oauthClients)
+      .set({
+        secretHash,
+        secretPrefix,
+        version: sql`${oauthClients.version} + 1`,
+        updatedAt: new Date(),
+      })
       .where(eq(oauthClients.id, id))
       .returning();
     return row ? toDomain(row) : null;

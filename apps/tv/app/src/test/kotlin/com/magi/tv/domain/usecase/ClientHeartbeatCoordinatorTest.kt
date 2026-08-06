@@ -30,6 +30,7 @@ class ClientHeartbeatCoordinatorTest {
                     return HeartbeatObservation(Instant.EPOCH, Instant.EPOCH, 60, 150)
                 }
                 override suspend fun clearCredentials() = Unit
+            override suspend fun reportPlayback(report: com.magi.tv.domain.repository.PlaybackReport) = Unit
             },
             credentialStore = object : ClientCredentialStore {
                 override suspend fun getOrCreateInstallationId() = "installation-1"

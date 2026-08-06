@@ -82,6 +82,7 @@ fun TvApp(appContainer: AppContainer) {
             lastChannelStore = appContainer.lastChannelStore,
             diagnosticsRepository = appContainer.diagnosticsRepository,
             contentSyncRepository = sessionDependencies.contentSyncRepository,
+            clientSessionRepository = appContainer.clientSessionRepository,
         ),
     )
 

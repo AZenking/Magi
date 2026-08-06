@@ -9,12 +9,16 @@ import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.LoadControl
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import com.magi.tv.domain.model.DiagnosticEvent
 import com.magi.tv.domain.model.PlaybackDecision
 import com.magi.tv.domain.repository.DiagnosticsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import android.os.Handler
+import android.os.Looper
 import java.net.URL
 
 data class PlayerUiState(
@@ -25,6 +29,7 @@ data class PlayerUiState(
     val lineCount: Int = 1,
     val firstFrameMs: Long? = null,
     val switching: Boolean = false,
+    val buffering: Boolean = false,
     val terminalError: String? = null,
 )
 
@@ -45,11 +50,27 @@ class Media3PlaybackSession(
     context: Context,
     private val diagnosticsRepository: DiagnosticsRepository,
 ) {
+    /**
+     * Optional callback invoked when a playback line fails or succeeds.
+     * Set by the ViewModel to report results to the server (008 US3).
+     * Parameters: (channelId, streamId, errorKind, playedDurationMs).
+     */
+    var reportPlayback: ((channelId: String, streamId: String, errorKind: String, playedDurationMs: Long) -> Unit)? = null
+
+    // Fix 3: ExoPlayer tuned for live IPTV — smaller buffers for faster
+    // recovery, and a rebuffer threshold that doesn't stall for 50 seconds.
+    private val liveLoadControl: LoadControl = DefaultLoadControl.Builder()
+        .setBufferDurationsMs(
+            /* minBufferMs= */ 10_000,
+            /* maxBufferMs= */ 30_000,
+            /* bufferForPlaybackMs= */ 1_500,
+            /* bufferForPlaybackAfterRebufferMs= */ 3_000,
+        )
+        .setPrioritizeTimeOverSizeThresholds(true)
+        .build()
+
     private val player = ExoPlayer.Builder(context.applicationContext)
         .setAudioAttributes(
-            // Declare MEDIA usage so the system grants audio focus and routes
-            // output correctly. Without this, Android TV may suppress audio
-            // because the player never requests focus.
             AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)
                 .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
@@ -57,6 +78,7 @@ class Media3PlaybackSession(
             /* handleAudioFocus = */ true,
         )
         .setHandleAudioBecomingNoisy(true)
+        .setLoadControl(liveLoadControl)
         .build()
 
     /** Lines of the *currently active* channel. Updated on [switchChannel]. */
@@ -72,6 +94,47 @@ class Media3PlaybackSession(
     private var prepareStartedAtMs = 0L
     private var firstFrameRecorded = false
     private var released = false
+
+    // Fix 1: Buffering watchdog — detects silent stalls where the player
+    // enters STATE_BUFFERING without ever throwing a PlaybackException.
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var bufferingSinceMs = 0L
+    private var bufferRetried = false
+    private val bufferWatchdogRunnable: Runnable = Runnable {
+        if (released) return@Runnable
+        val now = System.currentTimeMillis()
+        if (bufferingSinceMs > 0 && now - bufferingSinceMs >= BUFFER_TIMEOUT_MS) {
+            // Stalled in buffering too long — attempt recovery.
+            if (!bufferRetried) {
+                // First timeout: re-prepare the same line (the stream may
+                // have had a transient stall that a fresh connection fixes).
+                bufferRetried = true
+                val currentLine = lines.getOrNull(mutableState.value.lineIndex)
+                if (currentLine != null) {
+                    player.setMediaItem(MediaItem.fromUri(currentLine.url))
+                    player.prepare()
+                }
+                // Re-arm the watchdog for the second check.
+                mainHandler.postDelayed(bufferWatchdogRunnable, BUFFER_TIMEOUT_MS)
+            } else {
+                // Second timeout: treat as a line error and failover.
+                bufferRetried = false
+                bufferingSinceMs = 0L
+                handleBufferingTimeout()
+            }
+        }
+    }
+
+    private fun handleBufferingTimeout() {
+        // Synthesize a network-style error and route through the existing
+        // failover path so the next line is tried (or terminal error is set).
+        val fakeError = PlaybackException(
+            "Buffering timeout — stream stalled",
+            /* cause= */ null,
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+        )
+        handleLineError(fakeError)
+    }
 
     private val statsListener = object : AnalyticsListener {
         override fun onPlaybackStateChanged(
@@ -146,19 +209,46 @@ class Media3PlaybackSession(
         player.addListener(
             object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
-                    if (playbackState == Player.STATE_READY && !firstFrameRecorded) {
-                        firstFrameRecorded = true
-                        val firstFrameMs =
-                            System.currentTimeMillis() - prepareStartedAtMs
-                        mutableState.value = mutableState.value.copy(
-                            firstFrameMs = firstFrameMs,
-                            switching = false,
-                        )
-                        diagnosticsRepository.recordFirstFrame(firstFrameMs)
+                    when (playbackState) {
+                        Player.STATE_READY -> {
+                            // Cancel the buffering watchdog — playback recovered.
+                            mainHandler.removeCallbacks(bufferWatchdogRunnable)
+                            bufferingSinceMs = 0L
+                            bufferRetried = false
+                            if (!firstFrameRecorded) {
+                                firstFrameRecorded = true
+                                val firstFrameMs =
+                                    System.currentTimeMillis() - prepareStartedAtMs
+                                mutableState.value = mutableState.value.copy(
+                                    firstFrameMs = firstFrameMs,
+                                    switching = false,
+                                    buffering = false,
+                                )
+                                diagnosticsRepository.recordFirstFrame(firstFrameMs)
+                            } else {
+                                mutableState.value = mutableState.value.copy(buffering = false)
+                            }
+                        }
+                        Player.STATE_BUFFERING -> {
+                            // Start the buffering watchdog if not already running.
+                            if (bufferingSinceMs == 0L) {
+                                bufferingSinceMs = System.currentTimeMillis()
+                                bufferRetried = false
+                                mainHandler.postDelayed(bufferWatchdogRunnable, BUFFER_TIMEOUT_MS)
+                            }
+                            mutableState.value = mutableState.value.copy(buffering = true)
+                        }
+                        else -> {
+                            // IDLE or ENDED — cancel watchdog.
+                            mainHandler.removeCallbacks(bufferWatchdogRunnable)
+                            bufferingSinceMs = 0L
+                        }
                     }
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
+                    mainHandler.removeCallbacks(bufferWatchdogRunnable)
+                    bufferingSinceMs = 0L
                     handleLineError(error)
                 }
             },
@@ -226,6 +316,10 @@ class Media3PlaybackSession(
         player.setMediaItem(MediaItem.fromUri(line.url))
         player.playWhenReady = true
         player.prepare()
+        // Reset buffering watchdog for the new line.
+        mainHandler.removeCallbacks(bufferWatchdogRunnable)
+        bufferingSinceMs = 0L
+        bufferRetried = false
     }
 
     private fun handleLineError(error: PlaybackException) {
@@ -239,6 +333,20 @@ class Media3PlaybackSession(
                 lineStreamId = currentLine?.streamId,
             ),
         )
+
+        // 008-pipeline-reliability T042: report the failure to the server so
+        // its health metrics reflect real playback experience.
+        val channelId = mutableState.value.channelId
+        if (channelId.isNotEmpty() && currentLine != null) {
+            // Use actual playback position, not wall-clock since prepare.
+            val playedMs = player.currentPosition.coerceAtLeast(0L)
+            reportPlayback?.invoke(
+                channelId,
+                currentLine.streamId,
+                kind.name.lowercase(),
+                playedMs,
+            )
+        }
 
         val nextLineIndex = mutableState.value.lineIndex + 1
         if (nextLineIndex < lines.size) {
@@ -282,6 +390,7 @@ class Media3PlaybackSession(
     fun release() {
         if (!released) {
             released = true
+            mainHandler.removeCallbacks(bufferWatchdogRunnable)
             player.removeAnalyticsListener(statsListener)
             player.release()
         }
@@ -293,5 +402,10 @@ class Media3PlaybackSession(
         Player.STATE_READY -> PlaybackStateLabel.READY
         Player.STATE_ENDED -> PlaybackStateLabel.ENDED
         else -> PlaybackStateLabel.IDLE
+    }
+
+    companion object {
+        /** How long to wait in STATE_BUFFERING before attempting recovery. */
+        private const val BUFFER_TIMEOUT_MS = 15_000L
     }
 }

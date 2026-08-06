@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, gt, ilike, isNull, lt, or, sql } from "drizzle-orm";
 import type {
   ConsumeDeviceAuthorizationResult,
   CreateDeviceAuthorizationGrantInput,
@@ -57,7 +57,40 @@ export class DeviceClientRepositoryImpl implements DeviceClientRepository {
       WHEN ${deviceClients.lastHeartbeatAt} IS NOT NULL
         AND ${deviceClients.lastHeartbeatAt} >= ${sql.param(onlineSince, deviceClients.lastHeartbeatAt)} THEN 0
       ELSE 1 END`;
-    const where = eq(deviceClients.ownerUserId, query.ownerUserId);
+    const conditions = [eq(deviceClients.ownerUserId, query.ownerUserId)];
+    if (query.search) {
+      const pattern = `%${query.search}%`;
+      conditions.push(
+        or(
+          ilike(deviceClients.displayName, pattern),
+          ilike(deviceClients.identitySummary, pattern),
+          ilike(deviceClients.platform, pattern),
+          ilike(deviceClients.appVersion, pattern),
+        )!,
+      );
+    }
+    if (query.status === "revoked") {
+      conditions.push(eq(deviceClients.status, "revoked"));
+    } else if (query.status === "online") {
+      conditions.push(
+        and(
+          eq(deviceClients.status, "active"),
+          sql`${deviceClients.lastHeartbeatAt} IS NOT NULL`,
+          sql`${deviceClients.lastHeartbeatAt} >= ${sql.param(onlineSince, deviceClients.lastHeartbeatAt)}`,
+        )!,
+      );
+    } else if (query.status === "offline") {
+      conditions.push(
+        and(
+          eq(deviceClients.status, "active"),
+          or(
+            isNull(deviceClients.lastHeartbeatAt),
+            lt(deviceClients.lastHeartbeatAt, onlineSince),
+          ),
+        )!,
+      );
+    }
+    const where = and(...conditions);
     const [rows, count] = await Promise.all([
       db
         .select()
@@ -229,6 +262,75 @@ export class DeviceClientRepositoryImpl implements DeviceClientRepository {
         refreshTokensRevoked: refresh.length,
         alreadyRevoked: false,
       };
+    });
+  }
+
+  async restoreOwned(
+    id: string,
+    ownerUserId: string,
+    restoredBy: string,
+    at = new Date(),
+    requestId?: string | null,
+  ) {
+    return db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(deviceClients)
+        .set({
+          status: "active",
+          revokedAt: null,
+          revokedBy: null,
+          version: sql`${deviceClients.version} + 1`,
+          updatedAt: at,
+        })
+        .where(
+          and(
+            eq(deviceClients.id, id),
+            eq(deviceClients.ownerUserId, ownerUserId),
+            eq(deviceClients.status, "revoked"),
+          ),
+        )
+        .returning();
+
+      if (!updated) {
+        const [existing] = await tx
+          .select()
+          .from(deviceClients)
+          .where(
+            and(
+              eq(deviceClients.id, id),
+              eq(deviceClients.ownerUserId, ownerUserId),
+            ),
+          )
+          .limit(1);
+        return existing?.status === "active" ? toDeviceClient(existing) : null;
+      }
+
+      const action = "device_client.restored";
+      const [audit] = await tx
+        .insert(auditEvents)
+        .values({
+          actorType: "user",
+          actorId: restoredBy,
+          action,
+          targetType: "device_client",
+          targetId: id,
+          displayName: updated.displayName,
+          result: "succeeded",
+          requestId: requestId ?? null,
+          summary: { previousStatus: "revoked", credentialRotation: "on_next_registration" },
+        })
+        .returning({ id: auditEvents.id });
+      await tx.insert(outboxEvents).values({
+        topic: `audit.${action}`,
+        aggregateType: "device_client",
+        aggregateId: id,
+        payload: { auditEventId: audit!.id, result: "succeeded" },
+        requestId: requestId ?? null,
+        status: "pending",
+        attempts: 0,
+        availableAt: at,
+      });
+      return toDeviceClient(updated);
     });
   }
 

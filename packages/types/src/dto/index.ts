@@ -89,3 +89,4 @@ export * from "./oauth-client";
 export * from "./open-api";
 export * from "./device-client";
 export * from "./content-snapshot";
+export * from "./playback-report";

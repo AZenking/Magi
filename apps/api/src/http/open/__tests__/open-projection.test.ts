@@ -60,6 +60,7 @@ function makeController(channels: CanonicalChannel[], detailChannel?: CanonicalC
     { execute: vi.fn(async () => ({ items: [], total: 0 })) } as never,
     { execute: vi.fn(async () => null) } as never,
     { execute: vi.fn() } as never,
+    { execute: vi.fn(async () => ({ accepted: true })) } as never,
   );
 }
 
@@ -76,6 +77,7 @@ function makeControllerWithTotal(pageItems: CanonicalChannel[], total: number) {
     { execute: vi.fn(async () => ({ items: [], total: 0 })) } as never,
     { execute: vi.fn(async () => null) } as never,
     { execute: vi.fn() } as never,
+    { execute: vi.fn(async () => ({ accepted: true })) } as never,
   );
 }
 

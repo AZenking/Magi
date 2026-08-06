@@ -83,12 +83,32 @@ class LivePlaybackViewModel(
     private val lastChannelStore: LastChannelStore,
     diagnosticsRepository: DiagnosticsRepository,
     private val contentSyncRepository: ContentSyncRepository? = null,
+    private val clientSessionRepository: com.magi.tv.domain.repository.ClientSessionRepository? = null,
 ) : ViewModel() {
 
     val session = Media3PlaybackSession(
         context = context.applicationContext,
         diagnosticsRepository = diagnosticsRepository,
-    )
+    ).also { s ->
+        // Fix 4: wire playback report callback to the server (008 US3).
+        if (clientSessionRepository != null) {
+            s.reportPlayback = { channelId, streamId, errorKind, playedDurationMs ->
+                viewModelScope.launch {
+                    runCatching {
+                        clientSessionRepository.reportPlayback(
+                            com.magi.tv.domain.repository.PlaybackReport(
+                                channelId = channelId,
+                                streamId = streamId,
+                                outcome = com.magi.tv.domain.repository.PlaybackOutcome.FAILURE,
+                                errorKind = errorKind,
+                                playedDurationMs = playedDurationMs,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
 
     private val mutableUiState = MutableStateFlow(LivePlaybackUiState())
     val uiState = mutableUiState.asStateFlow()
@@ -132,6 +152,17 @@ class LivePlaybackViewModel(
                         pendingTuneChannelId = null,
                         tuneError = playerState.terminalError,
                     )
+                }
+            }
+        }
+        // Fix 5: Periodically refresh the current channel's playback decision
+        // so signed URLs don't go stale during long viewing sessions.
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(60_000L)
+                val currentChannelId = session.state.value.channelId
+                if (currentChannelId.isNotBlank() && session.state.value.terminalError == null) {
+                    runCatching { resolvePlayback(currentChannelId) }
                 }
             }
         }
@@ -498,6 +529,7 @@ class LivePlaybackViewModel(
             lastChannelStore: LastChannelStore,
             diagnosticsRepository: DiagnosticsRepository,
             contentSyncRepository: ContentSyncRepository? = null,
+            clientSessionRepository: com.magi.tv.domain.repository.ClientSessionRepository? = null,
         ) = object : androidx.lifecycle.ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T = LivePlaybackViewModel(
@@ -508,6 +540,7 @@ class LivePlaybackViewModel(
                 lastChannelStore = lastChannelStore,
                 diagnosticsRepository = diagnosticsRepository,
                 contentSyncRepository = contentSyncRepository,
+                clientSessionRepository = clientSessionRepository,
             ) as T
         }
     }

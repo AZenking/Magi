@@ -199,10 +199,17 @@ export class BullmqTaskQueueAdapter implements TaskQueuePort {
     },
     {
       jobId: "scheduled-source-sync",
-      name: "源同步",
+      name: "M3U 源同步",
       queueName: QUEUE_NAMES.SOURCE_SYNC,
       taskType: "m3u-sync",
       description: "定期同步 M3U 源的频道数据",
+    },
+    {
+      jobId: "scheduled-xmltv-sync",
+      name: "XMLTV 源同步",
+      queueName: QUEUE_NAMES.SOURCE_SYNC,
+      taskType: "xmltv-sync",
+      description: "定期同步 XMLTV 源的节目单数据",
     },
     {
       jobId: "scheduled-cleanup",

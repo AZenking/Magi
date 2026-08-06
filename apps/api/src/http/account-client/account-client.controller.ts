@@ -21,6 +21,7 @@ import type {
   DeviceClient as DeviceClientVo,
   DeviceClientPage,
   RevokeDeviceClientResult,
+  RestoreDeviceClientResult,
 } from "@magi/types";
 import {
   AccountClientListQuerySchema,
@@ -42,6 +43,8 @@ import { AUDIT_ACTIONS } from "../../domain/audit/audit-actions";
 import { ListDeviceClientsUseCase } from "../../application/device-client/list-device-clients.use-case";
 import { RenameDeviceClientUseCase } from "../../application/device-client/rename-device-client.use-case";
 import { RevokeDeviceClientUseCase } from "../../application/device-client/revoke-device-client.use-case";
+import { RestoreDeviceClientUseCase } from "../../application/device-client/restore-device-client.use-case";
+import { GetDeviceClientUseCase } from "../../application/device-client/get-device-client.use-case";
 import { InspectDeviceAuthorizationUseCase } from "../../application/device-client/inspect-device-authorization.use-case";
 import { DecideDeviceAuthorizationUseCase } from "../../application/device-client/decide-device-authorization.use-case";
 
@@ -56,6 +59,10 @@ export class AccountClientController {
     private readonly renameUc: RenameDeviceClientUseCase,
     @Inject(RevokeDeviceClientUseCase)
     private readonly revokeUc: RevokeDeviceClientUseCase,
+    @Inject(RestoreDeviceClientUseCase)
+    private readonly restoreUc: RestoreDeviceClientUseCase,
+    @Inject(GetDeviceClientUseCase)
+    private readonly getUc: GetDeviceClientUseCase,
     @Inject(InspectDeviceAuthorizationUseCase)
     private readonly inspectUc: InspectDeviceAuthorizationUseCase,
     @Inject(DecideDeviceAuthorizationUseCase)
@@ -90,6 +97,23 @@ export class AccountClientController {
         totalPages: Math.ceil(result.total / parsed.data.pageSize) || 1,
         asOf: result.asOf.toISOString(),
       },
+    };
+  }
+
+  @Get("clients/:clientId")
+  @ApiOperation({ summary: "查看客户端心跳诊断详情" })
+  async detail(
+    @Param("clientId") clientId: string,
+    @CurrentUser() user: { id: string },
+  ): Promise<ApiResponse<DeviceClientVo>> {
+    const client = await this.getUc.execute(clientId, user.id);
+    return {
+      success: true,
+      data: toClientVo({
+        ...client,
+        presenceStatus: derivePresenceStatus(client, new Date()),
+        asOf: new Date(),
+      }),
     };
   }
 
@@ -162,6 +186,36 @@ export class AccountClientController {
         accessTokensRevoked: result.accessTokensRevoked,
         refreshTokensRevoked: result.refreshTokensRevoked,
       },
+    };
+  }
+
+  @Post("clients/:clientId/restore")
+  @ApiOperation({ summary: "解除撤销并允许客户端重新登记" })
+  @HttpCode(HttpStatus.OK)
+  @Idempotent("device-client.restore")
+  async restore(
+    @Param("clientId") clientId: string,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @CurrentUser() user: { id: string },
+  ): Promise<ApiResponse<RestoreDeviceClientResult["client"]>> {
+    if (!idempotencyKey)
+      throw new BadRequestException({
+        code: "idempotency-key-required",
+        status: 400,
+      });
+    const restored = await this.restoreUc.execute({
+      id: clientId,
+      ownerUserId: user.id,
+      restoredBy: user.id,
+      requestId: currentRequestId(),
+    });
+    return {
+      success: true,
+      data: toClientVo({
+        ...restored,
+        presenceStatus: derivePresenceStatus(restored, new Date()),
+        asOf: new Date(),
+      }),
     };
   }
 

@@ -14,11 +14,11 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Form, Input, Modal, Popconfirm, Space, Tag, Typography } from "antd";
-import { DeleteOutlined, PlusOutlined, StopOutlined } from "@ant-design/icons";
+import { Button, Form, Input, Modal, Popconfirm, Select, Space, Tag, Typography } from "antd";
+import { DeleteOutlined, KeyOutlined, PlusOutlined, StopOutlined } from "@ant-design/icons";
 import type { ProColumns } from "@ant-design/pro-components";
 import type { OauthClientCreatedVo, OauthClientVo, PaginatedResponse } from "@magi/types";
-import { apiClient } from "@/services/api";
+import { apiClient, formatApiError } from "@/services/api";
 import { useFeedback } from "@/lib/feedback";
 import { ProTableWrapper } from "@/components/pro-table-wrapper";
 import { PageHeader, PageStack } from "@/components/page-layout";
@@ -52,15 +52,18 @@ function OauthClientsPage() {
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [status, setStatus] = useState<OauthClientVo["status"] | undefined>();
   const [createOpen, setCreateOpen] = useState(false);
   const [created, setCreated] = useState<OauthClientCreatedVo | null>(null);
   const [createForm] = Form.useForm<{ clientId: string; clientName: string }>();
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["oauth-clients", page, pageSize],
+    queryKey: ["oauth-clients", page, pageSize, search, status],
     queryFn: () =>
       apiClient<Envelope<PaginatedResponse<OauthClientVo>>>("/api/admin/oauth-clients", {
-        params: { page, pageSize },
+        params: { page, pageSize, search: search || undefined, status },
       }),
   });
 
@@ -80,8 +83,8 @@ function OauthClientsPage() {
       qc.invalidateQueries({ queryKey: ["oauth-clients"] });
       message.success("客户端已创建");
     },
-    onError: () => {
-      message.error("创建失败");
+    onError: (error) => {
+      message.error(formatApiError(error, "创建失败"));
     },
   });
 
@@ -97,14 +100,47 @@ function OauthClientsPage() {
       });
       message.success("操作成功");
       qc.invalidateQueries({ queryKey: ["oauth-clients"] });
-    } catch {
-      message.error("操作失败");
+    } catch (error) {
+      message.error(formatApiError(error, "操作失败"));
+    }
+  };
+
+  const rotateSecret = async (record: OauthClientVo) => {
+    try {
+      const response = await apiClient<Envelope<OauthClientCreatedVo>>(
+        `/api/admin/oauth-clients/${record.id}/rotate-secret`,
+        { method: "POST" },
+      );
+      setCreated(response.data);
+      message.success("Secret 已轮换");
+      qc.invalidateQueries({ queryKey: ["oauth-clients"] });
+    } catch (error) {
+      message.error(formatApiError(error, "Secret 轮换失败"));
     }
   };
 
   const columns: ProColumns<OauthClientVo>[] = [
     { title: "名称", dataIndex: "clientName", ellipsis: true },
     { title: "Client ID", dataIndex: "clientId", ellipsis: true, width: 200 },
+    {
+      title: "类型",
+      dataIndex: "clientKind",
+      width: 120,
+      render: (_, record) =>
+        record.isProtected ? (
+          <Tag color="blue">内置设备</Tag>
+        ) : (
+          <Tag>机密客户端</Tag>
+        ),
+    },
+    {
+      title: "权限范围",
+      dataIndex: "scope",
+      width: 190,
+      render: (_, record) => (
+        <Typography.Text code>{record.scope}</Typography.Text>
+      ),
+    },
     { title: "Secret 前缀", dataIndex: "secretPrefix", width: 120 },
     {
       title: "状态",
@@ -130,21 +166,21 @@ function OauthClientsPage() {
     {
       title: "操作",
       key: "actions",
-      width: 220,
+      width: 320,
       fixed: "right",
-      render: (_, record) => (
-        <Space size="small">
-          {record.status === "active" && (
+        render: (_, record) => (
+          <Space size="small">
+          {!record.isProtected && record.status === "active" && (
             <Button size="small" onClick={() => runAction(record.id, "disable")}>
               禁用
             </Button>
           )}
-          {record.status === "disabled" && (
+          {!record.isProtected && record.status === "disabled" && (
             <Button size="small" type="primary" onClick={() => runAction(record.id, "enable")}>
               启用
             </Button>
           )}
-          {record.status !== "revoked" && (
+          {!record.isProtected && record.status !== "revoked" && (
             <Popconfirm
               title="永久吊销该客户端？"
               description="吊销后不可恢复，所有已签发的 token 立即失效，关联设备将无法访问。"
@@ -158,7 +194,18 @@ function OauthClientsPage() {
               </Button>
             </Popconfirm>
           )}
-          <Popconfirm
+          {!record.isProtected && record.clientKind === "confidential" && (
+            <Popconfirm
+              title="轮换 Secret？"
+              description="旧 Secret 会立即失效。新 Secret 只显示一次，请先保存。"
+              okText="轮换"
+              cancelText="取消"
+              onConfirm={() => void rotateSecret(record)}
+            >
+              <Button size="small" icon={<KeyOutlined />}>轮换 Secret</Button>
+            </Popconfirm>
+          )}
+          {!record.isProtected && <Popconfirm
             title="删除该客户端？"
             description="物理删除，记录将被移除。"
             okText="删除"
@@ -167,7 +214,8 @@ function OauthClientsPage() {
             onConfirm={() => runAction(record.id, "delete")}
           >
             <Button size="small" type="text" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
+          </Popconfirm>}
+          {record.isProtected && <Typography.Text type="secondary">系统保护</Typography.Text>}
         </Space>
       ),
     },
@@ -196,6 +244,33 @@ function OauthClientsPage() {
           },
         }}
         toolBarRender={() => [
+          <Input.Search
+            key="search"
+            allowClear
+            value={searchInput}
+            placeholder="搜索名称或 Client ID"
+            onChange={(event) => setSearchInput(event.target.value)}
+            onSearch={(value) => {
+              setPage(1);
+              setSearch(value.trim());
+            }}
+            style={{ width: 220 }}
+          />,
+          <Select
+            key="status"
+            allowClear
+            placeholder="状态"
+            value={status}
+            onChange={(value) => {
+              setPage(1);
+              setStatus(value);
+            }}
+            options={Object.entries(STATUS_META).map(([value, meta]) => ({
+              value,
+              label: meta.label,
+            }))}
+            style={{ width: 120 }}
+          />,
           <Button
             key="create"
             type="primary"

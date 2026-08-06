@@ -2,6 +2,7 @@ import { Button, Modal, Typography } from "antd";
 import type { DeviceClient } from "@magi/types";
 import { useFeedback } from "@/lib/feedback";
 import { useRevokeDeviceClient } from "./client-queries";
+import { formatApiError } from "@/services/api";
 
 type Props = {
   client: DeviceClient | null;
@@ -19,8 +20,8 @@ export function RevokeClientModal({ client, open, onClose }: Props) {
       await mutation.mutateAsync(client.id);
       message.success("客户端访问已撤销");
       onClose();
-    } catch {
-      message.error("撤销失败，请保留窗口并重试");
+    } catch (error) {
+      message.error(formatApiError(error, "撤销失败，请保留窗口并重试"));
     }
   }
 
@@ -48,7 +49,7 @@ export function RevokeClientModal({ client, open, onClose }: Props) {
     >
       <Typography.Paragraph>
         确定要撤销「{client?.displayName}
-        」吗？撤销后该设备立即失去访问权限并停止心跳。原客户端无法恢复；再次使用需要重新授权为新客户端。
+        」吗？撤销后该设备立即失去访问权限并停止心跳。之后可在列表中“允许重新登记”，设备会在下次启动或重试时重新轮换凭证。
       </Typography.Paragraph>
     </Modal>
   );

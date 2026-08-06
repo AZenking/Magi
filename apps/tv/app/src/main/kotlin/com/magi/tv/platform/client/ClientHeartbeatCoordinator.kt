@@ -6,6 +6,7 @@ import com.magi.tv.domain.repository.ClientCredentialStore
 import com.magi.tv.domain.repository.ClientSessionRepository
 import com.magi.tv.domain.repository.ContentSyncRepository
 import com.magi.tv.domain.repository.ConnectivityMonitor
+import com.magi.tv.data.repository.DefaultClientSessionRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -71,6 +72,11 @@ class ClientHeartbeatCoordinator(
                             val observation = repository.heartbeat()
                             intervalSeconds = observation.nextHeartbeatInSeconds
                             failures = 0
+                            // 008-pipeline-reliability T043: flush buffered
+                            // playback reports now that connectivity is proven.
+                            if (repository is DefaultClientSessionRepository) {
+                                repository.flushPendingPlaybackReports()
+                            }
                             val revision = observation.contentRevision
                             if (revision != null && contentSyncRepository != null) {
                                 contentSyncJob?.cancel()

@@ -6,6 +6,7 @@ import {
   Flex,
   Result,
   Skeleton,
+  Tag,
   Typography,
   theme,
 } from "antd";
@@ -16,7 +17,7 @@ import {
   ProfileOutlined,
   WarningOutlined,
 } from "@ant-design/icons";
-import { apiClient } from "@/services/api";
+import { apiClient, formatApiError } from "@/services/api";
 import { HealthSummaryCards } from "@/features/dashboard/health-summary";
 import { OperationsSummary } from "@/features/dashboard/operations-summary";
 import { PageHeader, PageStack } from "@/components/page-layout";
@@ -31,6 +32,14 @@ interface DashboardStats {
   channels: number;
   programmes: number;
   synced: number;
+}
+
+interface ContentHealth {
+  available: boolean;
+  catalogRevision: string | null;
+  epgRevision: string | null;
+  checkedAt: string;
+  errorCode?: string;
 }
 
 function DashboardPage() {
@@ -48,6 +57,14 @@ function DashboardPage() {
     staleTime: 30_000,
   });
   const stats = sourceData?.data;
+  const contentHealth = useQuery({
+    queryKey: ["dashboard-content-health"],
+    queryFn: () =>
+      apiClient<{ success: boolean; data: ContentHealth }>(
+        "/dashboard/content-health",
+      ),
+    refetchInterval: 30_000,
+  });
   const pendingItems: Array<{
     title: string;
     desc: string;
@@ -184,6 +201,35 @@ function DashboardPage() {
       </Card>
 
       <HealthSummaryCards />
+
+      <Card
+        title="客户端内容快照"
+        loading={contentHealth.isLoading}
+        extra={
+          contentHealth.data?.data?.available ? (
+            <Tag color="success">正常</Tag>
+          ) : (
+            <Tag color="error">不可用</Tag>
+          )
+        }
+      >
+        {contentHealth.isError ? (
+          <Typography.Text type="danger">
+            {formatApiError(contentHealth.error, "内容快照健康检查失败")}
+          </Typography.Text>
+        ) : contentHealth.data?.data?.available ? (
+          <Typography.Text type="secondary">
+            Catalog v{contentHealth.data.data.catalogRevision} · EPG v
+            {contentHealth.data.data.epgRevision} · 最近检查：
+            {new Date(contentHealth.data.data.checkedAt).toLocaleString()}
+          </Typography.Text>
+        ) : (
+          <Typography.Text type="danger">
+            内容快照清单不可用（{contentHealth.data?.data?.errorCode ?? "unknown"}）。
+            请先执行数据库迁移并重启 API。
+          </Typography.Text>
+        )}
+      </Card>
 
       {/* T123: operations summary (freshness, coverage, task anomalies, issues). */}
       <OperationsSummary />

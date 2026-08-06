@@ -70,6 +70,7 @@ function makeController(items: { channel: CanonicalChannel; programmes: Programm
     } as never,
     { execute: vi.fn(async () => null) } as never,
     { execute: vi.fn() } as never,
+    { execute: vi.fn(async () => ({ accepted: true })) } as never,
   );
 }
 

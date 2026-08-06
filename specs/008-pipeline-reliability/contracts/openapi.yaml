@@ -1,0 +1,125 @@
+# OpenAPI Contract Additions: 数据管线可靠性与播放反馈闭环
+
+**Feature Branch**: `008-pipeline-reliability`
+**Date**: 2026-08-04
+
+本文件描述 008 特性对 `/api/open.json` 的增量。完整 OpenAPI 由 NestJS Swagger 自动生成，
+这里仅记录新增/变更的端点和 schema 供实现和 TV 契约测试参考。
+
+## 新增端点
+
+### POST /api/open/v1/playback/report
+
+上报客户端播放结果（失败或成功）。用于让服务端线路健康度纳入真实播放体验。
+
+**鉴权**: `AccessTokenGuard`（Bearer device token，要求 `principal.kind === "device"`）。
+**限流**: 同其他开放接口 60 req/min（对同设备的重复上报服务端 10s 窗口去重）。
+
+**Request Body**:
+```yaml
+PlaybackReportRequest:
+  type: object
+  required: [channel_id, stream_id, outcome]
+  properties:
+    channel_id:
+      type: string
+      description: "canonical channel ID（magi:{uuid} 格式）"
+      example: "magi:00000000-0000-4000-8000-000000000001"
+    stream_id:
+      type: string
+      format: uuid
+      description: "播放决策中返回的 streamId（channel_streams.id）"
+    outcome:
+      type: string
+      enum: [failure, success]
+    error_kind:
+      type: string
+      nullable: true
+      enum: [network, http, decoder, source, timeout]
+      description: "outcome=failure 时必填；outcome=success 时必须为 null"
+    played_duration_ms:
+      type: integer
+      minimum: 0
+      description: "失败前已播放时长（ms），或成功时的首帧耗时"
+    reported_at:
+      type: string
+      format: date-time
+      description: "客户端上报时间（ISO-8601）"
+```
+
+**Responses**:
+- `200 OK`: `{ success: true, data: { accepted: true } }` — 上报已处理（或被去重忽略）。
+- `400 Bad Request`: `{ success: false, error: { code: "validation-failed", detail: ... } }`
+- `401 Unauthorized`: device token 无效。
+- `403 Forbidden`: `{ code: "device-principal-required" }` — 非 device principal。
+
+**行为**:
+- `streamId` 不存在或不属于 `channelId` → 仍返回 200（安全忽略，不泄露存在性）。
+- 同设备同线路 10s 内重复 failure → 去重，返回 200 但不重复递增 `consecutiveFailures`。
+- outcome=success → `consecutiveFailures` 归零，`healthStatus` 可恢复为 online/degraded。
+
+## TV 契约要求
+
+### Kotlin DTO（ClientDtos.kt 新增）
+
+```kotlin
+@Serializable
+data class PlaybackReportRequestDto(
+    @SerialName("channel_id") val channelId: String,
+    @SerialName("stream_id") val streamId: String,
+    val outcome: String,            // "failure" | "success"
+    @SerialName("error_kind") val errorKind: String? = null,
+    @SerialName("played_duration_ms") val playedDurationMs: Long = 0,
+    @SerialName("reported_at") val reportedAt: String,
+)
+```
+
+### ClientApi.kt 新增方法
+
+```kotlin
+@Headers("Content-Type: application/json")
+@POST("api/open/v1/playback/report")
+suspend fun reportPlayback(
+    @Header("Authorization") authorization: String,
+    @Body request: PlaybackReportRequestDto,
+): ClientApiEnvelope<Unit>
+```
+
+### Zod Schema（packages/types 新增）
+
+`packages/types/src/dto/playback-report.ts`:
+```typescript
+export const PlaybackReportRequestSchema = z.object({
+  channel_id: z.string().min(1),
+  stream_id: z.string().uuid(),
+  outcome: z.enum(["failure", "success"]),
+  error_kind: z.enum(["network", "http", "decoder", "source", "timeout"]).nullable().default(null),
+  played_duration_ms: z.number().int().min(0).default(0),
+  reported_at: z.string().datetime().optional(),
+}).strict().superRefine((data, ctx) => {
+  if (data.outcome === "success" && data.error_kind !== null) {
+    ctx.addIssue({ code: "custom", message: "error_kind must be null for success outcome", path: ["error_kind"] });
+  }
+  if (data.outcome === "failure" && data.error_kind === null) {
+    ctx.addIssue({ code: "custom", message: "error_kind required for failure outcome", path: ["error_kind"] });
+  }
+});
+```
+
+## 现有端点行为变更（无契约 breaking change）
+
+### 定时同步行为修复
+
+`POST /sources/:type/:id/sync` 和定时同步的行为不变（仍返回 202 + taskId）。修复的是定时同步
+内部逻辑（sourceId=null 时遍历所有源），对 API 契约无影响。
+
+### 播放决策排序
+
+`GET /api/open/v1/channels/:id/playback` 返回的 `ResolvedPlayback` 结构不变。变更的是线路排序
+依据——`channel_streams.health_status` 现在同时受主动探测和播放上报影响，排序结果更准确。
+不新增字段。
+
+### Safe Operations
+
+`POST /operations/:id/apply` 的 API 契约不变（仍返回变更集状态）。修复的是 Worker 执行端
+（从空壳变为真实应用 + 恢复点写入），对 API 响应无影响。

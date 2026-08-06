@@ -14,7 +14,7 @@ import { createLogger } from "@magi/utils";
 import type { SyncProgress } from "@magi/backend-core";
 import { redis } from "./redis";
 import { db } from "./db";
-import { operationChangeSets, syncLogs } from "./schema";
+import { syncLogs } from "./schema";
 import { eq } from "drizzle-orm";
 import { processM3uSync } from "./processors/m3u-sync.processor";
 import { processXmltvSync } from "./processors/xmltv-sync.processor";
@@ -33,7 +33,7 @@ const logger = createLogger({ context: "worker" });
 // Queue definitions — single source of truth for queue ↔ kind mapping.
 // ---------------------------------------------------------------------------
 const QUEUE_CONFIG = [
-  { queue: "source-sync", concurrency: 2, kinds: ["m3u-sync", "xmltv-sync", "source-check", "cleanup", "operation-prepare", "operation-apply"] as JobKind[] },
+  { queue: "source-sync", concurrency: 2, kinds: ["m3u-sync", "xmltv-sync", "source-check", "cleanup", "operation-prepare", "operation-apply", "operation-restore", "operation-cleanup"] as JobKind[] },
   { queue: "epg", concurrency: 1, kinds: ["epg-match", "import-epg", "refresh-epg"] as JobKind[] },
   { queue: "health-check", concurrency: 1, kinds: ["stream-check"] as JobKind[] },
 ] as const;
@@ -50,12 +50,12 @@ function registerHandlers(runner: JobRunner) {
   // --- source-sync handlers ---
 
   runner.register("m3u-sync", async (job, progress) => {
-    const r = await processM3uSync(job.payload.sourceId as string, toSyncProgress(progress));
+    const r = await processM3uSync((job.payload.sourceId as string | null) ?? null, toSyncProgress(progress));
     return { taskId: job.payload.taskId as string, ...r };
   });
 
   runner.register("xmltv-sync", async (job, progress) => {
-    const r = await processXmltvSync(job.payload.sourceId as string, toSyncProgress(progress));
+    const r = await processXmltvSync((job.payload.sourceId as string | null) ?? null, toSyncProgress(progress));
     return { taskId: job.payload.taskId as string, ...r };
   });
 
@@ -69,53 +69,11 @@ function registerHandlers(runner: JobRunner) {
     return { taskId: _job.payload.taskId as string, importedCount: r.deletedTasks, removedCount: r.deletedOrphanChannels };
   });
 
-  runner.register("operation-prepare", async (job, progress) => {
-    const sourceId = job.payload.sourceId as string;
-    const changeSetId = job.payload.changeSetId as string;
-    const kind = job.payload.kind as string;
-    const sp = toSyncProgress(progress);
-    let result: { importedCount: number; addedCount: number; updatedCount: number; removedCount: number } | undefined;
-    let error: string | null = null;
-
-    try {
-      if (kind === "epg_match") {
-        const r = await processEpgMatch(sourceId, sp);
-        result = { importedCount: r.importedCount, addedCount: r.addedCount, updatedCount: r.updatedCount, removedCount: r.removedCount };
-      } else {
-        result = await processM3uSync(sourceId, sp);
-      }
-    } catch (e) {
-      error = (e as Error).message;
-      logger.error(`operation-prepare failed for ${changeSetId}`, { error });
-    }
-
-    // Update change-set status so the UI unblocks.
-    try {
-      if (error) {
-        await db.update(operationChangeSets).set({
-          status: "failed",
-          summary: { error: error.slice(0, 500) },
-          warnings: [],
-          blockers: [{ code: "sync-failed", message: error.slice(0, 200) }],
-        }).where(eq(operationChangeSets.id, changeSetId));
-      } else {
-        await db.update(operationChangeSets).set({
-          status: "ready",
-          summary: { updated: result?.addedCount ?? 0, preserved: result?.updatedCount ?? 0 },
-          warnings: [],
-          blockers: [],
-        }).where(eq(operationChangeSets.id, changeSetId));
-      }
-    } catch (csErr) {
-      logger.error(`Failed to update change set ${changeSetId}`, { error: (csErr as Error).message });
-    }
-
-    return { taskId: job.payload.taskId as string, ...result };
-  });
-
-  runner.register("operation-apply", async (job) => {
-    return { taskId: job.payload.taskId as string };
-  });
+  // 008-pipeline-reliability T023: operation-prepare/apply/restore/cleanup
+  // handlers are registered by registerOperationHandlers() in operation-worker.ts
+  // (called by worker-bootstrap.ts after this function returns). The previous
+  // inline shadowing handlers are removed so the real Safe Operations use cases
+  // are activated instead of the legacy direct-processor calls.
 
   // --- epg handlers ---
 
@@ -131,7 +89,11 @@ function registerHandlers(runner: JobRunner) {
 
   runner.register("refresh-epg", async (job, progress) => {
     const sp = toSyncProgress(progress);
-    const syncResult = await processXmltvSync(job.payload.sourceId as string, sp);
+    // refresh-epg always targets a single source, so the result is SyncResult.
+    const syncResult = (await processXmltvSync(job.payload.sourceId as string, sp)) as Extract<
+      Awaited<ReturnType<typeof processXmltvSync>>,
+      { importedCount: number }
+    >;
     const matchResult = await processEpgMatch(job.payload.sourceId as string, sp);
     return {
       taskId: job.payload.taskId as string,

@@ -25,4 +25,11 @@ interface ClientApi {
         @Header("Authorization") authorization: String,
         @Body request: HeartbeatRequestDto,
     ): ClientApiEnvelope<HeartbeatResponseDto>
+
+    @Headers("Content-Type: application/json")
+    @POST("api/open/v1/playback/report")
+    suspend fun reportPlayback(
+        @Header("Authorization") authorization: String,
+        @Body request: PlaybackReportRequestDto,
+    ): ClientApiEnvelope<Unit>
 }

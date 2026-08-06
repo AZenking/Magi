@@ -1,7 +1,7 @@
 /**
  * OauthClientAdminController — OAuth2 client management (004-safe-operations).
  *
- * Behind AuthGuard (admin session cookie) — NOT AccessTokenGuard. This is the
+ * Behind AdminGuard (admin session cookie + role) — NOT AccessTokenGuard. This is the
  * reverse-isolation counterpart: access tokens can NEVER reach these routes.
  * All mutations are audited.
  *
@@ -29,7 +29,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse as SwaggerResponse } from "@nestjs/swagger";
 import type { ApiResponse, PaginatedResponse, OauthClientVo, OauthClientCreatedVo } from "@magi/types";
 import { CreateOauthClientSchema, ListOauthClientsQuerySchema } from "@magi/types";
-import { AuthGuard } from "../../shared/guards/auth.guard";
+import { AdminGuard } from "../../shared/guards/admin.guard";
 import { CurrentUser } from "../../shared/decorators/current-user.decorator";
 import { currentRequestId } from "../../shared/http/request-context.middleware";
 import { AppendAuditEventUseCase } from "../../application/audit/append-audit-event.use-case";
@@ -38,10 +38,11 @@ import { CreateOauthClientUseCase } from "../../application/oauth/create-oauth-c
 import { ListOauthClientsUseCase } from "../../application/oauth/list-oauth-clients.use-case";
 import { TransitionOauthClientStatusUseCase, type TransitionTarget } from "../../application/oauth/transition-oauth-client-status.use-case";
 import { DeleteOauthClientUseCase } from "../../application/oauth/delete-oauth-client.use-case";
+import { RotateOauthClientSecretUseCase } from "../../application/oauth/rotate-oauth-client-secret.use-case";
 import type { OauthClient } from "@/domain/oauth";
 
 @Controller("api/admin/oauth-clients")
-@UseGuards(AuthGuard)
+@UseGuards(AdminGuard)
 @ApiTags("客户端凭证管理")
 export class OauthClientAdminController {
   constructor(
@@ -49,6 +50,8 @@ export class OauthClientAdminController {
     @Inject(ListOauthClientsUseCase) private readonly listUc: ListOauthClientsUseCase,
     @Inject(TransitionOauthClientStatusUseCase) private readonly transitionUc: TransitionOauthClientStatusUseCase,
     @Inject(DeleteOauthClientUseCase) private readonly deleteUc: DeleteOauthClientUseCase,
+    @Inject(RotateOauthClientSecretUseCase)
+    private readonly rotateSecretUc: RotateOauthClientSecretUseCase,
     @Inject(AppendAuditEventUseCase) private readonly audit: AppendAuditEventUseCase,
   ) {}
 
@@ -155,6 +158,27 @@ export class OauthClientAdminController {
     return this.transition(id, "revoked", user);
   }
 
+  @Post(":id/rotate-secret")
+  @ApiOperation({ summary: "轮换机密客户端 Secret（明文仅返回一次）" })
+  async rotateSecret(
+    @Param("id") id: string,
+    @CurrentUser() user: { id: string },
+  ): Promise<ApiResponse<OauthClientCreatedVo>> {
+    const result = await this.rotateSecretUc.execute(id);
+    await this.audit.execute({
+      actorType: "user",
+      actorId: user.id,
+      action: AUDIT_ACTIONS.oauthClient.rotateSecret,
+      targetType: "oauth_client",
+      targetId: result.client.id,
+      displayName: result.client.clientName,
+      result: "succeeded",
+      requestId: currentRequestId(),
+      summary: { clientId: result.client.clientId, secretPrefix: result.client.secretPrefix },
+    });
+    return { success: true, data: toCreatedVo(result.client, result.plaintextSecret) };
+  }
+
   @Delete(":id")
   @HttpCode(200)
   @ApiOperation({ summary: "物理删除客户端" })
@@ -182,6 +206,9 @@ function toClientVo(c: OauthClient): OauthClientVo {
     id: c.id,
     clientId: c.clientId,
     clientName: c.clientName,
+    clientKind: c.clientKind,
+    isProtected: c.clientKind === "public_device",
+    scope: c.clientKind === "public_device" ? "open:read client:heartbeat" : "open:read",
     secretPrefix: c.secretPrefix ?? "",
     status: c.status,
     lastUsedAt: c.lastUsedAt?.toISOString() ?? null,

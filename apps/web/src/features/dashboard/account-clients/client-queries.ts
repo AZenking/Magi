@@ -60,6 +60,28 @@ export function useRevokeDeviceClient() {
   });
 }
 
+export function useRestoreDeviceClient() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiClient<Envelope<DeviceClient>>(`/api/account/clients/${id}/restore`, {
+        method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+      }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: accountClientKeys.all }),
+  });
+}
+
+export function useAccountDeviceClient(id: string | null, enabled = true) {
+  return useQuery({
+    queryKey: [...accountClientKeys.all, "detail", id] as const,
+    queryFn: () => apiClient<Envelope<DeviceClient>>(`/api/account/clients/${id}`),
+    enabled: enabled && !!id,
+    retry: false,
+  });
+}
+
 export function useDeviceAuthorizationPreview(
   userCode: string,
   enabled: boolean,

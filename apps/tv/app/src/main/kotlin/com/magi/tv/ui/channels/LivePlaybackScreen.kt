@@ -194,7 +194,7 @@ fun LivePlaybackScreen(
                 message = uiState.catalogError!!.message,
                 modifier = Modifier.align(Alignment.Center),
             )
-            uiState.loading || playerState.firstFrameMs == null || playerState.switching ->
+            uiState.loading || playerState.firstFrameMs == null || playerState.switching || playerState.buffering ->
                 LoadingOverlay(
                     state = playerState,
                     modifier = Modifier.align(Alignment.Center),

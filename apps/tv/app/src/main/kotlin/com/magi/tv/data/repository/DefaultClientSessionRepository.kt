@@ -9,11 +9,13 @@ import com.magi.tv.data.remote.ClientApiEnvelope
 import com.magi.tv.data.remote.DeviceAuthorizationRequestDto
 import com.magi.tv.data.remote.DeviceRegistrationRequestDto
 import com.magi.tv.data.remote.HeartbeatRequestDto
+import com.magi.tv.data.remote.PlaybackReportRequestDto
 import com.magi.tv.domain.model.DeviceAuthorizationChallenge
 import com.magi.tv.domain.model.ContentRevision
 import com.magi.tv.domain.model.HeartbeatObservation
 import com.magi.tv.domain.repository.ClientSessionRepository
 import com.magi.tv.domain.repository.ClientCredentialStore
+import com.magi.tv.domain.repository.PlaybackReport
 import com.magi.tv.domain.repository.PollResult
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
@@ -108,11 +110,14 @@ class DefaultClientSessionRepository(
                 },
             )
         } catch (error: HttpException) {
-            // A device-bound heartbeat must never keep retrying a token that
-            // the server no longer accepts. The guard intentionally collapses
-            // revoked/expired device credentials to 401, so clear the local
-            // credential and let the top-level TV gate retry registration.
-            if (error.code() == 401 || error.code() == 403) {
+            // Fix 6: Only clear credentials on genuine device revocation (403
+            // with revoked code). A transient 401 (token expired mid-cycle,
+            // clock skew, refresh race) should NOT kick the user out — the
+            // heartbeat coordinator's exponential backoff will retry, and the
+            // next cycle's token refresh will recover.
+            val errorBody = runCatching { error.response()?.errorBody()?.string() }.getOrNull() ?: ""
+            val isRevoked = error.code() == 403 && errorBody.contains("revoked")
+            if (isRevoked) {
                 tokenManager.clearCredentials()
             }
             throw ClientSessionException("heartbeat_failed", "设备心跳失败")
@@ -125,6 +130,45 @@ class DefaultClientSessionRepository(
     }
 
     override suspend fun clearCredentials() = tokenManager.clearCredentials()
+
+    /** Pending playback reports buffered while offline (capped at 20). */
+    private val pendingReports = kotlinx.coroutines.channels.Channel<PlaybackReport>(
+        capacity = 20,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    )
+
+    override suspend fun reportPlayback(report: PlaybackReport) {
+        try {
+            val token = tokenManager.getValidToken()
+            api.reportPlayback(
+                "Bearer $token",
+                PlaybackReportRequestDto(
+                    channelId = report.channelId,
+                    streamId = report.streamId,
+                    outcome = report.outcome.name.lowercase(),
+                    errorKind = report.errorKind,
+                    playedDurationMs = report.playedDurationMs,
+                    reportedAt = Instant.now().toString(),
+                ),
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // Network failed — buffer for retry on next heartbeat success.
+            pendingReports.trySend(report)
+        }
+    }
+
+    /**
+     * Flush any buffered playback reports after a successful heartbeat proves
+     * network connectivity (008-pipeline-reliability T043).
+     */
+    suspend fun flushPendingPlaybackReports() {
+        while (!pendingReports.isEmpty) {
+            val report = pendingReports.tryReceive().getOrNull() ?: break
+            reportPlayback(report)
+        }
+    }
 
     private fun deviceRequest() =
         DeviceAuthorizationRequestDto(
@@ -156,7 +200,12 @@ class DefaultClientSessionRepository(
                 encodeDefaults = true
                 explicitNulls = false
             }
-            val client = OkHttpClient.Builder().build()
+            val client = OkHttpClient.Builder()
+                .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .writeTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                .callTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
             return Retrofit.Builder()
                 .baseUrl("${BuildConfig.MAGI_SERVER_URL.trim().trimEnd('/')}/")
                 .client(client)

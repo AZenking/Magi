@@ -55,6 +55,7 @@ async function seed() {
       .set({
         email: adminEmail,
         name: adminName,
+        role: "admin",
         updatedAt: new Date(),
       })
       .where(eq(schema.user.id, adminId));
@@ -94,6 +95,13 @@ async function seed() {
     .where(eq(schema.user.username, adminUsername))
     .limit(1);
   if (createdAdmin) await ensurePublicDeviceClient(createdAdmin.id);
+
+  if (createdAdmin) {
+    await db
+      .update(schema.user)
+      .set({ role: "admin", updatedAt: new Date() })
+      .where(eq(schema.user.id, createdAdmin.id));
+  }
 
   logger.info(`Admin user "${adminUsername}" created successfully.`);
   process.exit(0);

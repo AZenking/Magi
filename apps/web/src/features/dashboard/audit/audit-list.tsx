@@ -66,6 +66,8 @@ const TARGET_TYPE_VALUE_ENUM = {
   change_set: { text: "变更集" },
   channel_batch: { text: "频道批次" },
   stream_collection: { text: "流集合" },
+  device_client: { text: "设备客户端" },
+  oauth_client: { text: "OAuth 客户端" },
 };
 
 const ACTION_VALUE_ENUM = Object.fromEntries(

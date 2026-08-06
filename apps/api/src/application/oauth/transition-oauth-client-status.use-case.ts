@@ -35,6 +35,13 @@ export class TransitionOauthClientStatusUseCase {
     if (!client) {
       throw new NotFoundException({ code: "resource-not-found" });
     }
+    if (client.clientKind === "public_device" && target !== "active") {
+      throw new ConflictException({
+        code: "protected-client",
+        title: "内置设备客户端受保护，不能禁用或吊销",
+        status: 409,
+      });
+    }
     const model = new OauthClientModel(client);
     if (!model.canTransitionTo(target as ClientStatus)) {
       throw new ConflictException({

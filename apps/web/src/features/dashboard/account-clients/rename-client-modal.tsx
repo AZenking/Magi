@@ -3,6 +3,7 @@ import { Button, Form, Input, Modal } from "antd";
 import type { DeviceClient } from "@magi/types";
 import { useFeedback } from "@/lib/feedback";
 import { useRenameDeviceClient } from "./client-queries";
+import { formatApiError } from "@/services/api";
 
 type Props = {
   client: DeviceClient | null;
@@ -30,8 +31,8 @@ export function RenameClientModal({ client, open, onClose }: Props) {
       });
       message.success("客户端名称已更新");
       onClose();
-    } catch {
-      message.error("重命名失败，请检查名称后重试");
+    } catch (error) {
+      message.error(formatApiError(error, "重命名失败，请检查名称后重试"));
     }
   }
 

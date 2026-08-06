@@ -288,6 +288,11 @@ export interface OauthClientVo {
   id: string;
   clientId: string;
   clientName: string;
+  clientKind: "confidential" | "public_device";
+  /** Built-in device clients cannot be disabled, revoked, or deleted. */
+  isProtected: boolean;
+  /** Effective token scope; currently policy-controlled by client kind. */
+  scope: string;
   secretPrefix: string;
   status: "active" | "disabled" | "revoked";
   lastUsedAt: string | null;

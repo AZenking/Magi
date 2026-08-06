@@ -19,6 +19,7 @@ import {
   AccessTokenGuard,
   type RequestWithPrincipal,
 } from "../../shared/guards/access-token.guard";
+import { currentRequestId } from "../../shared/http/request-context.middleware";
 
 @ApiTags("设备心跳")
 @Controller("api/open/v1/device-clients")
@@ -57,6 +58,7 @@ export class DeviceHeartbeatController {
       deviceClientId: principal.deviceClientId,
       appVersion: parsed.data.app_version,
       platformVersion: parsed.data.platform_version,
+      requestId: currentRequestId(),
     });
     return {
       success: true,

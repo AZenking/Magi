@@ -11,7 +11,13 @@ export class ListDeviceClientsUseCase {
     private readonly repo: DeviceClientRepository,
   ) {}
 
-  execute(args: { ownerUserId: string; page: number; pageSize: number }) {
+  execute(args: {
+    ownerUserId: string;
+    page: number;
+    pageSize: number;
+    search?: string;
+    status?: "online" | "offline" | "revoked";
+  }) {
     return this.repo.listOwned(args);
   }
 }

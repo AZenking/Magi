@@ -47,6 +47,7 @@ pnpm --filter @magi/api db:migrate
 - 既有 `oauth_clients` 全部回填 `clientKind=confidential`。
 - 新 device/grant/refresh 表具有真实 FK、唯一约束与规定索引。
 - `oauth_access_tokens.deviceClientId` 对既有行保持 null，不改变旧 Token 语义。
+- `user.role` 默认 `user`，部署种子账户同步为 `admin`；OAuth 客户端管理接口必须通过管理员角色。
 
 ## 3. Contract and Type Validation
 
@@ -113,8 +114,10 @@ pnpm --filter @magi/web build
 3. `/dashboard/oauth-clients` 仍属于“开放接口 → 客户端凭证”，没有设备在线字段。
 4. 客户端表不出现 Secret、Token、完整 IP、播放地址或观看信息。
 5. 重命名 trim 后保存；空白、>64 字符、控制字符被拒绝；重复名称允许。
-6. 撤销 Modal 明确终态影响；取消不请求；pending 防双击；失败不关闭上下文。
-7. icon-only 操作有 aria-label；状态 Tag 有文字；关闭 Modal 后焦点回触发按钮。
+6. 撤销 Modal 明确终态影响；取消不请求；pending 防双击；失败不关闭上下文；撤销行可
+   “允许重新登记”，成功后设备下次登记会轮换凭证。
+7. 客户端详情显示平台、版本、最后心跳、在线窗口和撤销时间；搜索和状态筛选不改变账户隔离。
+8. icon-only 操作有 aria-label；状态 Tag 有文字；关闭 Modal 后焦点回触发按钮。
 
 ## 6. Device Authorization End-to-End
 
@@ -199,8 +202,9 @@ pnpm dev
 4. TV 最多完成一次 refresh/replay，随后清除凭据、停止 heartbeat，显示
    `设备访问已撤销`。
 5. 只使用 D-pad/OK/Back 可进入重新授权或返回安全的未授权页面。
-6. 原 client 继续显示 revoked；重新授权创建新的 device client，不复活旧记录。
-7. 账户 B 无法撤销该设备，也无法从差异错误推断它存在。
+6. 原 client 继续显示 revoked；账户所有者可在 Web 使用“允许重新登记”解除撤销，TV
+   下次自动登记时轮换凭证并复用同一安装记录；未解除撤销前仍不得恢复 heartbeat。
+7. 账户 B 无法撤销或解除撤销该设备，也无法从差异错误推断它存在。
 
 审计应包含注册、重命名、撤销；成功 heartbeat 不应逐次写审计。
 
@@ -234,16 +238,16 @@ cd apps/tv
 
 | Scenario         | Emulator | Physical device | Result/notes |
 | ---------------- | -------- | --------------- | ------------ |
-| 首次短码授权     |          |                 |              |
-| 短码过期/拒绝    |          |                 |              |
-| 前后台 heartbeat |          |                 |              |
-| 断网与恢复       |          |                 |              |
-| 429/5xx 退避     |          |                 |              |
-| 401 refresh      |          |                 |              |
-| Web 撤销         |          |                 |              |
-| 自动重新登记     |          |                 |              |
-| 快速连续换台     |          |                 |              |
-| 侧栏/信息层/Back |          |                 |              |
+| 首次短码授权     | 待人工执行 | 待人工执行 | 自动登记流程已由 ClientAuthorizationViewModel JVM 测试覆盖（Authorized/Failed/retry）；真机首次授权需物理验收 |
+| 短码过期/拒绝    | 待人工执行 | 待人工执行 | RFC 8628 兼容路径仅用于旧版，PollResult 映射由 ClientSessionUseCasesTest 覆盖；真机需物理验收 |
+| 前后台 heartbeat | JVM 测试通过 | 待人工执行 | ClientHeartbeatCoordinatorTest 验证 ON_START 立即心跳 + ON_STOP 取消；HeartbeatAcceptanceTest 验证 60s cadence |
+| 断网与恢复       | JVM 测试通过 | 待人工执行 | HeartbeatAcceptanceTest 验证 network recovery coalescing（1-2 次） |
+| 429/5xx 退避     | 待人工执行 | 待人工执行 | 退避逻辑由 DefaultClientSessionRepository 错误分类覆盖；真机需物理验收 |
+| 401 refresh      | 待人工执行 | 待人工执行 | TokenManager INVALID_CREDENTIAL_CODES 清凭据由 JVM 测试覆盖；真机需物理验收 |
+| Web 撤销         | 集成测试通过 | N/A | device-client-lifecycle.integration.test 验证原子撤销 + 拒绝后续心跳 |
+| 自动重新登记     | Keystore 测试通过 | 待人工执行 | KeystoreClientCredentialStoreTest（5/5）验证加密 round-trip + clear 保留 installation_id |
+| 快速连续换台     | JVM 测试通过 | 待人工执行 | HeartbeatAcceptanceTest 验证快速换台不增加心跳计数（playback-agnostic） |
+| 侧栏/信息层/Back | 待人工执行 | 待人工执行 | D-pad/Back 层级需真机遥控器物理验收；Compose UI 测试 @Ignore（API 36 模拟器兼容性问题） |
 
 仅截图或鼠标操作不算通过。
 
