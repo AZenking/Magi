@@ -24,6 +24,23 @@ import {
 } from "../schema";
 import { computeMergeKey } from "@magi/backend-core";
 
+/**
+ * Whether an existing canonical_epg_bindings row should survive a reconcile
+ * rebuild. Locked bindings always survive (FR-005); manual bindings
+ * (`status === "matched_manual"`, written by PATCH
+ * `/output/channels/:id/epg-binding`) also survive even without the lock flag
+ * — otherwise the next M3U/XMLTV sync silently overwrites them via
+ * `onConflictDoUpdate` and the operator sees their freshly-bound EPG "become
+ * invalid".
+ */
+export function shouldPreserveEpgBinding(
+  binding: { locked: boolean; status: string } | undefined | null,
+): boolean {
+  return (
+    !!binding && (binding.locked || binding.status === "matched_manual")
+  );
+}
+
 export interface EpgUpdateEntry {
   channelId: string;
   epgChannelId: string;
@@ -216,7 +233,8 @@ export async function reconcileCanonicals(
           return aStreams >= bStreams ? a : b;
         });
         const lockedBinding = bindingByCanonicalId.get(survivor.id);
-        if (lockedBinding?.locked) {
+        const preserveBinding = shouldPreserveEpgBinding(lockedBinding);
+        if (preserveBinding && lockedBinding) {
           epgChannelId = lockedBinding.xmltvChannelId;
           resolvedEpgSourceId = lockedBinding.xmltvSourceId;
           epgMatchType = lockedBinding.matchType;
@@ -254,7 +272,7 @@ export async function reconcileCanonicals(
         }).where(eq(canonicalChannels.id, survivor.id));
         updatedCount++;
 
-        if (!lockedBinding?.locked) {
+        if (!preserveBinding) {
           const rawBindingStatus = epgChannelId
             ? epgStatus === "conflict" ? "conflict"
             : epgStatus === "matched_manual" ? "matched_manual" : "matched_auto"
