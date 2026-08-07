@@ -17,9 +17,9 @@
 
 **Purpose**: 建立可复用的 M3U 控制台 fixture 与契约工作区。
 
-- [ ] T001 [P] Add versioned M3U fixtures for normal, empty, 25%-deletion, same-tvg-id, weak-match, and reappearing-line scenarios in `apps/worker/src/processors/__tests__/fixtures/m3u-control-plane/`
-- [ ] T002 [P] Add shared API/Worker test builders for change sets, source channels, canonical members, streams, grants, and health observations in `apps/api/src/test/m3u-control-plane-fixtures.ts` and `apps/worker/src/application/__tests__/m3u-control-plane-fixtures.ts`
-- [ ] T003 Document the feature validation matrix and required local commands in `specs/009-m3u-control-plane/quickstart.md`
+- [X] T001 [P] Add versioned M3U fixtures for normal, empty, 25%-deletion, same-tvg-id, weak-match, and reappearing-line scenarios in `apps/worker/src/processors/__tests__/fixtures/m3u-control-plane/`
+- [X] T002 [P] Add shared API/Worker test builders for change sets, source channels, canonical members, streams, grants, and health observations in `apps/api/src/test/m3u-control-plane-fixtures.ts` and `apps/worker/src/application/__tests__/m3u-control-plane-fixtures.ts`
+- [X] T003 Document the feature validation matrix and required local commands in `specs/009-m3u-control-plane/quickstart.md`
 
 ---
 
@@ -27,13 +27,13 @@
 
 **Purpose**: Create the shared data, contracts, job semantics, and observability prerequisites. **No user-story implementation begins before this phase completes.**
 
-- [ ] T004 [P] Define shared Zod DTOs and enums for M3U change summaries, merge candidates, output grants, publications, health observations, and failover events in `packages/types/src/dto/m3u-control-plane.ts` and `packages/types/src/index.ts`
-- [ ] T005 [P] Add pure, framework-independent anomaly classification, normalized tvg-id matching, and weak-match candidate helpers with unit tests in `packages/backend-core/src/operation-diff/m3u-control-plane.ts` and `packages/backend-core/src/operation-diff/__tests__/m3u-control-plane.test.ts`
-- [ ] T006 Extend Drizzle schema exports for source-scoped identity, merge candidates, canonical overrides, health observations, failover events, output grants, and output publications in `packages/backend-core/src/database/schema/channels.ts`, `packages/backend-core/src/database/schema/index.ts`, and new schema files under `packages/backend-core/src/database/schema/`
-- [ ] T007 Generate and commit the migration for the foundational schema changes in `apps/api/drizzle/` and update `apps/api/drizzle/meta/_journal.json`
-- [ ] T008 Extend source-sync, output-composition, and task queue domain ports for atomic apply/reconcile input, grants, publications, and health aggregation in `apps/worker/src/domain/source-sync/`, `apps/api/src/domain/output-composition/`, and `apps/api/src/domain/task-execution/task-queue.port.ts`
-- [ ] T009 Implement database repositories and module wiring for the foundational ports in `apps/worker/src/infrastructure/database/`, `apps/api/src/infrastructure/database/`, `apps/api/src/http/output/output.module.ts`, and `apps/api/src/http/operation/operation.module.ts`
-- [ ] T010 Define explicit source-scoped prepare/apply/confirm job payloads, idempotency keys, lease heartbeat/release behavior, and structured log context in `apps/api/src/infrastructure/bullmq/task-queue.adapter.ts`, `apps/worker/src/infrastructure/queue/worker-bootstrap.ts`, and `apps/worker/src/application/job-runner.ts`
+- [X] T004 [P] Define shared Zod DTOs and enums for M3U change summaries, merge candidates, output grants, publications, health observations, and failover events in `packages/types/src/dto/m3u-control-plane.ts` and `packages/types/src/index.ts`
+- [X] T005 [P] Add pure, framework-independent anomaly classification, normalized tvg-id matching, and weak-match candidate helpers with unit tests in `packages/backend-core/src/operation-diff/m3u-control-plane.ts` and `packages/backend-core/src/operation-diff/__tests__/m3u-control-plane.test.ts`
+- [X] T006 Extend Drizzle schema exports for source-scoped identity, merge candidates, canonical overrides, health observations, failover events, output grants, and output publications in `packages/backend-core/src/database/schema/channels.ts`, `packages/backend-core/src/database/schema/index.ts`, and new schema files under `packages/backend-core/src/database/schema/`
+- [X] T007 Generate and commit the migration for the foundational schema changes in `apps/api/drizzle/` and update `apps/api/drizzle/meta/_journal.json`
+- [X] T008 Extend source-sync, output-composition, and task queue domain ports for atomic apply/reconcile input, grants, publications, and health aggregation in `apps/worker/src/domain/source-sync/`, `apps/api/src/domain/output-composition/`, and `apps/api/src/domain/task-execution/task-queue.port.ts`
+- [X] T009 Implement database repositories and module wiring for the foundational ports in `apps/worker/src/infrastructure/database/`, `apps/api/src/infrastructure/database/`, `apps/api/src/http/output/output.module.ts`, and `apps/api/src/http/operation/operation.module.ts`
+- [X] T010 Define explicit source-scoped prepare/apply/confirm job payloads, idempotency keys, lease heartbeat/release behavior, and structured log context in `apps/api/src/infrastructure/bullmq/task-queue.adapter.ts`, `apps/worker/src/infrastructure/queue/worker-bootstrap.ts`, and `apps/worker/src/application/job-runner.ts`
 
 **Checkpoint**: The system has one typed foundation for atomic M3U changes, composition, output grants, and health evidence; all later stories can rely on it.
 

@@ -59,6 +59,44 @@
 
 **Expected**: 频道与线路归属不匹配的上报不改变健康；主动与被动证据均可追溯；主线路、故障切换事件和输出排序在同一决策后保持一致。
 
+## Validation Matrix
+
+| Scenario | Fixture | US | Key Assertion | Owner Module |
+|---|---|---|---|---|
+| Normal source update is automatic and stable | `normal.m3u` → `normal-v2.m3u` | US1 | Stable identity, manual fields preserved, address update traceable | worker/operation-safety |
+| Anomaly guard — empty directory | `baseline-four.m3u` → `empty.m3u` | US1 | `requiresConfirmation=true`, last-good directory retained | worker/operation-safety |
+| Anomaly guard — 25% deletion | `baseline-four.m3u` → `deletion-25-percent.m3u` | US1 | `requiresConfirmation=true`, missing ratio ≥ 0.25 warning | backend-core/operation-diff |
+| Same-tvg-id auto merge | `same-tvg-id.m3u` | US2 | Single canonical channel with two streams, no candidate | worker/canonical-reconcile |
+| Weak-match candidate | `weak-match.m3u` | US2 | Two pending `MergeCandidate` rows, no silent merge | api/output-composition |
+| Missing line retention + reappearance | `reappearing-line.m3u` → `line-disappears.m3u` → `reappearing-line.m3u` | US2 | Missing stream excluded from output, identity reused on restore | worker/cleanup-operation-state |
+| Single-stream probe scope | (runtime stream) | US3 | Job targets `streamId`, not `sourceId`; observation recorded | worker/stream-check.processor |
+| Playback report ownership | (runtime request) | US3 | Mismatched `channel_id`/`stream_id` ignored; valid report updates health | api/open/report-playback |
+| Per-player grant lifecycle | (runtime grant) | US4 | Revoked grant returns 401, second grant still works, plaintext shown once | api/output-grant + open/playlist |
+| Publication status transitions | (apply/apply-failed/no-output) | US4 | fresh → stale (apply failed, last-good kept) → blocked (no stream) | api/output-publication |
+
+## Required Local Commands
+
+```bash
+# One-time environment bootstrap (database + redis + workspaces).
+bash scripts/init-dev.sh
+
+# Install workspace dependencies (pnpm workspace + turbo).
+pnpm install
+
+# Run all three apps in dev (API on :3001, Worker, Web on :3000) — separate shells.
+pnpm dev
+
+# Useful single-app dev commands.
+pnpm --filter @magi/api dev
+pnpm --filter @magi/worker dev
+pnpm --filter @magi/web dev
+
+# Reset local DB / Redis between full runs.
+bash scripts/init-dev.sh --reset
+```
+
+> Tip: Most scenarios drive the pipeline through the API. The Worker must be running so prepare/apply/cleanup jobs are picked up. Wait for `output_publications.status` to flip to `fresh` (or `stale`/`blocked` per scenario) before reading the public playlist URL.
+
 ## Quality Gates
 
 ```bash
@@ -70,3 +108,9 @@ pnpm --filter @magi/web test
 ```
 
 还应覆盖来源同步、异常保护、候选审查、30 天清理、grant 撤销、单线路检查、播放上报归属与主动/被动故障切换的一组集成测试。涉及开放接口时，更新 `/api/open.json` 并验证 Android TV 的契约兼容性。
+
+## Outcome Log
+
+> Record each scenario's run result here as the implementation lands (T060). Use one line per run: `<scenario> — <pass|fail|skipped> (<commit>) — note`.
+
+- _pending — Phase 1+2 foundation only; scenarios will run as US1–US4 land._

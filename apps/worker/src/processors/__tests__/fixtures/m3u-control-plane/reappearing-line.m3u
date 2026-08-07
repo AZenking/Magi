@@ -1,0 +1,8 @@
+#EXTM3U
+# Baseline with two lines per channel. After "line-disappears.m3u" the
+# secondary line is marked missing; restoring this content must reuse the same
+# source channel / stream identity and history.
+#EXTINF:-1 tvg-id="cctv-1" tvg-name="CCTV-1 综合" tvg-logo="https://cdn.example.com/cctv1.png" group-title="综合",CCTV-1 综合
+https://primary.example.com/cctv1/index.m3u8
+#EXTINF:-1 tvg-id="cctv-1" tvg-name="CCTV-1 综合 备" tvg-logo="https://cdn.example.com/cctv1.png" group-title="综合",CCTV-1 综合 备
+https://backup.example.com/cctv1/index.m3u8

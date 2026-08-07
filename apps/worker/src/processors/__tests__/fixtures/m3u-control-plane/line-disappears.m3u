@@ -1,0 +1,6 @@
+#EXTM3U
+# Companion to reappearing-line.m3u: the secondary line is gone. The source
+# channel for the missing line stays present (still has primary line) but the
+# secondary stream row enters missing-retention (FR-017).
+#EXTINF:-1 tvg-id="cctv-1" tvg-name="CCTV-1 综合" tvg-logo="https://cdn.example.com/cctv1.png" group-title="综合",CCTV-1 综合
+https://primary.example.com/cctv1/index.m3u8

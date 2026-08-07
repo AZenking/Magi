@@ -27,4 +27,10 @@ export {
   configBackups,
   channelFailoverPolicies,
   contentManifest,
+  // 009-m3u-control-plane
+  mergeCandidates,
+  streamHealthObservations,
+  failoverEvents,
+  outputGrants,
+  outputPublications,
 } from "@magi/backend-core";

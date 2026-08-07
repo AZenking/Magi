@@ -50,6 +50,14 @@ export const channelStreams = pgTable(
     origin: varchar("origin", { length: 20 }).default("source"), // source | manual
     position: integer("position"),
     eligibleForFailover: boolean("eligible_for_failover").notNull().default(true),
+    // --- 009-m3u-control-plane: missing-retention + health aggregation. ---
+    // missingSince drives 30-day retention (FR-017); consecutiveSuccesses +
+    // failingSince + cooldownUntil back the unified failover decision.
+    missingSince: timestamp("missing_since", { withTimezone: true }),
+    purgedAt: timestamp("purged_at", { withTimezone: true }),
+    consecutiveSuccesses: integer("consecutive_successes").notNull().default(0),
+    failingSince: timestamp("failing_since", { withTimezone: true }),
+    cooldownUntil: timestamp("cooldown_until", { withTimezone: true }),
     version: integer("version").notNull().default(1),
     ...timestamps,
   },
@@ -58,5 +66,6 @@ export const channelStreams = pgTable(
     index("channel_streams_health_idx").on(t.healthStatus),
     index("channel_streams_source_idx").on(t.m3uSourceId),
     index("channel_streams_position_idx").on(t.canonicalChannelId, t.position),
+    index("channel_streams_missing_since_idx").on(t.missingSince),
   ],
 );

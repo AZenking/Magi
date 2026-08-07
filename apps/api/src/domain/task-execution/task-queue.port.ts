@@ -21,6 +21,13 @@ export interface EnqueueOptions {
   parentTaskId?: string;
   rootTaskId?: string;
   idempotencyKey?: string;
+  /**
+   * 009-m3u-control-plane (T010): explicit lease scope. When set, the queue
+   * adapter acquires an `operation_leases` row before enqueue and releases it
+   * on success/failure. Combined with `idempotencyKey`, this guarantees one
+   * source-scoped change set is applied at a time per source.
+   */
+  leaseScope?: string;
 }
 
 export interface JobDetail {
@@ -47,6 +54,27 @@ export interface ScheduledJob {
   nextRunAt: Date | null;
   lastRunAt: Date | null;
   lastStatus: string | null;
+}
+
+/**
+ * Lease contract used by source-scoped prepare/apply jobs (009 T010).
+ *
+ * - acquire: returns false if another live lease exists for the same scope.
+ * - heartbeat: extends the lease TTL while a long job is running.
+ * - release: clears the lease; idempotent for already-released leases.
+ *
+ * Implementations use the existing `operation_leases` table; the port exists
+ * so tests can swap an in-memory implementation.
+ */
+export interface IOperationLeasePort {
+  acquire(input: {
+    scopeType: string;
+    scopeId: string;
+    holderId: string;
+    ttlSeconds: number;
+  }): Promise<{ acquired: boolean; leaseId: string | null }>;
+  heartbeat(leaseId: string, ttlSeconds: number): Promise<boolean>;
+  release(leaseId: string): Promise<void>;
 }
 
 export interface TaskQueuePort {

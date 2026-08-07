@@ -1,0 +1,7 @@
+#EXTM3U
+# Two sources may share tvg-id "cctv-1" — automatic merge is allowed (FR-007).
+# Stream URLs differ to exercise multi-line canonical channels.
+#EXTINF:-1 tvg-id="cctv-1" tvg-name="CCTV-1 综合" tvg-logo="https://cdn.example.com/cctv1.png" group-title="综合",CCTV-1 综合
+https://primary.example.com/cctv1/index.m3u8
+#EXTINF:-1 tvg-id="cctv-1" tvg-name="CCTV-1 综合 HD" tvg-logo="https://cdn.example.com/cctv1hd.png" group-title="综合",CCTV-1 综合 HD
+https://backup.example.com/cctv1/index.m3u8

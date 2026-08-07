@@ -41,6 +41,14 @@ export const operationChangeSets = pgTable(
     prepareTaskId: uuid("prepare_task_id"),
     applyTaskId: uuid("apply_task_id"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    // --- 009-m3u-control-plane: source-scoped atomic apply guard rails. ---
+    // requiresConfirmation gates auto-apply (FR-016). sourceVersion is captured
+    // at prepare time and re-checked at apply time to reject stale snapshots.
+    // anomalyClassification stores the structured outcome of the pure helper
+    // (empty-snapshot / deletion-ratio-exceeded) for downstream audit.
+    requiresConfirmation: boolean("requires_confirmation").notNull().default(false),
+    sourceVersion: integer("source_version"),
+    anomalyClassification: jsonb("anomaly_classification"),
     version: integer("version").notNull().default(1),
     ...timestamps,
   },
@@ -49,6 +57,7 @@ export const operationChangeSets = pgTable(
     index("change_set_status_idx").on(t.status),
     index("change_set_kind_idx").on(t.kind),
     index("change_set_requested_by_idx").on(t.requestedBy),
+    index("change_set_source_confirmation_idx").on(t.sourceId, t.requiresConfirmation),
   ],
 );
 

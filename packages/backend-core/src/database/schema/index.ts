@@ -48,3 +48,13 @@ export {
   deviceAuthorizationGrants,
   deviceRefreshTokens,
 } from "./device-clients";
+
+// 009-m3u-control-plane: weak-signal composition + per-player output access
+// + unified health evidence. Existing schemas (raw_m3u_channels,
+// channel_streams, operation_change_sets) are extended in-place with
+// presence-retention, source-version and confirmation columns.
+export { mergeCandidates } from "./merge-candidates";
+export { streamHealthObservations } from "./stream-health-observations";
+export { failoverEvents } from "./failover-events";
+export { outputGrants } from "./output-grants";
+export { outputPublications } from "./output-publications";

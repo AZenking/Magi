@@ -84,6 +84,9 @@ export class BullmqTaskQueueAdapter implements TaskQueuePort {
         ...(options?.parentTaskId && { parentTaskId: options.parentTaskId }),
         ...(options?.rootTaskId && { rootTaskId: options.rootTaskId }),
         ...(options?.idempotencyKey && { idempotencyKey: options.idempotencyKey }),
+        // 009 T010: propagate source-scoped lease key so the Worker can
+        // heartbeat/release via IOperationLeasePort without re-deriving it.
+        ...(options?.leaseScope && { leaseScope: options.leaseScope }),
       };
       const job = await queue.add(jobName, enrichedPayload, {
         ...this.defaults,

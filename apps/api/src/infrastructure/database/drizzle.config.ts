@@ -48,6 +48,13 @@ const sharedSchemaTables = [
   "oauth-clients",
   "oauth-access-tokens",
   "device-clients",
+  // 009-m3u-control-plane: weak-signal composition + per-player output
+  // access + unified health evidence.
+  "merge-candidates",
+  "stream-health-observations",
+  "failover-events",
+  "output-grants",
+  "output-publications",
 ].map((f) => path.join(sharedSchemaDir, `${f}.ts`));
 
 export default defineConfig({

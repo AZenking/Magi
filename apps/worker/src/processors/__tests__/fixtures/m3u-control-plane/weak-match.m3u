@@ -1,0 +1,7 @@
+#EXTM3U
+# Same display name + group, but EMPTY tvg-id. Must NOT auto-merge — only
+# weak-signal candidates are allowed (FR-007, Decision 3).
+#EXTINF:-1 tvg-name="凤凰资讯" group-title="资讯",凤凰资讯
+https://phoenix-a.example.com/info/index.m3u8
+#EXTINF:-1 tvg-name="凤凰资讯" group-title="资讯",凤凰资讯
+https://phoenix-b.example.com/info/index.m3u8
