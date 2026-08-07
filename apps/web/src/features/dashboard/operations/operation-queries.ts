@@ -22,8 +22,21 @@ interface ChangeSetData {
   status: string;
   version: number;
   summary?: Record<string, number>;
-  warnings?: { code: string; message: string }[];
+  warnings?: { code: string; message: string; deletionRatio?: number }[];
   blockers?: { code: string; message: string }[];
+  /** 009-m3u-control-plane: anomaly flag + structured classification. */
+  requiresConfirmation?: boolean;
+  anomalyClassification?: {
+    requiresConfirmation: boolean;
+    warnings: Array<{
+      code: "empty-snapshot" | "deletion-ratio-exceeded";
+      message: string;
+      deletionRatio: number;
+    }>;
+  } | null;
+  /** 009: source-scoped snapshot metadata for the source list "last result". */
+  snapshotId?: string | null;
+  sourceVersion?: number | null;
 }
 interface ChangeItemsData {
   items: Array<{

@@ -1,10 +1,12 @@
 /**
- * ApplyOperationUseCase (T036).
+ * ApplyOperationUseCase (T036; 009-m3u-control-plane T018 adds the
+ * requiresConfirmation gate, snapshotId/sourceVersion propagation to the
+ * Worker apply job, and source-scoped leaseScope on enqueue).
  *
  * Orchestrates the safe apply protocol (research §1, contracts/operation-previews.md):
  *   1. verify ready / not expired
  *   2. verify input fingerprint + every base version (stale => 409 preview-stale)
- *   3. verify warnings acknowledged + blockers zero
+ *   3. verify warnings acknowledged + blockers zero (009: requiresConfirmation)
  *   4. acquire the operation scope lease (mutual exclusion)
  *   5. create + verify a recovery point (creation failure => zero writes, FR-018)
  *   6. enqueue the Worker apply job with Idempotency-Key semantics
@@ -23,10 +25,17 @@ import type {
   IOperationLeaseRepository,
   IRecoveryPointRepository,
 } from "@/domain/operation-safety";
+import {
+  extractWarningCodes,
+  type OperationChangeSet,
+} from "@/domain/operation-safety/operation-change-set.model";
 import type { ITaskRepository } from "@/domain/task-execution";
 import type { TaskQueuePort } from "@/domain/task-execution/task-queue.port";
 import type { IdempotencyRepository } from "@/infrastructure/database/idempotency.repository";
+import { leaseScopeFor } from "@/application/operation-safety/m3u-control-plane-jobs";
 import { currentRequestId } from "@/shared/http/request-context.middleware";
+
+export type { OperationChangeSet };
 
 export interface ApplyOperationInput {
   readonly changeSetId: string;
@@ -110,9 +119,25 @@ export class ApplyOperationUseCase {
     //     change set is still the same version, which is the cheap precondition. ---
 
     // --- 3. blockers must be zero; required warnings acknowledged ---
-    // (The Worker writes summary/warnings/blockers during prepare; we read them
-    // via the item repo in T043. For now the contract is enforced here once the
-    // change set carries blocker metadata — see FindOperationChangeSetUseCase.)
+    // 009-m3u-control-plane T018: requiresConfirmation gate. When the change
+    // set is flagged requiresConfirmation (FR-016), the operator MUST confirm
+    // every anomaly warning code before apply can proceed. Same shape covers
+    // future blocker codes — anything in cs.warnings the operator hasn't
+    // acknowledged blocks the apply.
+    if (cs.requiresConfirmation) {
+      const requiredCodes = extractWarningCodes(cs);
+      const confirmed = new Set(input.confirmedWarningCodes);
+      const missing = requiredCodes.filter((code) => !confirmed.has(code));
+      if (missing.length > 0) {
+        throw new ConflictException({
+          code: "confirmation-required",
+          title: "Anomalous change set requires explicit operator confirmation",
+          status: 409,
+          missingWarningCodes: missing,
+          requiresConfirmation: true,
+        });
+      }
+    }
 
     // --- 4. acquire the scope lease ---
     const scopeKey = `${cs.scopeType}:${cs.scopeId}`;
@@ -163,6 +188,9 @@ export class ApplyOperationUseCase {
     await this.changeSets.updateStatus(cs.id, "applying", cs.version);
 
     const deduplicationId = `apply-${cs.id.slice(0, 8)}`.slice(0, 50);
+    // 009 T018: source-scoped lease so concurrent manual + scheduled triggers
+    // for the same source dedup at the lease layer.
+    const leaseScope = cs.sourceId ? leaseScopeFor(cs.sourceId) : undefined;
     const enqueued = await this.queue.enqueue(
       this.taskTypeFor(cs.kind),
       {
@@ -176,6 +204,10 @@ export class ApplyOperationUseCase {
         confirmedWarningCodes: [...input.confirmedWarningCodes],
         operatorReason: input.operatorReason,
         requestId: input.requestId,
+        // 009: thread snapshotId + sourceVersion so the Worker apply path can
+        // run the new atomic apply with the originally-prepared snapshot.
+        snapshotId: cs.snapshotId ?? null,
+        sourceVersion: cs.sourceVersion ?? null,
       },
       {
         jobName: "operation-apply",
@@ -185,6 +217,7 @@ export class ApplyOperationUseCase {
         scopeType: cs.scopeType,
         scopeId: cs.scopeId,
         inputFingerprint: cs.inputFingerprint,
+        leaseScope,
       },
     );
 

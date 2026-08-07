@@ -97,6 +97,9 @@ export function registerOperationHandlers(runner: JobRunner): void {
     const kind = job.payload.kind as string;
     const sourceId = job.payload.sourceId as string;
     const snapshotId = job.payload.snapshotId as string | undefined;
+    // 009: thread sourceVersion so the atomic-apply path can reject stale
+    // snapshots taken against an older source config row.
+    const sourceVersion = job.payload.sourceVersion as number | undefined;
 
     try {
       let appliedCount = 0;
@@ -105,7 +108,14 @@ export function registerOperationHandlers(runner: JobRunner): void {
         const result = await applyEpg.execute({ approvedBindings: [] });
         appliedCount = result.appliedCount ?? 0;
       } else if (snapshotId) {
-        const result = await applyM3u.execute({ sourceId, snapshotId });
+        // 009: route through the atomic-apply path so stable upsert + missing
+        // marking + source status bump + recovery items run in one transaction.
+        const result = await applyM3u.execute({
+          sourceId,
+          snapshotId,
+          changeSetId,
+          sourceVersion: sourceVersion ?? undefined,
+        });
         appliedCount = result.upsertedCount ?? 0;
       }
 

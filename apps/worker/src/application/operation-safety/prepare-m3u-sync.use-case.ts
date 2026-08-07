@@ -1,9 +1,17 @@
 /**
- * PrepareM3uSyncUseCase (T037).
+ * PrepareM3uSyncUseCase (T037; 009-m3u-control-plane T015 extends it with
+ * idempotent snapshot staging, sourceVersion capture, anomaly classification
+ * and explicit requiresConfirmation flag).
  *
  * Worker-side preview preparation for M3U sync. Downloads, parses, stages an
- * immutable snapshot, computes the stable diff against current channels, and
- * writes the change-set summary + items. Side-effect free on current output.
+ * immutable snapshot (idempotent on (sourceId, fingerprint)), computes the
+ * stable diff against current PRESENT channels, runs the pure anomaly
+ * classifier (empty-snapshot / ≥25% deletion), and returns the change-set
+ * summary + confirmation requirement.
+ *
+ * Side-effect free on current output: no stableUpsert, no markMissing, no
+ * applyAtomic. The change set row is updated by the caller (operation-worker)
+ * with the returned summary/warnings/requiresConfirmation.
  *
  * Depends only on domain ports + backend-core pure algorithms (constitution III).
  */
@@ -14,6 +22,7 @@ import {
   computeFingerprint,
   computeChangeItems,
   summarize,
+  classifyAnomaly,
   type SnapshotItem,
 } from "@magi/backend-core";
 import type { ISourceSyncRepository, ParsedSourceChannel } from "@/domain/source-sync";
@@ -30,6 +39,18 @@ export interface PrepareM3uSyncResult {
   readonly itemCount: number;
   readonly summary: ReturnType<typeof summarize>;
   readonly fingerprint: string;
+  /** True when an unexpired snapshot for this fingerprint was reused (009). */
+  readonly reused: boolean;
+  /** Source config version captured at prepare time (009, blocks stale apply). */
+  readonly sourceVersion: number;
+  /** True when the anomaly classifier flagged this snapshot (009, FR-016). */
+  readonly requiresConfirmation: boolean;
+  /** Structured warnings emitted by the anomaly classifier (009). */
+  readonly warnings: ReadonlyArray<{
+    readonly code: "empty-snapshot" | "deletion-ratio-exceeded";
+    readonly message: string;
+    readonly deletionRatio: number;
+  }>;
 }
 
 export class PrepareM3uSyncUseCase {
@@ -64,7 +85,7 @@ export class PrepareM3uSyncUseCase {
       streamUrl: e.streamUrl,
     }));
 
-    // Stage the immutable snapshot.
+    // Stage the immutable snapshot idempotently (009: fingerprint reuse).
     await input.updateProgress?.(55, "stage");
     const snapshotItems: SnapshotItem[] = parsed.map((p) => ({
       channelIdentity: p.channelIdentity,
@@ -77,7 +98,7 @@ export class PrepareM3uSyncUseCase {
       },
     }));
     const fingerprint = computeFingerprint(snapshotItems);
-    const { snapshotId, itemCount } = await this.repo.stageSnapshot(
+    const staged = await this.repo.stageSnapshotIdempotent(
       sourceId,
       "m3u",
       fingerprint,
@@ -86,12 +107,13 @@ export class PrepareM3uSyncUseCase {
       preparedTaskId,
     );
 
-    // Compute the diff against current channels (for summary; items persisted by infra).
+    // Compute the diff against current PRESENT channels (009: anomaly baseline
+    // is the live present count, not the historical current row count).
     await input.updateProgress?.(75, "diff");
-    const current = await this.repo.loadCurrentChannels(sourceId);
+    const present = await this.repo.loadPresentChannels(sourceId);
     const changeItems = computeChangeItems(
       snapshotItems,
-      current.map((c) => ({
+      present.map((c) => ({
         channelIdentity: c.channelIdentity,
         automaticName: c.displayName,
         manualName: null,
@@ -103,7 +125,25 @@ export class PrepareM3uSyncUseCase {
     );
     const summary = summarize(changeItems);
 
+    // 009: anomaly classification. First import (present count == 0) never
+    // triggers confirmation; empty snapshot / ≥25% deletion against non-empty
+    // baseline flips requiresConfirmation to true (FR-016).
+    const anomaly = classifyAnomaly({
+      snapshotItemCount: parsed.length,
+      currentPresentCount: present.length,
+      missingCount: summary.missing,
+    });
+
     await input.updateProgress?.(100, "ready");
-    return { snapshotId, itemCount, summary, fingerprint };
+    return {
+      snapshotId: staged.snapshotId,
+      itemCount: staged.itemCount,
+      summary,
+      fingerprint,
+      reused: staged.reused,
+      sourceVersion: source.version,
+      requiresConfirmation: anomaly.requiresConfirmation,
+      warnings: anomaly.warnings,
+    };
   }
 }

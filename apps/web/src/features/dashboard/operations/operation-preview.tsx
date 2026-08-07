@@ -46,11 +46,16 @@ export function OperationPreview({
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const summary: Summary = (data?.summary ?? {}) as Summary;
-  const warnings: { code: string; message: string }[] = (data?.warnings ?? []) as never;
+  const warnings: { code: string; message: string; deletionRatio?: number }[] = (data?.warnings ?? []) as never;
   const blockers: { code: string; message: string }[] = (data?.blockers ?? []) as never;
   const hasBlockers = blockers.length > 0;
   const status = data?.status as string | undefined;
   const version = data?.version ?? 0;
+  // 009-m3u-control-plane: anomaly classification drives the explicit
+  // confirmation banner + disabled apply button when requiresConfirmation=true.
+  const requiresConfirmation = data?.requiresConfirmation === true;
+  const anomalyWarnings = data?.anomalyClassification?.warnings ?? [];
+  const hasAnomaly = anomalyWarnings.length > 0 || requiresConfirmation;
 
   const handleApply = async () => {
     const result = await apply.mutateAsync({
@@ -132,9 +137,42 @@ export function OperationPreview({
           type="warning"
           showIcon
           title={`警告：${w.code}`}
-          description={w.message}
+          description={
+            w.deletionRatio != null
+              ? `${w.message}（删除比例 ${(w.deletionRatio * 100).toFixed(0)}%）`
+              : w.message
+          }
         />
       ))}
+
+      {/* 009-m3u-control-plane: explicit anomaly banner. FR-016 requires the
+          operator to confirm before applying when the snapshot is empty or the
+          deletion ratio crosses 25%. */}
+      {hasAnomaly && (
+        <Alert
+          type="error"
+          showIcon
+          title="异常同步：需要确认后才能应用"
+          description={
+            <Space orientation="vertical" size={4}>
+              <Text>
+                本次快照触发了异常保护（FR-016）。确认前最终目录保持上一次可用状态。
+              </Text>
+              {anomalyWarnings.map((w) => (
+                <Text key={w.code} type="secondary">
+                  · {w.code === "empty-snapshot"
+                    ? "上游返回空目录"
+                    : `删除比例 ${(w.deletionRatio * 100).toFixed(0)}% ≥ 25%`}
+                  ：{w.message}
+                </Text>
+              ))}
+              <Text type="secondary">
+                点击「应用变更」即视为已确认上述警告，操作将记入审计。
+              </Text>
+            </Space>
+          }
+        />
+      )}
 
       {!isLoading && <OperationImpactTable changeSetId={changeSetId} />}
 
@@ -152,9 +190,12 @@ export function OperationPreview({
           loading={apply.isPending}
           onClick={() => setConfirmOpen(true)}
         >
-          应用变更
+          {hasAnomaly ? "确认并应用变更" : "应用变更"}
         </Button>
         {hasBlockers && <Tag color="error">存在阻断项，无法应用</Tag>}
+        {hasAnomaly && !hasBlockers && (
+          <Tag color="warning">需确认异常警告</Tag>
+        )}
       </Space>
 
       <Modal

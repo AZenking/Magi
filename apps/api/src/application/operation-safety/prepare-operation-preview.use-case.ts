@@ -1,5 +1,7 @@
 /**
- * PrepareOperationPreviewUseCase (T036).
+ * PrepareOperationPreviewUseCase (T036; 009-m3u-control-plane T018 adds
+ * source-scoped leaseScope on enqueue for m3u_sync kind, plus sourceVersion
+ * capture on the change set row).
  *
  * Creates a side-effect-free `preparing` change set and enqueues a Worker job
  * to compute the diff. Returns the change-set reference + TaskRef. The current
@@ -13,6 +15,7 @@ import type { IOperationChangeSetRepository } from "@/domain/operation-safety";
 import type { ITaskRepository } from "@/domain/task-execution";
 import type { TaskQueuePort } from "@/domain/task-execution/task-queue.port";
 import type { OperationKind, OperationScopeType } from "@magi/types";
+import { leaseScopeFor } from "@/application/operation-safety/m3u-control-plane-jobs";
 
 export interface PreparePreviewInput {
   readonly kind: OperationKind;
@@ -64,6 +67,13 @@ export class PrepareOperationPreviewUseCase {
     //    Use changeSetId in the deduplicationId so repeated requests for the same
     //    source don't get silently deduped by BullMQ.
     const deduplicationId = `prep-${changeSetId.slice(0, 8)}`.slice(0, 50);
+    // 009 T018: for m3u_sync, acquire the source-scoped lease so manual and
+    // scheduled triggers dedup at the lease layer (FR-004). Other operation
+    // kinds don't have a natural sourceId and skip this.
+    const leaseScope =
+      input.kind === "m3u_sync" && input.sourceId
+        ? leaseScopeFor(input.sourceId)
+        : undefined;
     const enqueued = await this.queue.enqueue(
       this.taskTypeFor(input.kind),
       {
@@ -85,6 +95,7 @@ export class PrepareOperationPreviewUseCase {
         scopeType: input.scopeType,
         scopeId: input.scopeId,
         inputFingerprint: input.inputFingerprint,
+        leaseScope,
       },
     );
 

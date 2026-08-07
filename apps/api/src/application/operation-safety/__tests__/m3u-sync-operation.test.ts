@@ -69,3 +69,118 @@ describe.skip("M3U preview/apply (T029) — use cases not yet implemented", () =
 
 // Keep the mock referenced so it stays importable for T036 wiring tests.
 void mockChangeSetRepo;
+
+// ---------------------------------------------------------------------------
+// 009-m3u-control-plane (T014) — scheduler / queue dedup at the API layer.
+//
+// The API layer must guarantee that manual + scheduled triggers for the same
+// source do NOT produce duplicate change sets or duplicate applies. This is
+// enforced by:
+//   1. leaseScope = "m3u-control-plane:source:<sourceId>" on every enqueue
+//   2. deduplicationId derived from (kind, sourceId, sourceVersion, fingerprint)
+//   3. idempotencyKey for the apply path
+// ---------------------------------------------------------------------------
+
+describe("M3U source-scoped dedup helpers (T014, API side)", () => {
+  it("leaseScopeFor builds a source-scoped lease key", async () => {
+    const { leaseScopeFor } = await import(
+      "@/application/operation-safety/m3u-control-plane-jobs"
+    );
+    expect(leaseScopeFor("src-1")).toBe("m3u-control-plane:source:src-1");
+  });
+
+  it("prepareIdempotencyKey is stable for same (source, version, fingerprint)", async () => {
+    const { prepareIdempotencyKey } = await import(
+      "@/application/operation-safety/m3u-control-plane-jobs"
+    );
+    const a = prepareIdempotencyKey({
+      sourceId: "src-1",
+      sourceVersion: 1,
+      contentFingerprint: "sha256:abc",
+    });
+    const b = prepareIdempotencyKey({
+      sourceId: "src-1",
+      sourceVersion: 1,
+      contentFingerprint: "sha256:abc",
+    });
+    const c = prepareIdempotencyKey({
+      sourceId: "src-1",
+      sourceVersion: 2, // different version
+      contentFingerprint: "sha256:abc",
+    });
+    expect(a).toBe(b);
+    expect(a).not.toBe(c);
+  });
+
+  it("applyIdempotencyKey is stable irrespective of warning code order", async () => {
+    const { applyIdempotencyKey } = await import(
+      "@/application/operation-safety/m3u-control-plane-jobs"
+    );
+    const a = applyIdempotencyKey({
+      changeSetId: "cs-1",
+      sourceVersion: 1,
+      confirmedWarningCodes: ["empty-snapshot", "deletion-ratio-exceeded"],
+    });
+    const b = applyIdempotencyKey({
+      changeSetId: "cs-1",
+      sourceVersion: 1,
+      confirmedWarningCodes: ["deletion-ratio-exceeded", "empty-snapshot"],
+    });
+    expect(a).toBe(b);
+  });
+
+  it("deduplicationIdFor is unique per (kind, idempotencyKey)", async () => {
+    const { deduplicationIdFor } = await import(
+      "@/application/operation-safety/m3u-control-plane-jobs"
+    );
+    const a = deduplicationIdFor("m3u-prepare", "prep:1");
+    const b = deduplicationIdFor("m3u-apply", "prep:1");
+    expect(a).not.toBe(b);
+    expect(a).toBe("m3u-prepare:prep:1");
+  });
+});
+
+describe("PrepareOperationPreviewUseCase 009 dedup (T014)", () => {
+  it("propagates leaseScope on the enqueue options for m3u_sync", async () => {
+    const { PrepareOperationPreviewUseCase } = await import(
+      "@/application/operation-safety/prepare-operation-preview.use-case"
+    );
+    const captured: Array<{ leaseScope?: string; deduplicationId?: string }> =
+      [];
+    const fakeQueue = {
+      enqueue: vi.fn(async (_taskType: string, _payload: unknown, options?: { leaseScope?: string; deduplicationId?: string }) => {
+        captured.push({
+          leaseScope: options?.leaseScope,
+          deduplicationId: options?.deduplicationId,
+        });
+        return { jobId: "j-1", taskId: "t-1" };
+      }),
+    };
+    const changeSetRepo = mockChangeSetRepo();
+    const taskRepo = {
+      create: vi.fn(async () => ({ id: "t-1" })),
+    } as never;
+    const uc = new PrepareOperationPreviewUseCase(
+      changeSetRepo,
+      taskRepo,
+      fakeQueue as never,
+    );
+
+    await uc.execute({
+      kind: "m3u_sync",
+      scopeType: "source",
+      scopeId: "src-1",
+      sourceId: "src-1",
+      inputFingerprint: "sha256:abc",
+      baseVersions: {},
+      requestedBy: "user-1",
+      requestId: "req-1",
+    });
+
+    // For m3u_sync the leaseScope must be the source-scoped key so concurrent
+    // manual + scheduled triggers dedup at the lease layer.
+    expect(captured[0]?.leaseScope).toBe("m3u-control-plane:source:src-1");
+  });
+});
+
+import { vi } from "vitest";
