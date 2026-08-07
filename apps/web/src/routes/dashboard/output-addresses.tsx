@@ -1,10 +1,39 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Alert, Card, Flex, Tag, Typography } from "antd";
+import { Alert, Button, Card, Flex, Space, Spin, Tag, Typography } from "antd";
 import { API_BASE } from "@/services/config";
 import { PageHeader, PageStack } from "@/components/page-layout";
+import { OutputGrantManagement } from "@/features/dashboard/output/output-grant-dialog";
 
 export const Route = createFileRoute("/dashboard/output-addresses")({
   component: OutputAddressesPage,
+  pendingComponent: () => (
+    <PageStack>
+      <Card size="small">
+        <Spin tip="加载输出地址…" />
+      </Card>
+    </PageStack>
+  ),
+  errorComponent: (props: { error: Error; reset?: () => void }) => (
+    <PageStack>
+      <Alert
+        type="error"
+        showIcon
+        title="加载失败"
+        description={
+          <Space size={8}>
+            <Typography.Text>
+              {props.error?.message ?? "无法读取输出资格或发布状态。"}
+            </Typography.Text>
+            {props.reset && (
+              <Button type="primary" size="small" onClick={props.reset}>
+                重试
+              </Button>
+            )}
+          </Space>
+        }
+      />
+    </PageStack>
+  ),
 });
 
 const endpoints = [
@@ -19,15 +48,18 @@ function OutputAddressesPage() {
     <PageStack>
       <PageHeader
         title="输出地址"
-        description="Legacy 继续兼容现有客户端；Magi TV 固定使用 V2"
+        description="Legacy 继续兼容现有客户端;每播放器/设备签发独立可撤销的 M3U 输出资格"
       />
       <Alert
         type="info"
         showIcon
-        title="Magi TV 接入规则"
-        description="同时配置 V2 M3U 与 V2 XMLTV。两者使用相同的稳定 magi:canonicalChannelId，不会因上游 EPG 来源切换而变化。"
+        title="接入规则"
+        description="传统播放器使用下方的可撤销资格 URL;Android TV 继续使用既有 Open API 设备令牌。"
       />
+      {/* 009-m3u-control-plane T052/T056: grant + publication management */}
+      <OutputGrantManagement />
       <Flex vertical gap={16}>
+        <Typography.Title level={5}>服务端固定端点(管理员预览)</Typography.Title>
         {endpoints.map((endpoint) => {
           const url = new URL(endpoint.path, API_BASE).toString();
           return (

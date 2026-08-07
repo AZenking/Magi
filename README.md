@@ -173,6 +173,19 @@ Base URL: `http://localhost:3001`。除 `/api/auth/*` 外，接口需登录（be
 | `GET /output/m3u` | 生成 M3U 播放列表 |
 | `GET /output/xmltv` | 生成 XMLTV 节目单 |
 | `POST /output/check-streams` | 批量检测码流可用性 |
+| `GET /output/merge-candidates` | 列出弱信号合并候选（009） |
+| `POST /output/merge-candidates/:id/review` | 接受/拒绝合并候选（009） |
+| `GET /output/grants` | 列出当前管理员的输出资格（009） |
+| `POST /output/grants` | 签发新输出资格（返回明文仅一次）（009） |
+| `POST /output/grants/:id/rotate` | 轮换资格令牌（009） |
+| `POST /output/grants/:id/revoke` | 撤销资格（009） |
+| `GET /output/publication` | 读取当前输出发布投影（009） |
+
+### Public Playlist（grant-protected, 009）
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/playlist/v2.m3u?grant=<opaque>` | 传统播放器拉取动态 M3U（每设备独立可撤销资格）|
 
 ### EPG（匹配 / 导入 / 刷新）
 

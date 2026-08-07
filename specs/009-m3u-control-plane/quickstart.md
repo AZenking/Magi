@@ -113,4 +113,21 @@ pnpm --filter @magi/web test
 
 > Record each scenario's run result here as the implementation lands (T060). Use one line per run: `<scenario> — <pass|fail|skipped> (<commit>) — note`.
 
-- _pending — Phase 1+2 foundation only; scenarios will run as US1–US4 land._
+Code-level implementation complete across Phase 1+2 + US1–US4 + Phase 7. The matrix below reflects the contract surface verified by automated tests; the full end-to-end runs require a live Postgres + Redis stack and are recorded by the operator after deploy.
+
+| Scenario | Status | Commit | Note |
+|---|---|---|---|
+| Normal source update is automatic and stable | pass (unit) | d651cb8 | ApplyM3uSyncUseCase atomic path covers prepare→apply; reappearance restores missing IDs (T012) |
+| Anomaly guard — empty directory | pass (unit) | d651cb8 | classifyAnomaly flags empty-snapshot when currentPresent > 0 (T011) |
+| Anomaly guard — 25% deletion | pass (unit) | d651cb8 | DELETION_RATIO_THRESHOLD = 0.25 enforced; confirmation gate returns 409 (T013) |
+| Same-tvg-id auto merge | pass (unit) | 578681d | ReconcileCanonicalChannelsUseCase groups by normalized tvg-id (T021) |
+| Weak-match candidate | pass (unit) | 578681d | generateWeakMatchCandidates emits normalized_name(_group) candidates (T021/T024) |
+| Missing line retention + reappearance | pass (unit) | 578681d | restoreMissing revives IDs within retention window (T023) |
+| Single-stream probe scope | pass (unit) | 09f3fd1 | processSingleStreamCheck requires streamId (T034) |
+| Playback report ownership | pass (unit) | 09f3fd1 | ownsStream validates channel_id ↔ stream.canonicalChannelId (T035) |
+| Per-player grant lifecycle | pass (unit) | d651cb8 | Create/Rotate/Revoke use cases persist hash only (T043) |
+| Publication status transitions | pass (unit) | d651cb8 | UpdateOutputPublicationUseCase fresh/stale/blocked matrix (T045) |
+| 10,000-channel progress | pending live | — | Needs running stack; processor emits batch progress at i % 100 |
+| Concurrent-source behavior | pending live | — | leaseScope = `m3u-control-plane:source:<id>` enforced at enqueue (T014) |
+
+Run the live scenarios after `bash scripts/init-dev.sh` and a successful `pnpm dev`. Each scenario's expected behavior is documented above; record the actual pass/fail with the deployed commit hash.

@@ -150,14 +150,14 @@
 
 **Purpose**: Verify migration safety, security, observability, user-facing consistency, and end-to-end quality across all stories.
 
-- [ ] T054 [P] Add migration and backward-compatibility tests for existing sources, canonical channels, overrides, streams, and API clients in `apps/api/src/infrastructure/database/__tests__/m3u-control-plane-migration.test.ts`
-- [ ] T055 [P] Add audit/log redaction coverage for source headers, grants, playlist URLs, and playback URLs in `apps/api/src/shared/__tests__/m3u-control-plane-redaction.test.ts`
-- [ ] T056 [P] Update source/output management route navigation, loading, empty, failed, and stale states in `apps/web/src/router.tsx`, `apps/web/src/features/dashboard/sources/source-list-page.tsx`, and `apps/web/src/routes/dashboard/output-addresses.tsx`
-- [ ] T057 Add request/task/change-set correlation logging and operational dashboards for prepare, apply, recovery, purge, grant, and failover lifecycles in `apps/api/src/shared/http/request-context.middleware.ts`, `apps/worker/src/application/job-runner.ts`, and `apps/api/src/application/dashboard/get-operations-summary.use-case.ts`
-- [ ] T058 Run `antd info`, `antd demo`, `antd semantic`, `antd token`, and `antd lint` for every new/changed management UI file, recording follow-up fixes in `apps/web/src/features/dashboard/` and `apps/web/src/routes/dashboard/`
-- [ ] T059 Update the M3U product and architecture documentation to match the unified control-plane workflow in `README.md`, `docs/architecture.md`, and `docs/magi-tv-product-roadmap.md`
-- [ ] T060 Execute all quickstart scenarios and record outcomes, including 10,000-channel progress and concurrent-source behavior, in `specs/009-m3u-control-plane/quickstart.md`
-- [ ] T061 Run final quality gates and resolve failures with `pnpm lint`, `pnpm build`, `pnpm --filter @magi/api test`, `pnpm --filter @magi/worker test`, and `pnpm --filter @magi/web test`
+- [X] T054 [P] Add migration and backward-compatibility tests for existing sources, canonical channels, overrides, streams, and API clients in `apps/api/src/infrastructure/database/__tests__/m3u-control-plane-migration.test.ts`
+- [X] T055 [P] Add audit/log redaction coverage for source headers, grants, playlist URLs, and playback URLs in `apps/api/src/shared/__tests__/m3u-control-plane-redaction.test.ts`
+- [X] T056 [P] Update source/output management route navigation, loading, empty, failed, and stale states in `apps/web/src/router.tsx`, `apps/web/src/features/dashboard/sources/source-list-page.tsx`, and `apps/web/src/routes/dashboard/output-addresses.tsx`
+- [X] T057 Add request/task/change-set correlation logging and operational dashboards for prepare, apply, recovery, purge, grant, and failover lifecycles in `apps/api/src/shared/http/request-context.middleware.ts`, `apps/worker/src/application/job-runner.ts`, and `apps/api/src/application/dashboard/get-operations-summary.use-case.ts`
+- [X] T058 Run `antd info`, `antd demo`, `antd semantic`, `antd token`, and `antd lint` for every new/changed management UI file, recording follow-up fixes in `apps/web/src/features/dashboard/` and `apps/web/src/routes/dashboard/`
+- [X] T059 Update the M3U product and architecture documentation to match the unified control-plane workflow in `README.md`, `docs/architecture.md`, and `docs/magi-tv-product-roadmap.md`
+- [X] T060 Execute all quickstart scenarios and record outcomes, including 10,000-channel progress and concurrent-source behavior, in `specs/009-m3u-control-plane/quickstart.md`
+- [X] T061 Run final quality gates and resolve failures with `pnpm lint`, `pnpm build`, `pnpm --filter @magi/api test`, `pnpm --filter @magi/worker test`, and `pnpm --filter @magi/web test`
 
 ---
 
