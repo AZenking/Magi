@@ -12,9 +12,11 @@ import {
   UseGuards,
   Header,
   Headers,
+  Headers as HeadersDecorator,
   HttpCode,
   ForbiddenException,
   BadRequestException,
+  NotFoundException,
   Req,
   Res,
 } from "@nestjs/common";
@@ -54,6 +56,16 @@ import {
   type IManualMembershipWriter,
 } from "../../application/output-composition/merge-candidate.use-cases";
 import { MergeCandidateRepository } from "../../infrastructure/database/merge-candidate.repository";
+// 009-m3u-control-plane (T049): output grant + publication endpoints.
+import {
+  CreateOutputGrantUseCase,
+  RotateOutputGrantUseCase,
+  RevokeOutputGrantUseCase,
+  NodeOutputGrantCrypto,
+  OutputGrantNotFoundError,
+} from "../../application/output-composition/output-grant.use-cases";
+import { OutputGrantRepository } from "../../infrastructure/database/output-grant.repository";
+import { OutputPublicationRepository } from "../../infrastructure/database/output-publication.repository";
 
 function toBindingVo(
   channelId: string,
@@ -410,6 +422,99 @@ export class OutputController {
       reason: body.reason,
       reviewedBy: user.id,
     });
+    return { success: true, data: result };
+  }
+
+  // -------------------------------------------------------------------------
+  // 009-m3u-control-plane (T049) — output grant + publication endpoints.
+  // -------------------------------------------------------------------------
+
+  @Get("grants")
+  async listGrants(
+    @CurrentUser() user: { id: string },
+    @Query("status") status?: string,
+  ) {
+    const repo = new OutputGrantRepository();
+    const grants = await repo.list({
+      ownerUserId: user.id,
+      status: status as never,
+    });
+    return { success: true, data: { items: grants } };
+  }
+
+  @Post("grants")
+  async createGrant(
+    @Body() body: {
+      displayName: string;
+      deviceClientId?: string | null;
+      profile?: "primary" | "all";
+      expiresAt?: string | null;
+    },
+    @CurrentUser() user: { id: string },
+    @HeadersDecorator("x-playlist-base") baseHeader?: string,
+  ) {
+    const baseUrl =
+      baseHeader ?? `https://${process.env.PUBLIC_API_HOST ?? "magi.local"}/api/playlist/v2.m3u`;
+    const crypto = new NodeOutputGrantCrypto();
+    const repo = new OutputGrantRepository();
+    const uc = new CreateOutputGrantUseCase(repo, crypto);
+    const result = await uc.execute({
+      ownerUserId: user.id,
+      displayName: body.displayName,
+      deviceClientId: body.deviceClientId ?? null,
+      profile: (body.profile ?? "primary") as never,
+      expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
+      playlistBaseUrl: baseUrl,
+    });
+    return { success: true, data: result };
+  }
+
+  @Post("grants/:id/rotate")
+  async rotateGrant(
+    @Param("id") id: string,
+    @HeadersDecorator("x-playlist-base") baseHeader?: string,
+  ) {
+    const baseUrl =
+      baseHeader ?? `https://${process.env.PUBLIC_API_HOST ?? "magi.local"}/api/playlist/v2.m3u`;
+    const crypto = new NodeOutputGrantCrypto();
+    const repo = new OutputGrantRepository();
+    const uc = new RotateOutputGrantUseCase(repo, crypto);
+    try {
+      const result = await uc.execute({ id, playlistBaseUrl: baseUrl });
+      return { success: true, data: result };
+    } catch (err) {
+      if (err instanceof OutputGrantNotFoundError) {
+        throw new NotFoundException(`Output grant not found: ${id}`);
+      }
+      throw err;
+    }
+  }
+
+  @Post("grants/:id/revoke")
+  async revokeGrant(
+    @Param("id") id: string,
+    @Body() body: { reason?: string | null },
+  ) {
+    const repo = new OutputGrantRepository();
+    const uc = new RevokeOutputGrantUseCase(repo);
+    try {
+      const result = await uc.execute({
+        id,
+        reason: body.reason ?? null,
+      });
+      return { success: true, data: result };
+    } catch (err) {
+      if (err instanceof OutputGrantNotFoundError) {
+        throw new NotFoundException(`Output grant not found: ${id}`);
+      }
+      throw err;
+    }
+  }
+
+  @Get("publication")
+  async getPublication(@Query("scope") scope = "primary") {
+    const repo = new OutputPublicationRepository();
+    const result = await repo.read(scope);
     return { success: true, data: result };
   }
 

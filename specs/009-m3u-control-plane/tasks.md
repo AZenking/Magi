@@ -127,20 +127,20 @@
 
 ### Tests for User Story 4
 
-- [ ] T043 [P] [US4] Add failing grant lifecycle and plaintext-once tests in `apps/api/src/application/output-composition/__tests__/output-grant.use-cases.test.ts`
-- [ ] T044 [P] [US4] Add failing public playlist contract tests for valid, revoked, expired, and malformed grants plus query-token redaction in `apps/api/src/http/open/__tests__/playlist-grant.contract.test.ts`
-- [ ] T045 [P] [US4] Add failing publication projection tests for fresh, stale, blocked, counts, and revision changes in `apps/api/src/application/output-composition/__tests__/output-publication.use-cases.test.ts`
-- [ ] T046 [P] [US4] Add failing management UI tests for one-time reveal, rotation confirmation, revocation isolation, and publication status in `apps/web/src/routes/dashboard/output-addresses.test.tsx`
+- [X] T043 [P] [US4] Add failing grant lifecycle and plaintext-once tests in `apps/api/src/application/output-composition/__tests__/output-grant.use-cases.test.ts`
+- [X] T044 [P] [US4] Add failing public playlist contract tests for valid, revoked, expired, and malformed grants plus query-token redaction in `apps/api/src/http/open/__tests__/playlist-grant.contract.test.ts`
+- [X] T045 [P] [US4] Add failing publication projection tests for fresh, stale, blocked, counts, and revision changes in `apps/api/src/application/output-composition/__tests__/output-publication.use-cases.test.ts`
+- [X] T046 [P] [US4] Add failing management UI tests for one-time reveal, rotation confirmation, revocation isolation, and publication status in `apps/web/src/routes/dashboard/output-addresses.test.tsx`
 
 ### Implementation for User Story 4
 
-- [ ] T047 [US4] Implement output-grant domain rules, secure token generation/hash/rotation, ownership checks, and repository persistence in `apps/api/src/domain/output-composition/output-grant.model.ts`, `apps/api/src/application/output-composition/output-grant.use-cases.ts`, and `apps/api/src/infrastructure/database/output-grant.repository.ts`
-- [ ] T048 [US4] Implement output-publication projection updates, revision calculation, stale/blocked semantics, and repository queries in `apps/api/src/domain/output-composition/output-publication.model.ts`, `apps/api/src/application/output-composition/output-publication.use-case.ts`, and `apps/api/src/infrastructure/database/output-publication.repository.ts`
-- [ ] T049 [US4] Add owner-scoped grant create/list/rotate/revoke and publication-status management endpoints in `apps/api/src/http/output/output.controller.ts`, `apps/api/src/http/output/output.module.ts`, and `packages/types/src/dto/m3u-control-plane.ts`
-- [ ] T050 [US4] Add the grant-protected dynamic V2 playlist endpoint, authentication guard, caching headers, and secret redaction to `apps/api/src/http/open/playlist.controller.ts`, `apps/api/src/shared/guards/output-grant.guard.ts`, and `apps/api/src/http/open/open.module.ts`
-- [ ] T051 [US4] Update V2 M3U generation to honor grant profile, current publication revision, hidden/disabled/unplayable exclusion, and shared line ordering in `apps/api/src/application/output-composition/generate-v2-output.use-cases.ts`
-- [ ] T052 [US4] Add output grant and publication management UI using queried Ant Design v6 APIs in `apps/web/src/routes/dashboard/output-addresses.tsx`, `apps/web/src/features/dashboard/output/output-grant-dialog.tsx`, and `apps/web/src/services/api.ts`
-- [ ] T053 [US4] Regenerate and verify the public API contract and compatibility tests in `apps/api/src/main.ts`, `apps/api/src/http/open/__tests__/playlist-grant.contract.test.ts`, and `apps/web/src/services/openapi-types.ts`
+- [X] T047 [US4] Implement output-grant domain rules, secure token generation/hash/rotation, ownership checks, and repository persistence in `apps/api/src/domain/output-composition/output-grant.model.ts`, `apps/api/src/application/output-composition/output-grant.use-cases.ts`, and `apps/api/src/infrastructure/database/output-grant.repository.ts`
+- [X] T048 [US4] Implement output-publication projection updates, revision calculation, stale/blocked semantics, and repository queries in `apps/api/src/domain/output-composition/output-publication.model.ts`, `apps/api/src/application/output-composition/output-publication.use-case.ts`, and `apps/api/src/infrastructure/database/output-publication.repository.ts`
+- [X] T049 [US4] Add owner-scoped grant create/list/rotate/revoke and publication-status management endpoints in `apps/api/src/http/output/output.controller.ts`, `apps/api/src/http/output/output.module.ts`, and `packages/types/src/dto/m3u-control-plane.ts`
+- [X] T050 [US4] Add the grant-protected dynamic V2 playlist endpoint, authentication guard, caching headers, and secret redaction to `apps/api/src/http/open/playlist.controller.ts`, `apps/api/src/shared/guards/output-grant.guard.ts`, and `apps/api/src/http/open/open.module.ts`
+- [X] T051 [US4] Update V2 M3U generation to honor grant profile, current publication revision, hidden/disabled/unplayable exclusion, and shared line ordering in `apps/api/src/application/output-composition/generate-v2-output.use-cases.ts`
+- [X] T052 [US4] Add output grant and publication management UI using queried Ant Design v6 APIs in `apps/web/src/routes/dashboard/output-addresses.tsx`, `apps/web/src/features/dashboard/output/output-grant-dialog.tsx`, and `apps/web/src/services/api.ts`
+- [X] T053 [US4] Regenerate and verify the public API contract and compatibility tests in `apps/api/src/main.ts`, `apps/api/src/http/open/__tests__/playlist-grant.contract.test.ts`, and `apps/web/src/services/openapi-types.ts`
 
 **Checkpoint**: Every traditional player has independently revocable output access, while management sees whether the dynamically generated directory is fresh, stale, or blocked.
 

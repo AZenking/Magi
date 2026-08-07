@@ -21,9 +21,15 @@ const healthOrder: Record<string, number> = {
 function selectBestStream(
   streams: StreamWithSource[],
 ): StreamWithSource | null {
+  // 009-m3u-control-plane T051: drop missing source streams first (manual
+  // lines survive), then pick by health → primary → position → responseTime.
+  const surviving = streams.filter((s) => {
+    if (s.sourceParticipateInOutput === false) return false;
+    if (s.origin === "manual") return true;
+    return s.missingSince == null;
+  });
   return (
-    [...streams]
-      .filter((stream) => stream.sourceParticipateInOutput !== false)
+    [...surviving]
       .sort((a, b) => {
         const healthDiff =
           (healthOrder[a.healthStatus] ?? 3) -
