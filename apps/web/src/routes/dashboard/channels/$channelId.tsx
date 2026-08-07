@@ -49,6 +49,7 @@ import {
 } from "@/features/dashboard/channels/channel-lifecycle-actions";
 import { ChannelStreamOrder } from "@/features/dashboard/channels/channel-stream-order";
 import { ChannelFailoverPolicy } from "@/features/dashboard/channels/channel-failover-policy";
+import { ChannelHealthSummary } from "@/features/dashboard/channels/channel-health-summary";
 import { PageStack } from "@/components/page-layout";
 import { PageSkeleton, InlineSkeleton } from "@/components/page-skeleton";
 
@@ -605,6 +606,8 @@ function ChannelDetailPage() {
             />
           </Flex>
         </Card>
+
+        <ChannelHealthSummary channelId={channel.id} />
 
         <Card title="故障转移策略">
           <ChannelFailoverPolicy channelId={channel.id} />

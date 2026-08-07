@@ -10,6 +10,7 @@ import {
   KeyOutlined,
   LaptopOutlined,
   LinkOutlined,
+  MergeCellsOutlined,
   ProfileOutlined,
   ScheduleOutlined,
   ShareAltOutlined,
@@ -94,12 +95,18 @@ const NAV_SECTIONS: NavSection[] = [
       "/dashboard/epg-matching",
       "/dashboard/output-guide",
       "/dashboard/output-addresses",
+      "/dashboard/merge-candidates",
     ],
     children: [
       {
         key: "/dashboard/channels",
         label: "输出频道",
         icon: <DesktopOutlined />,
+      },
+      {
+        key: "/dashboard/merge-candidates",
+        label: "合并候选",
+        icon: <MergeCellsOutlined />,
       },
       {
         key: "/dashboard/epg-matching",

@@ -16,6 +16,7 @@ import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
 import { Route as DashboardOutputGuideRouteImport } from './routes/dashboard/output-guide'
 import { Route as DashboardOutputAddressesRouteImport } from './routes/dashboard/output-addresses'
 import { Route as DashboardOauthClientsRouteImport } from './routes/dashboard/oauth-clients'
+import { Route as DashboardMergeCandidatesRouteImport } from './routes/dashboard/merge-candidates'
 import { Route as DashboardEpgMatchingRouteImport } from './routes/dashboard/epg-matching'
 import { Route as DashboardTasksIndexRouteImport } from './routes/dashboard/tasks/index'
 import { Route as DashboardChannelsIndexRouteImport } from './routes/dashboard/channels/index'
@@ -66,6 +67,12 @@ const DashboardOauthClientsRoute = DashboardOauthClientsRouteImport.update({
   path: '/oauth-clients',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardMergeCandidatesRoute =
+  DashboardMergeCandidatesRouteImport.update({
+    id: '/merge-candidates',
+    path: '/merge-candidates',
+    getParentRoute: () => DashboardRoute,
+  } as any)
 const DashboardEpgMatchingRoute = DashboardEpgMatchingRouteImport.update({
   id: '/epg-matching',
   path: '/epg-matching',
@@ -142,6 +149,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRouteWithChildren
   '/login': typeof LoginRoute
   '/dashboard/epg-matching': typeof DashboardEpgMatchingRoute
+  '/dashboard/merge-candidates': typeof DashboardMergeCandidatesRoute
   '/dashboard/oauth-clients': typeof DashboardOauthClientsRoute
   '/dashboard/output-addresses': typeof DashboardOutputAddressesRoute
   '/dashboard/output-guide': typeof DashboardOutputGuideRoute
@@ -163,6 +171,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/dashboard/epg-matching': typeof DashboardEpgMatchingRoute
+  '/dashboard/merge-candidates': typeof DashboardMergeCandidatesRoute
   '/dashboard/oauth-clients': typeof DashboardOauthClientsRoute
   '/dashboard/output-addresses': typeof DashboardOutputAddressesRoute
   '/dashboard/output-guide': typeof DashboardOutputGuideRoute
@@ -186,6 +195,7 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRouteWithChildren
   '/login': typeof LoginRoute
   '/dashboard/epg-matching': typeof DashboardEpgMatchingRoute
+  '/dashboard/merge-candidates': typeof DashboardMergeCandidatesRoute
   '/dashboard/oauth-clients': typeof DashboardOauthClientsRoute
   '/dashboard/output-addresses': typeof DashboardOutputAddressesRoute
   '/dashboard/output-guide': typeof DashboardOutputGuideRoute
@@ -210,6 +220,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/dashboard/epg-matching'
+    | '/dashboard/merge-candidates'
     | '/dashboard/oauth-clients'
     | '/dashboard/output-addresses'
     | '/dashboard/output-guide'
@@ -231,6 +242,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/dashboard/epg-matching'
+    | '/dashboard/merge-candidates'
     | '/dashboard/oauth-clients'
     | '/dashboard/output-addresses'
     | '/dashboard/output-guide'
@@ -253,6 +265,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/dashboard/epg-matching'
+    | '/dashboard/merge-candidates'
     | '/dashboard/oauth-clients'
     | '/dashboard/output-addresses'
     | '/dashboard/output-guide'
@@ -326,6 +339,13 @@ declare module '@tanstack/react-router' {
       path: '/oauth-clients'
       fullPath: '/dashboard/oauth-clients'
       preLoaderRoute: typeof DashboardOauthClientsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/merge-candidates': {
+      id: '/dashboard/merge-candidates'
+      path: '/merge-candidates'
+      fullPath: '/dashboard/merge-candidates'
+      preLoaderRoute: typeof DashboardMergeCandidatesRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/epg-matching': {
@@ -424,6 +444,7 @@ declare module '@tanstack/react-router' {
 
 interface DashboardRouteChildren {
   DashboardEpgMatchingRoute: typeof DashboardEpgMatchingRoute
+  DashboardMergeCandidatesRoute: typeof DashboardMergeCandidatesRoute
   DashboardOauthClientsRoute: typeof DashboardOauthClientsRoute
   DashboardOutputAddressesRoute: typeof DashboardOutputAddressesRoute
   DashboardOutputGuideRoute: typeof DashboardOutputGuideRoute
@@ -444,6 +465,7 @@ interface DashboardRouteChildren {
 
 const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardEpgMatchingRoute: DashboardEpgMatchingRoute,
+  DashboardMergeCandidatesRoute: DashboardMergeCandidatesRoute,
   DashboardOauthClientsRoute: DashboardOauthClientsRoute,
   DashboardOutputAddressesRoute: DashboardOutputAddressesRoute,
   DashboardOutputGuideRoute: DashboardOutputGuideRoute,
