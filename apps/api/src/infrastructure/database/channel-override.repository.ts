@@ -4,7 +4,12 @@ import { db } from "./connection";
 import { channelOverrides } from "./schema";
 
 function toDomain(row: typeof channelOverrides.$inferSelect): ChannelOverride {
-  return { ...row };
+  // 009 T027: legacy rows are source-scoped; new canonical-scoped writes
+  // supply `scope` explicitly via upsert. Existing rows default to "source".
+  return {
+    ...row,
+    scope: "source",
+  };
 }
 
 export class ChannelOverrideRepository implements IChannelOverrideRepository {

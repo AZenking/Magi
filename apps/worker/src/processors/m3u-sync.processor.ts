@@ -34,6 +34,12 @@ import { PrepareM3uSyncUseCase } from "../application/operation-safety/prepare-m
 import { ApplyM3uSyncUseCase } from "../application/operation-safety/apply-m3u-sync.use-case";
 import type { SyncProgress } from "@magi/backend-core";
 
+// 009-m3u-control-plane T032: this processor no longer imports or calls the
+// legacy `reconcileCanonicals` (the merge-key rebuild). Reconcile now runs via
+// `operation-worker.ts` → `ReconcileCanonicalChannelsUseCase` which uses
+// tvg-id-only auto-merge + weak-match candidates. EPG-match callers that still
+// depend on the legacy stream/binding side-effects remain unchanged.
+
 interface SyncResult {
   importedCount: number;
   addedCount: number;

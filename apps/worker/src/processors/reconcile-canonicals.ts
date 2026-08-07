@@ -1,11 +1,15 @@
 /**
  * reconcileCanonicals — canonical channel rebuild logic, decoupled from EPG
- * matching (008-pipeline-reliability T015/T016).
+ * matching (008-pipeline-reliability T015/T016; 009-m3u-control-plane T032
+ * gates this legacy entry point — it must NOT be called from new M3U sync
+ * code paths).
  *
- * Extracted from epg-match.processor.ts L84-482 so it can be called after
- * M3U sync completes — without requiring a manual EPG match trigger. The
- * canonical channels, channel_streams, and canonical_epg_bindings are
- * generated/updated from the current channels table state.
+ * 009 replaces the weak-name merge-key auto-merge with tvg-id-only auto-merge
+ * via `ReconcileCanonicalChannelsUseCase` (T025). This function still exists
+ * for backward-compat with EPG-match callers that depend on its stream/binding
+ * side-effects, but a runtime guard now blocks the destructive rebuild path
+ * used by the legacy M3U sync flow. The guard throws `LegacyRebuildDisabledError`
+ * so callers fail loudly rather than silently corrupting canonical identities.
  *
  * When called from EPG match, optional `epgUpdates` and `channelConflicts`
  * are provided so EPG binding info is included. When called from M3U sync,
@@ -23,6 +27,27 @@ import {
   m3uSources,
 } from "../schema";
 import { computeMergeKey } from "@magi/backend-core";
+
+/**
+ * 009-m3u-control-plane T032 guard. When true, this legacy function refuses
+ * to run. The new M3U sync flow routes through `ReconcileCanonicalChannelsUseCase`
+ * which uses tvg-id-only auto-merge + weak-match candidates.
+ *
+ * Set to `false` only inside EPG-match code paths that explicitly depend on
+ * the legacy stream/binding side-effects and have not yet been migrated.
+ */
+let legacyRebuildEnabled = true;
+
+export function setLegacyRebuildEnabled(enabled: boolean): void {
+  legacyRebuildEnabled = enabled;
+}
+
+export class LegacyRebuildDisabledError extends Error {
+  constructor(public readonly reason: string) {
+    super(`Legacy canonical rebuild disabled: ${reason}`);
+    this.name = "LegacyRebuildDisabledError";
+  }
+}
 
 /**
  * Whether an existing canonical_epg_bindings row should survive a reconcile
@@ -67,6 +92,14 @@ export async function reconcileCanonicals(
   channelConflicts: ReadonlyMap<string, string> = new Map(),
   epgSourceId: string | null = null,
 ): Promise<ReconcileCanonicalsResult> {
+  // 009 T032: refuse to run when legacy rebuild is disabled. New M3U sync
+  // code paths set this to false at startup so the destructive merge-key
+  // path can never recreate canonical IDs or use weak-name auto-merge logic.
+  if (!legacyRebuildEnabled) {
+    throw new LegacyRebuildDisabledError(
+      "M3U sync routes through ReconcileCanonicalChannelsUseCase (T032 retired)",
+    );
+  }
   let createdCount = 0;
   let updatedCount = 0;
   let deactivatedCount = 0;

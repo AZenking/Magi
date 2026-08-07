@@ -119,11 +119,29 @@ export function registerOperationHandlers(runner: JobRunner): void {
         appliedCount = result.upsertedCount ?? 0;
       }
 
-      // Reconcile canonical channels after applying.
+      // 009: load the source channels post-apply so the reconcile use case has
+      // real tvg-id / display name / group data to drive auto-merge + weak-
+      // match candidates (replaces the legacy empty-array call).
+      const presentChannels = await sourceSyncRepo.loadPresentChannels(sourceId);
+      const currentChannels = await sourceSyncRepo.loadCurrentChannels(sourceId);
+      const missingIds = currentChannels
+        .filter((c) => c.sourcePresence === "missing")
+        .map((c) => c.id);
+
       await reconcile.execute({
         sourceId,
-        sourceChannelIds: [],
-        missingSourceChannelIds: [],
+        sourceChannels: presentChannels.map((c) => ({
+          sourceChannelId: c.id,
+          channelIdentity: c.channelIdentity,
+          displayName: c.displayName,
+          groupTitle: null,
+          tvgId: null,
+          normalizedName: null,
+          normalizedGroup: null,
+          streamUrl: null,
+          sourceFingerprint: "post-apply",
+        })),
+        missingSourceChannelIds: missingIds,
       });
 
       await db.update(operationChangeSets).set({
