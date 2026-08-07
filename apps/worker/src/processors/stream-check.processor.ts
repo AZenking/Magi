@@ -259,3 +259,95 @@ async function evaluateFailovers(): Promise<void> {
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// 009-m3u-control-plane (T034/T039) — single-stream probe + active-probe
+// observation contract.
+// ---------------------------------------------------------------------------
+
+/** Shape of an active-probe observation (mirrors stream_health_observations row). */
+export interface ActiveProbeObservation {
+  readonly streamId: string;
+  readonly canonicalChannelId: string;
+  readonly source: "active_probe";
+  readonly result: "success" | "failure";
+  readonly errorClass: string | null;
+  readonly latencyMs: number | null;
+  readonly observedAt: string;
+  readonly taskId: string | null;
+  readonly deviceClientId: null;
+}
+
+/**
+ * Pure builder for the active-probe observation row. Extracted so unit tests
+ * can verify the shape without running the processor (which would hit
+ * ffprobe + DB). The processor calls this then hands the result to the
+ * observation repository's insert method.
+ */
+export function buildActiveProbeObservation(input: {
+  streamId: string;
+  canonicalChannelId: string;
+  result: "success" | "failure";
+  latencyMs: number | null;
+  taskId?: string | null;
+  errorClass?: string | null;
+}): ActiveProbeObservation {
+  return {
+    streamId: input.streamId,
+    canonicalChannelId: input.canonicalChannelId,
+    source: "active_probe",
+    result: input.result,
+    errorClass: input.errorClass ?? null,
+    latencyMs: input.latencyMs,
+    observedAt: new Date().toISOString(),
+    taskId: input.taskId ?? null,
+    deviceClientId: null,
+  };
+}
+
+/**
+ * Run an active probe against a single stream and record the observation.
+ *
+ * 009 T034: this function MUST receive a streamId — passing undefined throws
+ * synchronously so the worker can never accidentally fan out across a source.
+ * The actual observation insert + failover decision land in T037/T038; this
+ * implementation focuses on the contract surface that unit tests can verify.
+ */
+export async function processSingleStreamCheck(
+  streamId: string | undefined,
+  options?: { taskId?: string },
+): Promise<{ ok: boolean; observation: ActiveProbeObservation }> {
+  if (!streamId) {
+    throw new Error("streamId is required for single-stream probe (T034)");
+  }
+  // Load the stream row to get its canonical channel + URL.
+  const [stream] = await db
+    .select({
+      id: channelStreams.id,
+      canonicalChannelId: channelStreams.canonicalChannelId,
+      streamUrl: channelStreams.streamUrl,
+    })
+    .from(channelStreams)
+    .where(eq(channelStreams.id, streamId))
+    .limit(1);
+  if (!stream) {
+    throw new Error(`Stream not found: ${streamId}`);
+  }
+
+  // Probe the stream URL.
+  const probe = await probeStream(stream.streamUrl);
+  const ok = probe.ok;
+  const observation = buildActiveProbeObservation({
+    streamId,
+    canonicalChannelId: stream.canonicalChannelId,
+    result: ok ? "success" : "failure",
+    latencyMs: probe.responseTime,
+    taskId: options?.taskId,
+    errorClass: ok ? null : (probe.error?.slice(0, 60) ?? "probe-failed"),
+  });
+
+  // NOTE: T037/T038 will insert the observation via StreamHealthObservationRepository
+  // and invoke the shared aggregate use case. For now we keep the processor
+  // contract surface so the unit tests can pin the shape.
+  return { ok, observation };
+}

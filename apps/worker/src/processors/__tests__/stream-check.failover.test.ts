@@ -1,12 +1,14 @@
 /**
- * Stream-check failover unit test (008-pipeline-reliability T032, US3).
+ * Stream-check failover unit test (008-pipeline-reliability T032, US3;
+ * 009-m3u-control-plane T034 adds single-stream scope + active-probe
+ * observation contract).
  *
  * Validates that decideFailoverTarget correctly decides to switch primary
  * when the current primary has consecutiveFailures >= threshold, and keeps
  * the primary when it's still healthy. This is the pure decision logic
  * that stream-check.processor calls after health updates.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { decideFailoverTarget, DEFAULT_FAILOVER_POLICY } from "@magi/backend-core";
 import type { StreamForFailover, FailoverPolicyConfig } from "@magi/backend-core";
 
@@ -68,5 +70,76 @@ describe("decideFailoverTarget in stream-check context (T032)", () => {
 
     const target = decideFailoverTarget(primary, [near, far], defaultPolicy);
     expect(target).toBe("far"); // position 1 < position 5
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 009-m3u-control-plane T034 — single-stream scope + active-probe observation.
+//
+// The single-stream probe job MUST target a single streamId (not a sourceId
+// that would re-probe the whole source). The processor must also persist an
+// immutable `active_probe` observation row before invoking the shared
+// aggregate action.
+// ---------------------------------------------------------------------------
+
+describe("Single-stream probe scope (T034, 009)", () => {
+  it("processSingleStreamCheck accepts a streamId parameter (not sourceId)", async () => {
+    const { processSingleStreamCheck } = await import("../stream-check.processor");
+    expect(typeof processSingleStreamCheck).toBe("function");
+    // Signature must accept a single streamId; we don't run it here because
+    // it would hit ffprobe + DB. The contract is compile-time + runtime
+    // existence.
+    const fn = processSingleStreamCheck as (
+      streamId: string,
+      options?: { taskId?: string },
+    ) => Promise<unknown>;
+    expect(fn.length).toBeLessThanOrEqual(2);
+  });
+
+  it("active-probe observation payload carries source='active_probe'", () => {
+    const observation = {
+      streamId: "stream-1",
+      canonicalChannelId: "canon-1",
+      source: "active_probe" as const,
+      result: "failure" as const,
+      errorClass: "http-502",
+      latencyMs: null,
+      observedAt: new Date().toISOString(),
+      taskId: "task-1",
+      deviceClientId: null,
+    };
+    expect(observation.source).toBe("active_probe");
+    expect(observation.result).toBe("failure");
+  });
+
+  it("the processor exposes an observation-emit hook for tests to count", async () => {
+    // buildActiveProbeObservation is a pure builder the processor uses to
+    // shape the repo insert. Verifying its shape here pins the contract.
+    const mod = await import("../stream-check.processor");
+    expect(typeof mod.buildActiveProbeObservation).toBe("function");
+    const obs = mod.buildActiveProbeObservation({
+      streamId: "s1",
+      canonicalChannelId: "c1",
+      result: "success",
+      latencyMs: 123,
+      taskId: "t1",
+    });
+    expect(obs).toMatchObject({
+      streamId: "s1",
+      canonicalChannelId: "c1",
+      source: "active_probe",
+      result: "success",
+      latencyMs: 123,
+      taskId: "t1",
+    });
+  });
+
+  it("does not confuse sourceId with streamId when only streamId is supplied", async () => {
+    // Contract: the function must require a streamId; passing undefined must
+    // throw or return an error result, NOT silently fan out across a source.
+    const { processSingleStreamCheck } = await import("../stream-check.processor");
+    await expect(
+      (processSingleStreamCheck as (id?: string) => Promise<unknown>)(undefined),
+    ).rejects.toThrow(/streamId/i);
   });
 });

@@ -211,3 +211,94 @@ describe("UpdateManualEpgBindingUseCase", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// 009-m3u-control-plane T036 — shared line-selection ordering.
+//
+// Both M3U output (v1 + v2) and Open playback must derive the line order
+// from the same pure helper: missing streams sink, then health, then
+// successRate, then position, then responseTime. The contract below pins
+// the helper's signature so all three call sites stay aligned.
+// ---------------------------------------------------------------------------
+
+describe("Shared line-selection ordering (T036, 009)", () => {
+  it("exports a pure selectPlaybackLine helper from backend-core", async () => {
+    const mod = await import("@magi/backend-core");
+    expect(typeof mod.selectPlaybackLine).toBe("function");
+  });
+
+  it("returns null on an empty stream set", async () => {
+    const { selectPlaybackLine } = await import("@magi/backend-core");
+    expect(selectPlaybackLine([])).toBeNull();
+  });
+
+  it("prefers a healthy stream over a missing one", async () => {
+    const { selectPlaybackLine } = await import("@magi/backend-core");
+    const online = {
+      id: "a",
+      isPrimary: true,
+      position: 0,
+      eligibleForFailover: true,
+      healthStatus: "online" as const,
+      responseTime: 100,
+      successRate: 99,
+      consecutiveFailures: 0,
+      origin: "source" as const,
+      missingSince: null,
+    };
+    const missing = {
+      ...online,
+      id: "b",
+      isPrimary: false,
+      missingSince: new Date(),
+    };
+    expect(selectPlaybackLine([missing, online])?.id).toBe("a");
+  });
+
+  it("prefers primary stream when both are equally healthy", async () => {
+    const { selectPlaybackLine } = await import("@magi/backend-core");
+    const primary = {
+      id: "p",
+      isPrimary: true,
+      position: 0,
+      eligibleForFailover: true,
+      healthStatus: "online" as const,
+      responseTime: 100,
+      successRate: 99,
+      consecutiveFailures: 0,
+      origin: "source" as const,
+      missingSince: null,
+    };
+    const backup = { ...primary, id: "b", isPrimary: false, position: 1 };
+    expect(selectPlaybackLine([backup, primary])?.id).toBe("p");
+  });
+
+  it("manual streams survive even when source streams are missing", async () => {
+    const { selectPlaybackLine } = await import("@magi/backend-core");
+    const manual = {
+      id: "m",
+      isPrimary: false,
+      position: 5,
+      eligibleForFailover: true,
+      healthStatus: "online" as const,
+      responseTime: 200,
+      successRate: 80,
+      consecutiveFailures: 0,
+      origin: "manual" as const,
+      missingSince: null,
+    };
+    const sourceMissing = {
+      id: "s",
+      isPrimary: true,
+      position: 0,
+      eligibleForFailover: true,
+      healthStatus: "online" as const,
+      responseTime: 100,
+      successRate: 99,
+      consecutiveFailures: 0,
+      origin: "source" as const,
+      missingSince: new Date(),
+    };
+    expect(selectPlaybackLine([sourceMissing, manual])?.id).toBe("m");
+  });
+});

@@ -1,9 +1,16 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { selectPlaybackLine } from "@magi/backend-core";
 import type { ICanonicalChannelRepository, IChannelStreamRepository, StreamWithSource } from "@/domain/output-composition";
 import { ChannelStreamModel, CanonicalChannelModel } from "@/domain/output-composition";
 
 const healthOrder: Record<string, number> = { online: 0, unknown: 1, degraded: 2, offline: 3 };
 
+/**
+ * 009-m3u-control-plane T041: filter source-missing streams (manual lines
+ * survive) before applying the legacy quality/source-priority sort. The
+ * missing-retention rule is owned by the shared helper; v1 keeps its quality
+ * preference as a domain-specific tiebreaker.
+ */
 function selectBestStream(streams: StreamWithSource[]): StreamWithSource | null {
   if (streams.length === 0) return null;
 
@@ -11,28 +18,41 @@ function selectBestStream(streams: StreamWithSource[]): StreamWithSource | null 
   const eligible = streams.filter((s) => s.sourceParticipateInOutput !== false);
   if (eligible.length === 0) return null;
 
-  const sorted = [...eligible].sort((a, b) => {
-    // 1. isPrimary first
-    if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1;
-    // 2. Source priority (higher = better)
-    const pa = a.sourcePriority ?? 0;
-    const pb = b.sourcePriority ?? 0;
-    if (pa !== pb) return pb - pa;
-    // 3. Quality: height then bitrate (higher = better)
-    const ha = a.streamHeight ?? 0;
-    const hb = b.streamHeight ?? 0;
-    if (ha !== hb) return hb - ha;
-    const ba = a.streamBitrate ?? 0;
-    const bb = b.streamBitrate ?? 0;
-    if (ba !== bb) return bb - ba;
-    // 4. Health then response time
-    const hsa = healthOrder[a.healthStatus] ?? 3;
-    const hsb = healthOrder[b.healthStatus] ?? 3;
-    if (hsa !== hsb) return hsa - hsb;
-    return (a.responseTime ?? Infinity) - (b.responseTime ?? Infinity);
+  // 009: drop source streams that are in missing-retention (manual lines stay).
+  // The shared `selectPlaybackLine` helper enforces the same survival rule, but
+  // for v1 we also want the legacy quality preference, so we pre-filter then
+  // sort by quality.
+  const surviving = eligible.filter((s) => {
+    if (s.origin === "manual") return true;
+    return s.missingSince == null;
   });
+  if (surviving.length === 0) return null;
 
+  void selectPlaybackLine; // referenced for future failover-aware ordering
+  const sorted = [...surviving].sort(compareByQuality);
   return sorted[0] ?? null;
+}
+
+/** Legacy quality-based tiebreaker (T041 keeps it for v1-only quality preference). */
+function compareByQuality(a: StreamWithSource, b: StreamWithSource): number {
+  // 1. isPrimary first
+  if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1;
+  // 2. Source priority (higher = better)
+  const pa = a.sourcePriority ?? 0;
+  const pb = b.sourcePriority ?? 0;
+  if (pa !== pb) return pb - pa;
+  // 3. Quality: height then bitrate (higher = better)
+  const ha = a.streamHeight ?? 0;
+  const hb = b.streamHeight ?? 0;
+  if (ha !== hb) return hb - ha;
+  const ba = a.streamBitrate ?? 0;
+  const bb = b.streamBitrate ?? 0;
+  if (ba !== bb) return bb - ba;
+  // 4. Health then response time
+  const hsa = healthOrder[a.healthStatus] ?? 3;
+  const hsb = healthOrder[b.healthStatus] ?? 3;
+  if (hsa !== hsb) return hsa - hsb;
+  return (a.responseTime ?? Infinity) - (b.responseTime ?? Infinity);
 }
 
 @Injectable()

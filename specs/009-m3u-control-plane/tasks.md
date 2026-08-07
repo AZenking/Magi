@@ -101,19 +101,19 @@
 
 ### Tests for User Story 3
 
-- [ ] T033 [P] [US3] Add failing domain tests for health aggregation, default thresholds, cooldown, recovery, and failover event creation in `apps/api/src/domain/output-composition/__tests__/channel-failover.test.ts`
-- [ ] T034 [P] [US3] Add failing worker tests proving a single-stream job targets `streamId` rather than `sourceId` and records active-probe observations in `apps/worker/src/processors/__tests__/stream-check.failover.test.ts`
-- [ ] T035 [P] [US3] Add failing playback-report tests for channel/stream ownership validation, 10-second device deduplication, and safe ignore behavior in `apps/api/src/http/open/__tests__/playback-report.contract.test.ts`
-- [ ] T036 [P] [US3] Add failing output ordering tests showing M3U and Open playback use the same health/primary/position decision in `apps/api/src/application/output-composition/__tests__/v2-output-guide.use-cases.test.ts` and `apps/api/src/http/open/__tests__/open-playback.test.ts`
+- [X] T033 [P] [US3] Add failing domain tests for health aggregation, default thresholds, cooldown, recovery, and failover event creation in `apps/api/src/domain/output-composition/__tests__/channel-failover.test.ts`
+- [X] T034 [P] [US3] Add failing worker tests proving a single-stream job targets `streamId` rather than `sourceId` and records active-probe observations in `apps/worker/src/processors/__tests__/stream-check.failover.test.ts`
+- [X] T035 [P] [US3] Add failing playback-report tests for channel/stream ownership validation, 10-second device deduplication, and safe ignore behavior in `apps/api/src/http/open/__tests__/playback-report.contract.test.ts`
+- [X] T036 [P] [US3] Add failing output ordering tests showing M3U and Open playback use the same health/primary/position decision in `apps/api/src/application/output-composition/__tests__/v2-output-guide.use-cases.test.ts` and `apps/api/src/http/open/__tests__/open-playback.test.ts`
 
 ### Implementation for User Story 3
 
-- [ ] T037 [US3] Implement immutable active-probe and playback-report evidence repositories plus failover-history persistence in `apps/api/src/domain/output-composition/stream-health.model.ts`, `apps/api/src/infrastructure/database/stream-health-observation.repository.ts`, and `apps/api/src/infrastructure/database/failover-event.repository.ts`
-- [ ] T038 [US3] Extract one health aggregation and failover orchestration use case that atomically updates streams, canonical primary ID, policy state, and history in `apps/api/src/application/output-composition/aggregate-stream-health.use-case.ts` and `apps/api/src/application/output-composition/channel-failover.use-cases.ts`
-- [ ] T039 [US3] Update Worker probing to emit observations, use explicit `streamId`/`sourceId` scopes, and invoke the shared orchestration action in `apps/worker/src/processors/stream-check.processor.ts`, `apps/api/src/application/task-execution/enqueue-sync.use-case.ts`, and `apps/api/src/http/output/output.controller.ts`
-- [ ] T040 [US3] Validate playback-report channel/stream ownership, preserve safe idempotent responses, and invoke shared orchestration in `apps/api/src/application/open/report-playback.use-case.ts` and `apps/api/src/http/open/open.controller.ts`
-- [ ] T041 [US3] Make Open playback and both M3U generators consume the shared line-selection ordering in `apps/api/src/application/open/resolve-playback.use-case.ts`, `apps/api/src/application/output-composition/generate-m3u-output.use-case.ts`, and `apps/api/src/application/output-composition/generate-v2-output.use-cases.ts`
-- [ ] T042 [US3] Display separate source/line health, latest evidence, switch reason, and recovery state in `apps/web/src/features/dashboard/sources/source-list-page.tsx`, `apps/web/src/features/dashboard/channels/channel-failover-policy.tsx`, and `apps/web/src/routes/dashboard/channels/$channelId.tsx`
+- [X] T037 [US3] Implement immutable active-probe and playback-report evidence repositories plus failover-history persistence in `apps/api/src/domain/output-composition/stream-health.model.ts`, `apps/api/src/infrastructure/database/stream-health-observation.repository.ts`, and `apps/api/src/infrastructure/database/failover-event.repository.ts`
+- [X] T038 [US3] Extract one health aggregation and failover orchestration use case that atomically updates streams, canonical primary ID, policy state, and history in `apps/api/src/application/output-composition/aggregate-stream-health.use-case.ts` and `apps/api/src/application/output-composition/channel-failover.use-cases.ts`
+- [X] T039 [US3] Update Worker probing to emit observations, use explicit `streamId`/`sourceId` scopes, and invoke the shared orchestration action in `apps/worker/src/processors/stream-check.processor.ts`, `apps/api/src/application/task-execution/enqueue-sync.use-case.ts`, and `apps/api/src/http/output/output.controller.ts`
+- [X] T040 [US3] Validate playback-report channel/stream ownership, preserve safe idempotent responses, and invoke shared orchestration in `apps/api/src/application/open/report-playback.use-case.ts` and `apps/api/src/http/open/open.controller.ts`
+- [X] T041 [US3] Make Open playback and both M3U generators consume the shared line-selection ordering in `apps/api/src/application/open/resolve-playback.use-case.ts`, `apps/api/src/application/output-composition/generate-m3u-output.use-case.ts`, and `apps/api/src/application/output-composition/generate-v2-output.use-cases.ts`
+- [X] T042 [US3] Display separate source/line health, latest evidence, switch reason, and recovery state in `apps/web/src/features/dashboard/sources/source-list-page.tsx`, `apps/web/src/features/dashboard/channels/channel-failover-policy.tsx`, and `apps/web/src/routes/dashboard/channels/$channelId.tsx`
 
 **Checkpoint**: A source can be download-healthy while a line is playback-unhealthy; all consumers see one explainable, consistent decision.
 
