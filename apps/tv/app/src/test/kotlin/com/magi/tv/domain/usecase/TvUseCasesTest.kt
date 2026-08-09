@@ -55,6 +55,22 @@ class TvUseCasesTest {
         assertEquals(to, repository.requestedGuideTo)
         Unit
     }
+
+    @Test
+    fun `programme guide batch normalizes ids and keeps one explicit window`() = runBlocking {
+        val repository = FakeTvContentRepository(
+            playbackDecision = playableDecision(),
+        )
+        val from = 1_700_000_000_000L
+        val to = from + 4 * 60 * 60 * 1_000L
+
+        GetProgrammeGuideUseCase(repository).batch(listOf("magi:channel-1", "channel-2"), from, to)
+
+        assertEquals(listOf("channel-1", "channel-2"), repository.requestedGuideChannelIds)
+        assertEquals(from, repository.requestedGuideFrom)
+        assertEquals(to, repository.requestedGuideTo)
+        Unit
+    }
 }
 
 private class FakeTvContentRepository(
@@ -62,8 +78,20 @@ private class FakeTvContentRepository(
 ) : TvContentRepository {
     var requestedPlaybackChannelId: String? = null
     var requestedGuideChannelId: String? = null
+    var requestedGuideChannelIds: List<String>? = null
     var requestedGuideFrom: Long? = null
     var requestedGuideTo: Long? = null
+
+    override suspend fun getProgrammeGuideBatch(
+        channelIds: Collection<String>,
+        fromEpochMs: Long,
+        toEpochMs: Long,
+    ): Map<String, List<Programme>> {
+        requestedGuideChannelIds = channelIds.toList()
+        requestedGuideFrom = fromEpochMs
+        requestedGuideTo = toEpochMs
+        return channelIds.associate { it.removePrefix("magi:") to emptyList() }
+    }
 
     override suspend fun getChannelCatalog(group: String?): ChannelCatalog =
         ChannelCatalog(emptyList(), emptyList())

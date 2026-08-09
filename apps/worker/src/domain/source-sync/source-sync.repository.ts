@@ -65,6 +65,32 @@ export interface ReconcileApplyResult {
   readonly streamsRestored: number;
 }
 
+/**
+ * Source deletion impact. Counts are deliberately source-scoped so the
+ * preview never reports global canonical/stream totals as if they belonged to
+ * the selected source.
+ */
+export interface SourceDeleteCounts {
+  readonly rawChannels: number;
+  readonly channels: number;
+  readonly programmes: number;
+  readonly epgMappings: number;
+  readonly canonicalMemberships: number;
+  readonly streams: number;
+  readonly schedules: number;
+}
+
+export interface SourceDeleteImpact {
+  readonly sourceId: string;
+  readonly sourceName: string;
+  readonly sourceType: "m3u" | "xmltv";
+  readonly counts: SourceDeleteCounts;
+}
+
+export interface SourceDeleteResult extends SourceDeleteImpact {
+  readonly deleted: boolean;
+}
+
 export interface ISourceSyncRepository {
   /** Load a source for download. Returns null if missing/disabled. */
   loadSource(sourceId: string): Promise<SourceSnapshotInput | null>;
@@ -154,4 +180,13 @@ export interface ISourceSyncRepository {
     readonly purgedSourceChannels: number;
     readonly purgedStreams: number;
   }>;
+
+  /**
+   * Prepare a source-scoped deletion preview. Disabled sources are valid
+   * deletion targets; only a missing source is rejected.
+   */
+  prepareSourceDelete(sourceId: string): Promise<SourceDeleteImpact>;
+
+  /** Apply the approved source deletion in one database transaction. */
+  applySourceDelete(sourceId: string): Promise<SourceDeleteResult>;
 }

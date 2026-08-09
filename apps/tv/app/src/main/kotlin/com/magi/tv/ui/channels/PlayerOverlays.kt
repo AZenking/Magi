@@ -1,6 +1,7 @@
 package com.magi.tv.ui.channels
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,9 +17,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -44,8 +50,9 @@ internal fun LoadingOverlay(
 ) {
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(MagiTvPalette.Surface.copy(alpha = 0.94f))
+            .border(1.dp, MagiTvPalette.Border, RoundedCornerShape(14.dp))
             .padding(horizontal = 28.dp, vertical = 22.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -75,14 +82,32 @@ internal fun LoadingOverlay(
 @Composable
 internal fun PlayerErrorOverlay(
     message: String,
+    onOpenChannelList: () -> Unit,
+    onActionFocusChanged: (Boolean) -> Unit = {},
+    enabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
+    val actionFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(enabled) {
+        if (!enabled) {
+            onActionFocusChanged(false)
+            return@LaunchedEffect
+        }
+        // Make the recovery action the first remote target. A terminal player
+        // error must never leave the user staring at a non-focusable card.
+        repeat(8) {
+            kotlinx.coroutines.delay(50)
+            if (actionFocusRequester.requestFocus()) return@LaunchedEffect
+        }
+    }
+
     Column(
         modifier = modifier
-            .width(520.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(MagiTvPalette.Surface.copy(alpha = 0.96f))
-            .padding(horizontal = 34.dp, vertical = 30.dp),
+            .width(560.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(MagiTvPalette.Surface.copy(alpha = 0.97f))
+            .border(1.dp, MagiTvPalette.Error.copy(alpha = 0.5f), RoundedCornerShape(18.dp))
+            .padding(horizontal = 38.dp, vertical = 34.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
@@ -108,10 +133,21 @@ internal fun PlayerErrorOverlay(
         )
         Spacer(Modifier.height(18.dp))
         Text(
-            text = "按返回键退出播放",
+            text = "按 ← 打开频道列表并切换线路",
             color = MagiTvPalette.Primary,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.height(14.dp))
+        MagiTvActionButton(
+            label = "打开频道列表",
+            onClick = onOpenChannelList,
+            primary = true,
+            enabled = enabled,
+            compact = true,
+            modifier = Modifier
+                .focusRequester(actionFocusRequester)
+                .onFocusChanged { onActionFocusChanged(it.isFocused) },
         )
     }
 }
@@ -119,18 +155,19 @@ internal fun PlayerErrorOverlay(
 @Composable
 internal fun PlayerInfoOverlay(
     state: PlayerUiState,
+    onActionFocusChanged: (Boolean) -> Unit = {},
     onOpenDiagnostics: () -> Unit = {},
 ) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(230.dp)
+            .height(196.dp)
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
                         Color.Transparent,
-                        Color.Black.copy(alpha = 0.28f),
-                        Color.Black.copy(alpha = 0.94f),
+                        Color.Black.copy(alpha = 0.18f),
+                        Color.Black.copy(alpha = 0.92f),
                     ),
                 ),
             ),
@@ -139,7 +176,7 @@ internal fun PlayerInfoOverlay(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(horizontal = 44.dp, vertical = 30.dp),
+                .padding(horizontal = 48.dp, vertical = 24.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             MagiTvChannelMark(
@@ -165,7 +202,7 @@ internal fun PlayerInfoOverlay(
                 Text(
                     text = state.channelName,
                     color = MagiTvPalette.Text,
-                    fontSize = 28.sp,
+                    fontSize = 30.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -180,7 +217,7 @@ internal fun PlayerInfoOverlay(
                 )
                 Spacer(Modifier.height(7.dp))
                 Text(
-                    text = "按 OK 显示或隐藏信息",
+                    text = "OK 显示或隐藏信息",
                     color = MagiTvPalette.Muted,
                     fontSize = 14.sp,
                 )
@@ -189,6 +226,7 @@ internal fun PlayerInfoOverlay(
                     label = "诊断",
                     onClick = onOpenDiagnostics,
                     compact = true,
+                    modifier = Modifier.onFocusChanged { onActionFocusChanged(it.isFocused) },
                 )
             }
         }

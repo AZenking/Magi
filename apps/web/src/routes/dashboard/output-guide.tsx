@@ -150,7 +150,7 @@ function OutputGuidePage() {
   return (
     <PageStack>
       <PageHeader
-        title="输出节目单"
+        title="节目单预览"
         description="只读展示规范频道、来源限定 EPG 绑定与源节目数据的最终投影"
       />
 

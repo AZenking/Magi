@@ -242,8 +242,8 @@ function ChannelsPage() {
   return (
     <PageStack>
       <PageHeader
-        title="频道管理"
-        description="维护输出频道、EPG 关联与播放源可用性"
+        title="频道编排"
+        description="维护 Canonical 频道、来源成员、EPG 关联、主备线路与人工覆盖"
       />
 
       <Tabs

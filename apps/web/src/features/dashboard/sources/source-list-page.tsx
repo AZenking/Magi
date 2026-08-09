@@ -12,6 +12,7 @@ import { SourceFormDialog } from "@/features/dashboard/epg/source-form-dialog";
 import { PageHeader, PageStack } from "@/components/page-layout";
 import { OperationPreview } from "@/features/dashboard/operations/operation-preview";
 import { usePreparePreview } from "@/features/dashboard/operations/operation-queries";
+import { M3uControlPlaneNav } from "@/features/dashboard/sources/m3u-control-plane-nav";
 
 const { Text } = Typography;
 
@@ -305,6 +306,7 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
   return (
     <PageStack>
       <PageHeader title={title} />
+      {type === "m3u" && <M3uControlPlaneNav active="sources" />}
 
       <ProTableWrapper
         columns={columns}
@@ -391,9 +393,9 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
                   stops sync/output participation; recoverable at any time. */}
               <Button
                 onClick={() => void handleDisableAlternative(deleteTarget)}
-                disabled={!deleteChangeSetId}
+                disabled={!deleteChangeSetId || !deleteTarget.enabled}
               >
-                改为停用
+                {deleteTarget.enabled ? "改为停用" : "已停用"}
               </Button>
             </>
           }

@@ -16,6 +16,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,9 +32,13 @@ fun ClientAuthorizationScreen(
     onAuthorized: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val retryFocusRequester = androidx.compose.runtime.remember { FocusRequester() }
     LaunchedEffect(Unit) { viewModel.start() }
     LaunchedEffect(state.phase) {
         if (state.phase == ClientAuthorizationPhase.Authorized) onAuthorized()
+        if (state.phase == ClientAuthorizationPhase.Failed) {
+            runCatching { retryFocusRequester.requestFocus() }
+        }
     }
     // Registration is intentionally a modal app state. Back does not expose
     // playback before a device credential exists.
@@ -87,7 +93,12 @@ fun ClientAuthorizationScreen(
         Spacer(Modifier.weight(1f))
         Row(horizontalArrangement = Arrangement.Center) {
             if (state.phase == ClientAuthorizationPhase.Failed) {
-                MagiTvActionButton(label = "重试登记", onClick = viewModel::retry, primary = true)
+                MagiTvActionButton(
+                    label = "重试登记",
+                    onClick = viewModel::retry,
+                    modifier = Modifier.focusRequester(retryFocusRequester),
+                    primary = true,
+                )
                 Spacer(Modifier.width(16.dp))
             }
             Text(

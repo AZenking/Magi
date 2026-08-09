@@ -58,49 +58,37 @@ const NAV_SECTIONS: NavSection[] = [
   },
   {
     id: "sources",
-    label: "数据源",
+    label: "M3U 源",
     icon: <FolderOpenOutlined />,
     rootPath: "/dashboard/sources/m3u",
-    prefixes: ["/dashboard/sources"],
+    prefixes: ["/dashboard/sources/m3u", "/dashboard/sources/channels"],
     children: [
       {
         key: "/dashboard/sources/m3u",
-        label: "M3U 来源",
+        label: "M3U 源",
         icon: <GlobalOutlined />,
-      },
-      {
-        key: "/dashboard/sources/xmltv",
-        label: "XMLTV 来源",
-        icon: <ScheduleOutlined />,
       },
       {
         key: "/dashboard/sources/channels",
         label: "源频道",
         icon: <DesktopOutlined />,
       },
-      {
-        key: "/dashboard/sources/programmes",
-        label: "源节目数据",
-        icon: <VideoCameraOutlined />,
-      },
     ],
   },
   {
-    id: "output",
-    label: "输出管理",
-    icon: <ShareAltOutlined />,
+    id: "composition",
+    label: "频道编排",
+    icon: <MergeCellsOutlined />,
     rootPath: "/dashboard/channels",
     prefixes: [
       "/dashboard/channels",
       "/dashboard/epg-matching",
-      "/dashboard/output-guide",
-      "/dashboard/output-addresses",
       "/dashboard/merge-candidates",
     ],
     children: [
       {
         key: "/dashboard/channels",
-        label: "输出频道",
+        label: "频道列表",
         icon: <DesktopOutlined />,
       },
       {
@@ -113,15 +101,43 @@ const NAV_SECTIONS: NavSection[] = [
         label: "EPG 匹配",
         icon: <LinkOutlined />,
       },
+    ],
+  },
+  {
+    id: "output",
+    label: "输出",
+    icon: <ShareAltOutlined />,
+    rootPath: "/dashboard/output-addresses",
+    prefixes: ["/dashboard/output-guide", "/dashboard/output-addresses"],
+    children: [
+      {
+        key: "/dashboard/output-addresses",
+        label: "输出地址与授权",
+        icon: <GlobalOutlined />,
+      },
       {
         key: "/dashboard/output-guide",
-        label: "输出节目单",
+        label: "节目单预览",
+        icon: <ScheduleOutlined />,
+      },
+    ],
+  },
+  {
+    id: "epg",
+    label: "EPG / 节目",
+    icon: <ScheduleOutlined />,
+    rootPath: "/dashboard/sources/xmltv",
+    prefixes: ["/dashboard/sources/xmltv", "/dashboard/sources/programmes"],
+    children: [
+      {
+        key: "/dashboard/sources/xmltv",
+        label: "XMLTV 来源",
         icon: <ScheduleOutlined />,
       },
       {
-        key: "/dashboard/output-addresses",
-        label: "输出地址",
-        icon: <GlobalOutlined />,
+        key: "/dashboard/sources/programmes",
+        label: "源节目数据",
+        icon: <VideoCameraOutlined />,
       },
     ],
   },

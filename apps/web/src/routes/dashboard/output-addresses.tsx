@@ -47,8 +47,8 @@ function OutputAddressesPage() {
   return (
     <PageStack>
       <PageHeader
-        title="输出地址"
-        description="Legacy 继续兼容现有客户端;每播放器/设备签发独立可撤销的 M3U 输出资格"
+        title="输出"
+        description="管理 M3U/XMLTV 输出地址、播放器授权与最近一次发布状态"
       />
       <Alert
         type="info"
@@ -59,7 +59,7 @@ function OutputAddressesPage() {
       {/* 009-m3u-control-plane T052/T056: grant + publication management */}
       <OutputGrantManagement />
       <Flex vertical gap={16}>
-        <Typography.Title level={5}>服务端固定端点(管理员预览)</Typography.Title>
+        <Typography.Title level={5}>服务端固定端点（管理员预览）</Typography.Title>
         {endpoints.map((endpoint) => {
           const url = new URL(endpoint.path, API_BASE).toString();
           return (

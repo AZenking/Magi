@@ -241,10 +241,11 @@ export class ApplyOperationUseCase {
     };
   }
 
-  private taskTypeFor(kind: string): "m3u-sync" | "epg-match" {
+  private taskTypeFor(kind: string): "m3u-sync" | "epg-match" | "source-check" {
     switch (kind) {
       case "m3u_sync": return "m3u-sync";
       case "epg_match": return "epg-match";
+      case "source_delete": return "source-check";
       default: return "m3u-sync";
     }
   }

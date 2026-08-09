@@ -71,7 +71,7 @@ export class PrepareOperationPreviewUseCase {
     // scheduled triggers dedup at the lease layer (FR-004). Other operation
     // kinds don't have a natural sourceId and skip this.
     const leaseScope =
-      input.kind === "m3u_sync" && input.sourceId
+      (input.kind === "m3u_sync" || input.kind === "source_delete") && input.sourceId
         ? leaseScopeFor(input.sourceId)
         : undefined;
     const enqueued = await this.queue.enqueue(

@@ -14,20 +14,23 @@ import androidx.compose.ui.unit.sp
 
 /** Shared palette for every MAGI TV surface. */
 object MagiTvPalette {
-    val Background = Color(0xFF0A111A)
-    val Surface = Color(0xFF111923)
-    val SurfaceElevated = Color(0xFF18212D)
-    val SurfaceFocused = Color(0xFF1B2B42)
-    val Border = Color(0xFF2A3442)
-    val Primary = Color(0xFF1677FF)
-    val PrimarySoft = Color(0xFF123768)
-    val Text = Color(0xFFF5F7FA)
-    val Muted = Color(0xFF9AA7B6)
-    val Subtle = Color(0xFF667487)
-    val Live = Color(0xFFE63746)
-    val Success = Color(0xFF32C48D)
-    val Warning = Color(0xFFFFB020)
-    val Error = Color(0xFFFF5A65)
+    // "Midnight cinema": low-glare surfaces for a dark living room, with a
+    // cool focus ring that remains unmistakable from a sofa distance.
+    val Background = Color(0xFF070B11)
+    val Surface = Color(0xFF0F1620)
+    val SurfaceElevated = Color(0xFF151F2C)
+    val SurfaceFocused = Color(0xFF1B3045)
+    val Border = Color(0xFF263547)
+    val Focus = Color(0xFF72C5FF)
+    val Primary = Color(0xFF5AA8FF)
+    val PrimarySoft = Color(0xFF173B61)
+    val Text = Color(0xFFF4F7FB)
+    val Muted = Color(0xFFA5B2C2)
+    val Subtle = Color(0xFF6F7E91)
+    val Live = Color(0xFFFF5C70)
+    val Success = Color(0xFF55D6A7)
+    val Warning = Color(0xFFF6C56A)
+    val Error = Color(0xFFFF7180)
 }
 
 private val MagiColorScheme = darkColorScheme(

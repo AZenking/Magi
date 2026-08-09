@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.util.UnstableApi
+import com.magi.tv.data.repository.ChannelPreferencesStore
 import com.magi.tv.data.repository.LastChannelStore
 import com.magi.tv.domain.model.Channel
 import com.magi.tv.domain.model.ChannelGroup
@@ -42,13 +43,13 @@ data class LivePlaybackUiState(
     val allChannels: List<Channel> = emptyList(),
     val groups: List<ChannelGroup> = emptyList(),
     val currentIndex: Int = 0,
-    val selectedGroup: String? = null,
+    val selectedChannelFilter: ChannelDirectoryFilter = ChannelDirectoryFilter.All,
+    val favoriteChannelIds: Set<String> = emptySet(),
+    val recentChannelIds: List<String> = emptyList(),
     val loading: Boolean = true,
     val catalogError: TvError? = null,
-    val guide: List<Programme> = emptyList(),
-    val guideLoading: Boolean = false,
-    val guideError: TvError? = null,
-    val guideStale: Boolean = false,
+    val guidesByChannel: Map<String, EpgChannelGuideState> = emptyMap(),
+    val guideWindow: EpgTimeWindow = EpgTimeWindow.aroundNow(System.currentTimeMillis()),
     val selectedDate: LocalDate = LocalDate.now(),
     val focusedChannelId: String? = null,
     /** Channel id awaiting first frame before the sheet closes; null = no pending tune.
@@ -62,8 +63,22 @@ data class LivePlaybackUiState(
     val tuneError: String? = null,
 )
 
-/** A cache entry for EPG: programmes + expiry timestamp. */
-private data class EpgCacheEntry(val programmes: List<Programme>, val expiresAt: Long)
+/** Independent loading/error state for one channel row in the EPG grid. */
+data class EpgChannelGuideState(
+    val windowKey: String? = null,
+    val programmes: List<Programme> = emptyList(),
+    val loading: Boolean = false,
+    val error: TvError? = null,
+    val stale: Boolean = false,
+)
+
+/** The directory shortcuts available from the TV channel sheet. */
+sealed interface ChannelDirectoryFilter {
+    data object All : ChannelDirectoryFilter
+    data object Favorites : ChannelDirectoryFilter
+    data object Recent : ChannelDirectoryFilter
+    data class Group(val name: String?) : ChannelDirectoryFilter
+}
 
 /**
  * Owns the persistent live player: the complete channel directory, the current
@@ -71,8 +86,8 @@ private data class EpgCacheEntry(val programmes: List<Programme>, val expiresAt:
  * last-watched-channel persistence.
  *
  * `allChannels` is the single source of truth for channel-surfing + resume.
- * `displayedChannels` is derived locally (no re-fetch) from the selected group
- * — group filtering never changes the surf order.
+ * `displayedChannels` is derived locally (no re-fetch) from the selected
+ * directory shortcut — filtering never changes the surf order.
  */
 @UnstableApi
 class LivePlaybackViewModel(
@@ -81,6 +96,7 @@ class LivePlaybackViewModel(
     private val resolvePlayback: ResolvePlaybackUseCase,
     private val getProgrammeGuide: GetProgrammeGuideUseCase,
     private val lastChannelStore: LastChannelStore,
+    private val channelPreferencesStore: ChannelPreferencesStore,
     diagnosticsRepository: DiagnosticsRepository,
     private val contentSyncRepository: ContentSyncRepository? = null,
     private val clientSessionRepository: com.magi.tv.domain.repository.ClientSessionRepository? = null,
@@ -113,27 +129,44 @@ class LivePlaybackViewModel(
     private val mutableUiState = MutableStateFlow(LivePlaybackUiState())
     val uiState = mutableUiState.asStateFlow()
 
-    /** Channels currently shown in the side sheet (group-filtered view of allChannels). */
+    /** Channels currently shown in the side sheet (a filtered view of allChannels). */
     val displayedChannels: List<Channel>
         get() {
             val state = mutableUiState.value
-            val group = state.selectedGroup
-            return if (group == null) state.allChannels
-            else state.allChannels.filter { it.group == group }
+            return when (val filter = state.selectedChannelFilter) {
+                ChannelDirectoryFilter.All -> state.allChannels
+                ChannelDirectoryFilter.Favorites -> state.allChannels.filter {
+                    it.id in state.favoriteChannelIds
+                }
+                ChannelDirectoryFilter.Recent -> {
+                    val byId = state.allChannels.associateBy { it.id }
+                    state.recentChannelIds.mapNotNull(byId::get)
+                }
+                is ChannelDirectoryFilter.Group -> state.allChannels.filter {
+                    it.group == filter.name
+                }
+            }
         }
 
     private var firstPlayDone = false
     private var switchJob: Job? = null
     private var guideJob: Job? = null
-    private val epgCache = mutableMapOf<String, EpgCacheEntry>()
+    private var visibleGuideChannelIds: List<String> = emptyList()
+    private var currentGuideRequestKey: String? = null
+    private var contentChangeJob: Job? = null
+    private var playbackStateJob: Job? = null
+    private var decisionRefreshJob: Job? = null
+    private var favoritePreferencesJob: Job? = null
+    private var recentPreferencesJob: Job? = null
 
     init {
+        observeChannelPreferences()
         loadCatalogAndResume()
-        contentSyncRepository?.let { contentSync ->
+        contentChangeJob = contentSyncRepository?.let { contentSync ->
             viewModelScope.launch {
                 contentSync.changes.collect { change ->
                     if (change.catalogChanged) reloadCatalogPreservingCurrent()
-                    if (change.epgChanged) refreshFocusedGuide()
+                    if (change.epgChanged) refreshVisibleGuides()
                 }
             }
         }
@@ -141,7 +174,7 @@ class LivePlaybackViewModel(
         // When the player reports a terminalError while a tune from the side
         // sheet is pending, clear the pending id and surface the error so the
         // sheet doesn't hang silently.
-        viewModelScope.launch {
+        playbackStateJob = viewModelScope.launch {
             session.state.collect { playerState ->
                 val pending = mutableUiState.value.pendingTuneChannelId
                 if (pending != null &&
@@ -157,7 +190,7 @@ class LivePlaybackViewModel(
         }
         // Fix 5: Periodically refresh the current channel's playback decision
         // so signed URLs don't go stale during long viewing sessions.
-        viewModelScope.launch {
+        decisionRefreshJob = viewModelScope.launch {
             while (true) {
                 kotlinx.coroutines.delay(60_000L)
                 val currentChannelId = session.state.value.channelId
@@ -168,14 +201,30 @@ class LivePlaybackViewModel(
         }
     }
 
-    /** Derived channel list for the side sheet (group-filtered). */
+    /** Derived channel list for the side sheet (directory-filtered). */
     fun displayedChannelList(): List<Channel> = displayedChannels
 
-    private fun loadCatalogAndResume(group: String? = null) {
+    private fun observeChannelPreferences() {
+        favoritePreferencesJob = viewModelScope.launch {
+            channelPreferencesStore.favoriteChannelIds.collect { favoriteIds ->
+                mutableUiState.value = mutableUiState.value.copy(
+                    favoriteChannelIds = favoriteIds,
+                )
+            }
+        }
+        recentPreferencesJob = viewModelScope.launch {
+            channelPreferencesStore.recentChannelIds.collect { recentIds ->
+                mutableUiState.value = mutableUiState.value.copy(
+                    recentChannelIds = recentIds,
+                )
+            }
+        }
+    }
+
+    private fun loadCatalogAndResume() {
         mutableUiState.value = mutableUiState.value.copy(
             loading = true,
             catalogError = null,
-            selectedGroup = group,
         )
         viewModelScope.launch {
             val catalog = try {
@@ -244,23 +293,32 @@ class LivePlaybackViewModel(
             groups = catalog.groups,
             currentIndex = nextIndex,
             focusedChannelId = nextFocusedId,
+            guidesByChannel = emptyMap(),
             loading = false,
             catalogError = null,
         )
+        invalidateGuideRequest()
+        visibleGuideChannelIds = emptyList()
         if (previousChannelId != nextChannelId) playCurrent(initialPlay = false)
     }
 
-    private fun refreshFocusedGuide() {
-        val focusedId = mutableUiState.value.focusedChannelId ?: return
-        guideJob?.cancel()
-        guideJob = viewModelScope.launch {
-            loadGuideNow(focusedId, mutableUiState.value.selectedDate)
-        }
+    /** Select a directory shortcut without re-fetching or changing surf order. */
+    fun selectChannelFilter(filter: ChannelDirectoryFilter) {
+        invalidateGuideRequest()
+        mutableUiState.value = mutableUiState.value.copy(
+            selectedChannelFilter = filter,
+            guidesByChannel = emptyMap(),
+        )
+        visibleGuideChannelIds = emptyList()
     }
 
-    /** Select a group for the side sheet display (does NOT re-fetch or change surf order). */
-    fun selectGroup(group: String?) {
-        mutableUiState.value = mutableUiState.value.copy(selectedGroup = group)
+    /** Favourites are explicitly viewer-owned and persist only on this TV. */
+    fun toggleFavoriteCurrentChannel() {
+        val channelId = mutableUiState.value.allChannels
+            .getOrNull(mutableUiState.value.currentIndex)
+            ?.id
+            ?: return
+        viewModelScope.launch { channelPreferencesStore.toggleFavorite(channelId) }
     }
 
     /** Switch to the prev/next channel by [delta] in allChannels. */
@@ -325,7 +383,22 @@ class LivePlaybackViewModel(
 
     /** Called by the screen when a tune fails (no line / network / decode). */
     fun onTuneFailed(error: TvError) {
-        mutableUiState.value = mutableUiState.value.copy(pendingTuneChannelId = null)
+        mutableUiState.value = mutableUiState.value.copy(
+            pendingTuneChannelId = null,
+            tuneError = error.message,
+        )
+    }
+
+    /** Stop background work and playback before returning to device registration. */
+    fun stopForReconfigure() {
+        switchJob?.cancel()
+        invalidateGuideRequest()
+        contentChangeJob?.cancel()
+        playbackStateJob?.cancel()
+        decisionRefreshJob?.cancel()
+        favoritePreferencesJob?.cancel()
+        recentPreferencesJob?.cancel()
+        session.release()
     }
 
     private fun playCurrent(initialPlay: Boolean) {
@@ -346,6 +419,7 @@ class LivePlaybackViewModel(
                         )
                         firstPlayDone = true
                         lastChannelStore.save(channel.id)
+                        channelPreferencesStore.recordViewed(channel.id)
                     }
                     is PlaybackResolution.Unavailable -> {
                         session.switchChannel(
@@ -377,124 +451,153 @@ class LivePlaybackViewModel(
         }
     }
 
-    /** Focus moved to a channel in the sheet — debounce then load its EPG. */
+    /** Focus moved to a channel in the grid; visible-row loading is batched separately. */
     fun onChannelFocused(channelId: String) {
         mutableUiState.value = mutableUiState.value.copy(focusedChannelId = channelId)
-        loadGuideDebounced(channelId)
     }
 
     fun selectDate(date: LocalDate) {
-        mutableUiState.value = mutableUiState.value.copy(selectedDate = date)
-        val focused = mutableUiState.value.focusedChannelId
-        if (focused != null) loadGuideDebounced(focused)
+        val current = mutableUiState.value
+        val nextWindow = current.guideWindow.forDate(date, ZoneId.systemDefault())
+        invalidateGuideRequest()
+        mutableUiState.value = current.copy(
+            selectedDate = date,
+            guideWindow = nextWindow,
+            guidesByChannel = emptyMap(),
+        )
+        loadVisibleGuides()
     }
 
-    private fun loadGuideDebounced(channelId: String) {
-        val date = mutableUiState.value.selectedDate
-        val cacheKey = guideCacheKey(channelId, date)
-        // Cache hit?
-        epgCache[cacheKey]?.let { entry ->
-            if (entry.expiresAt > System.currentTimeMillis()) {
-                mutableUiState.value = mutableUiState.value.copy(
-                    guide = entry.programmes,
-                    guideLoading = false,
-                    guideError = null,
-                    guideStale = false,
-                )
-                prefetchAdjacent(channelId)
-                return
-            }
-        }
-        guideJob?.cancel()
-        guideJob = viewModelScope.launch {
-            delay(250) // debounce: only load after focus is stable
-            loadGuideNow(channelId, date)
-        }
+    /** Shift the visible time lane by one or more 30-minute ticks. */
+    fun shiftGuideWindow(steps: Int) {
+        if (steps == 0) return
+        invalidateGuideRequest()
+        mutableUiState.value = mutableUiState.value.copy(
+            guideWindow = mutableUiState.value.guideWindow.shift(steps),
+            guidesByChannel = emptyMap(),
+        )
+        loadVisibleGuides()
     }
 
-    /** The latest guide request key — stale responses are rejected. */
-    private var currentGuideRequestKey: String? = null
-    private var prefetchJob: Job? = null
+    /** Called by the grid as its lazy rows enter/leave the viewport. */
+    fun onVisibleGuideChannelsChanged(channelIds: List<String>) {
+        val normalized = channelIds.distinct().filter { it.isNotBlank() }
+        if (normalized == visibleGuideChannelIds) return
+        visibleGuideChannelIds = normalized
+        loadVisibleGuides()
+    }
 
-    private suspend fun loadGuideNow(channelId: String, date: LocalDate) {
-        val requestKey = "$channelId-$date"
+    private fun loadVisibleGuides() {
+        val visible = visibleGuideChannelIds
+        if (visible.isEmpty()) return
+        loadGuidesForChannels(expandGuideChannelIds(visible))
+    }
+
+    private fun expandGuideChannelIds(channelIds: List<String>): List<String> {
+        val displayed = displayedChannels
+        if (displayed.isEmpty()) return channelIds.distinct()
+        val indices = channelIds.mapNotNull { id ->
+            displayed.indexOfFirst { it.id == id }.takeIf { it >= 0 }
+        }
+        if (indices.isEmpty()) return channelIds.distinct()
+        val start = (indices.minOrNull() ?: 0) - 1
+        val end = (indices.maxOrNull() ?: 0) + 1
+        return displayed.subList(start.coerceAtLeast(0), (end + 1).coerceAtMost(displayed.size))
+            .map { it.id }
+            .distinct()
+    }
+
+    private fun loadGuidesForChannels(channelIds: List<String>) {
+        val state = mutableUiState.value
+        val window = state.guideWindow
+        val ids = channelIds.distinct()
+        if (ids.isEmpty()) return
+        val windowKey = guideRequestKey(window)
+        val requestKey = "$windowKey|${ids.sorted().joinToString(",")}"
+
+        val toLoad = ids.filter { id ->
+            val existing = state.guidesByChannel[id]
+            existing?.windowKey != windowKey && existing?.loading != true
+        }
+        if (toLoad.isEmpty()) return
+
+        invalidateGuideRequest()
         currentGuideRequestKey = requestKey
-        mutableUiState.value = mutableUiState.value.copy(guideLoading = true, guideError = null)
-        val zone = ZoneId.systemDefault()
-        val fromEpoch = date.atStartOfDay(zone).toInstant().toEpochMilli()
-        val toEpoch = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-        try {
-            val ids = adjacentChannelIds(channelId)
-            val programmesByChannel = getProgrammeGuide.batch(ids, fromEpoch, toEpoch)
-            val programmes = programmesByChannel[channelId.removePrefix("magi:")].orEmpty()
-            // Reject stale response: if the user moved focus since this request,
-            // don't overwrite the current guide state.
-            if (currentGuideRequestKey != requestKey) return
-            val ttl = if (date == LocalDate.now()) 5 * 60 * 1000L else 30 * 60 * 1000L
-            val expiresAt = System.currentTimeMillis() + ttl
-            programmesByChannel.forEach { (id, guide) ->
-                epgCache[guideCacheKey(id, date)] = EpgCacheEntry(guide, expiresAt)
-            }
-            val stale = getProgrammeGuide.isStale(channelId, fromEpoch, toEpoch)
-            mutableUiState.value = mutableUiState.value.copy(
-                guide = programmes,
-                guideLoading = false,
-                guideError = null,
-                guideStale = stale,
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // If cache exists, keep showing it but mark stale.
-            val cacheKey = guideCacheKey(channelId, date)
-            val cached = epgCache[cacheKey]?.programmes ?: emptyList()
-            mutableUiState.value = mutableUiState.value.copy(
-                guide = cached,
-                guideLoading = false,
-                guideError = if (cached.isEmpty()) classifyError(e) else null,
-                guideStale = cached.isNotEmpty(),
-            )
-        }
-        prefetchAdjacent(channelId)
-    }
-
-    /** Prefetch EPG for neighbors of [channelId] in the displayed list. */
-    private fun prefetchAdjacent(channelId: String) {
-        val list = mutableUiState.value.allChannels
-        val idx = list.indexOfFirst { it.id == channelId }
-        if (idx < 0) return
-        val date = mutableUiState.value.selectedDate
-        val neighbors = listOfNotNull(list.getOrNull(idx - 1), list.getOrNull(idx + 1))
-            .filter { guideCacheKey(it.id, date) !in epgCache }
-        if (neighbors.isEmpty()) return
-        prefetchJob?.cancel()
-        prefetchJob = viewModelScope.launch {
-            runCatching {
-                val zone = ZoneId.systemDefault()
-                val from = date.atStartOfDay(zone).toInstant().toEpochMilli()
-                val to = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-                val guides = getProgrammeGuide.batch(neighbors.map { it.id }, from, to)
-                val ttl = if (date == LocalDate.now()) 5 * 60 * 1000L else 30 * 60 * 1000L
-                val expiresAt = System.currentTimeMillis() + ttl
-                guides.forEach { (id, guide) ->
-                    epgCache[guideCacheKey(id, date)] = EpgCacheEntry(guide, expiresAt)
+        mutableUiState.value = state.copy(
+            guidesByChannel = state.guidesByChannel.toMutableMap().apply {
+                toLoad.forEach { id ->
+                    val previous = get(id)
+                    set(
+                        id,
+                        EpgChannelGuideState(
+                            windowKey = previous?.windowKey,
+                            programmes = previous?.programmes.orEmpty(),
+                            loading = true,
+                            error = null,
+                            stale = previous?.programmes?.isNotEmpty() == true,
+                        ),
+                    )
                 }
+            },
+        )
+        guideJob = viewModelScope.launch {
+            delay(120)
+            try {
+                val guides = getProgrammeGuide.batch(ids, window.startAt, window.endAt)
+                val staleByChannel = ids.associateWith { id ->
+                    runCatching {
+                        getProgrammeGuide.isStale(id, window.startAt, window.endAt)
+                    }.getOrDefault(false)
+                }
+                if (currentGuideRequestKey != requestKey) return@launch
+                val next = mutableUiState.value.guidesByChannel.toMutableMap()
+                ids.forEach { id ->
+                    next[id] = EpgChannelGuideState(
+                        windowKey = windowKey,
+                        programmes = guides[id.removePrefix("magi:")].orEmpty(),
+                        loading = false,
+                        error = null,
+                        stale = staleByChannel[id] == true,
+                    )
+                }
+                mutableUiState.value = mutableUiState.value.copy(guidesByChannel = next)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (currentGuideRequestKey != requestKey) return@launch
+                val error = classifyError(e)
+                val next = mutableUiState.value.guidesByChannel.toMutableMap()
+                ids.forEach { id ->
+                    val previous = next[id]
+                    next[id] = EpgChannelGuideState(
+                        windowKey = previous?.windowKey,
+                        programmes = previous?.programmes.orEmpty(),
+                        loading = false,
+                        error = error,
+                        stale = previous?.programmes?.isNotEmpty() == true,
+                    )
+                }
+                mutableUiState.value = mutableUiState.value.copy(guidesByChannel = next)
             }
         }
     }
 
-    private fun adjacentChannelIds(channelId: String): List<String> {
-        val list = mutableUiState.value.allChannels
-        val idx = list.indexOfFirst { it.id == channelId }
-        return listOfNotNull(
-            list.getOrNull(idx),
-            list.getOrNull(idx - 1),
-            list.getOrNull(idx + 1),
-        ).map { it.id.removePrefix("magi:") }.distinct()
+    private fun guideRequestKey(window: EpgTimeWindow): String =
+        "${window.startAt}:${window.endAt}"
+
+    private fun invalidateGuideRequest() {
+        guideJob?.cancel()
+        guideJob = null
+        currentGuideRequestKey = null
     }
 
-    private fun guideCacheKey(channelId: String, date: LocalDate): String =
-        "${channelId.removePrefix("magi:")}-$date"
+    /** Refresh visible rows after a server EPG revision changes. */
+    private fun refreshVisibleGuides() {
+        val current = mutableUiState.value
+        invalidateGuideRequest()
+        mutableUiState.value = current.copy(guidesByChannel = emptyMap())
+        loadVisibleGuides()
+    }
 
     private fun classifyError(e: Exception): TvError {
         // TokenException carries the exact reason (client disabled/revoked/invalid).
@@ -527,6 +630,7 @@ class LivePlaybackViewModel(
             resolvePlayback: ResolvePlaybackUseCase,
             getProgrammeGuide: GetProgrammeGuideUseCase,
             lastChannelStore: LastChannelStore,
+            channelPreferencesStore: ChannelPreferencesStore,
             diagnosticsRepository: DiagnosticsRepository,
             contentSyncRepository: ContentSyncRepository? = null,
             clientSessionRepository: com.magi.tv.domain.repository.ClientSessionRepository? = null,
@@ -538,6 +642,7 @@ class LivePlaybackViewModel(
                 resolvePlayback = resolvePlayback,
                 getProgrammeGuide = getProgrammeGuide,
                 lastChannelStore = lastChannelStore,
+                channelPreferencesStore = channelPreferencesStore,
                 diagnosticsRepository = diagnosticsRepository,
                 contentSyncRepository = contentSyncRepository,
                 clientSessionRepository = clientSessionRepository,

@@ -3,13 +3,13 @@ import { Link, useLocation } from "@tanstack/react-router";
 
 const LABELS: Record<string, string> = {
   dashboard: "仪表盘",
-  sources: "数据源",
-  m3u: "M3U 来源",
+  sources: "来源",
+  m3u: "M3U 源",
   xmltv: "XMLTV 来源",
   channels: "频道",
   programmes: "源节目数据",
   "epg-matching": "EPG 匹配",
-  "output-guide": "输出节目单",
+  "output-guide": "节目单预览",
   "output-addresses": "输出地址",
   tasks: "任务",
   backups: "备份",
@@ -17,6 +17,11 @@ const LABELS: Record<string, string> = {
   account: "账户",
   clients: "客户端管理",
   authorize: "客户端管理",
+};
+
+const ROUTE_LABELS: Record<string, string> = {
+  "/dashboard/channels": "频道编排",
+  "/dashboard/sources/channels": "源频道",
 };
 
 type AppBreadcrumbProps = {
@@ -34,7 +39,9 @@ export function AppBreadcrumb({ lastLabel }: AppBreadcrumbProps) {
     const isLast = idx === segments.length - 1;
     const path = "/" + segments.slice(0, idx + 1).join("/");
     const resolvedLabel =
-      LABELS[seg] ?? (isLast && lastLabel ? lastLabel : seg);
+      ROUTE_LABELS[path] ??
+      LABELS[seg] ??
+      (isLast && lastLabel ? lastLabel : seg);
 
     if (isLast) {
       return { title: resolvedLabel };

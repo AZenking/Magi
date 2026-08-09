@@ -8,6 +8,7 @@ import com.magi.tv.data.remote.MagiClient
 import com.magi.tv.data.remote.MagiRemoteDataSource
 import com.magi.tv.data.repository.DefaultClientSessionRepository
 import com.magi.tv.data.repository.CachedTvContentRepository
+import com.magi.tv.data.repository.ChannelPreferencesStore
 import com.magi.tv.data.repository.InMemoryDiagnosticsRepository
 import com.magi.tv.data.repository.LastChannelStore
 import com.magi.tv.domain.repository.ClientCredentialStore
@@ -35,6 +36,9 @@ class AppContainer(context: Context) {
 
     val lastChannelStore: LastChannelStore =
         LastChannelStore(context.applicationContext)
+
+    val channelPreferencesStore: ChannelPreferencesStore =
+        ChannelPreferencesStore(context.applicationContext)
 
     val credentialStore: ClientCredentialStore =
         KeystoreClientCredentialStore(appContext)

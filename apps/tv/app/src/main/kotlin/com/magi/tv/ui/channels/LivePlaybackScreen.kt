@@ -1,11 +1,9 @@
 package com.magi.tv.ui.channels
 
-import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,15 +49,13 @@ fun LivePlaybackScreen(
 ) {
     val playerState by viewModel.session.state.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val stats by viewModel.session.stats.collectAsStateWithLifecycle()
 
     var showInfo by remember { mutableStateOf(false) }
     var showSideSheet by remember { mutableStateOf(false) }
+    var infoActionFocused by remember { mutableStateOf(false) }
+    var errorActionFocused by remember { mutableStateOf(false) }
     val playerFocus = remember { FocusRequester() }
     val context = LocalContext.current
-
-    // Grab focus so D-pad lands here first.
-    LaunchedEffect(Unit) { playerFocus.requestFocus() }
 
     // Auto-show info briefly when a channel becomes ready.
     LaunchedEffect(playerState.channelId, playerState.firstFrameMs) {
@@ -70,12 +66,28 @@ fun LivePlaybackScreen(
         }
     }
 
-    // When the side sheet opens, load the current channel's guide immediately
-    // (don't wait for a channel item to gain focus — focus may stay on the player).
+    // When the EPG overlay opens, focus is handed to its current row/programme
+    // after the full-screen grid has entered composition.
     LaunchedEffect(showSideSheet) {
         if (showSideSheet && playerState.channelId.isNotBlank()) {
             viewModel.onChannelFocused(playerState.channelId)
+        } else if (!showSideSheet) {
+            // The player root is re-enabled when the drawer closes. Give the
+            // focus system a few frames to attach it before requesting focus;
+            // this also covers a successful tune that closes the drawer.
+            repeat(4) {
+                kotlinx.coroutines.delay(50)
+                if (playerFocus.requestFocus()) return@LaunchedEffect
+            }
         }
+    }
+
+    LaunchedEffect(showInfo) {
+        if (!showInfo) infoActionFocused = false
+    }
+
+    LaunchedEffect(playerState.terminalError, uiState.catalogError) {
+        errorActionFocused = false
     }
 
     // pendingTune: close the side sheet only when the EXACT tuned channel
@@ -93,23 +105,25 @@ fun LivePlaybackScreen(
         }
     }
 
-    // Poll derived stats (buffer health + state) for the always-on HUD.
-    // Event-driven fields arrive via the AnalyticsListener; this only refreshes
-    // the values that must be read live from the player.
+    // Diagnostics remains event-ready even though its technical HUD is no
+    // longer permanently painted over the programme guide.
     LaunchedEffect(Unit) {
         while (true) {
             viewModel.session.refreshDerivedStats()
-            delay(500)
+            delay(1_000)
         }
     }
 
-    // Back key — close sheet → close info → exit. When closing the sheet,
-    // explicitly restore focus to the player (constitution VIII: deterministic focus).
+    val terminalError = playerState.terminalError
+    val catalogError = uiState.catalogError
+    val hasPlaybackError = terminalError != null || catalogError != null
+
+    // Back key — close sheet → close info → exit. The focus request is handled
+    // by the showSideSheet effect above so every close path behaves the same.
     BackHandler(enabled = showSideSheet || showInfo) {
         when {
             showSideSheet -> {
                 showSideSheet = false
-                runCatching { playerFocus.requestFocus() }
             }
             showInfo -> showInfo = false
         }
@@ -141,22 +155,33 @@ fun LivePlaybackScreen(
                             true
                         }
                     }
-                    // OK/Enter: when the side sheet is open, tune to the focused
-                    // channel (the parent onPreviewKeyEvent can't reliably route
-                    // OK to the LazyColumn item inside AnimatedVisibility, so we
-                    // drive it from here using focusedChannelId). When the sheet
-                    // is closed, toggle the info overlay.
+                    // OK/Enter is owned by whichever surface currently has focus:
+                    // drawer rows/chips, the diagnostics action, or the error
+                    // recovery action. Only the player root toggles the info
+                    // overlay here.
                     Key.DirectionCenter, Key.Enter -> {
                         when {
-                            showSideSheet -> { viewModel.tuneFocusedChannel(); true }
-                            showInfo -> false // fall through to overlay buttons
+                            // The drawer owns OK. Its focused row/chip/button
+                            // receives the event and performs its own action.
+                            showSideSheet -> false
+                            showInfo && infoActionFocused -> false
+                            showInfo -> { showInfo = false; true }
+                            hasPlaybackError && errorActionFocused -> false
+                            hasPlaybackError -> {
+                                showSideSheet = true
+                                showInfo = false
+                                true
+                            }
                             else -> { showInfo = true; true }
                         }
                     }
                     else -> false
                 }
             }
-            .focusable(),
+            // While the drawer is open the player must not remain a competing
+            // focus target. This is what previously left the full-screen root
+            // focused after opening the drawer on the TV emulator.
+            .focusable(enabled = !showSideSheet),
     ) {
         // 1. The persistent video surface.
         // CRITICAL: The PlayerView is created ONCE via remember { } and reused
@@ -184,14 +209,25 @@ fun LivePlaybackScreen(
         )
 
         // 2. Loading / error overlays (only when not playing).
-        val terminalErr = playerState.terminalError
         when {
-            terminalErr != null -> PlayerErrorOverlay(
-                message = terminalErr,
+            terminalError != null -> PlayerErrorOverlay(
+                message = terminalError,
+                enabled = !showSideSheet,
+                onOpenChannelList = {
+                    showSideSheet = true
+                    showInfo = false
+                },
+                onActionFocusChanged = { errorActionFocused = it },
                 modifier = Modifier.align(Alignment.Center),
             )
-            uiState.catalogError != null -> PlayerErrorOverlay(
-                message = uiState.catalogError!!.message,
+            catalogError != null -> PlayerErrorOverlay(
+                message = catalogError.message,
+                enabled = !showSideSheet,
+                onOpenChannelList = {
+                    showSideSheet = true
+                    showInfo = false
+                },
+                onActionFocusChanged = { errorActionFocused = it },
                 modifier = Modifier.align(Alignment.Center),
             )
             uiState.loading || playerState.firstFrameMs == null || playerState.switching || playerState.buffering ->
@@ -211,6 +247,7 @@ fun LivePlaybackScreen(
             ) {
                 PlayerInfoOverlay(
                     state = playerState,
+                    onActionFocusChanged = { infoActionFocused = it },
                     onOpenDiagnostics = {
                         showInfo = false
                         onOpenDiagnostics()
@@ -224,30 +261,28 @@ fun LivePlaybackScreen(
             visible = showSideSheet,
             channels = viewModel.displayedChannelList(),
             groups = uiState.groups,
-            selectedGroup = uiState.selectedGroup,
+            selectedFilter = uiState.selectedChannelFilter,
+            favoriteChannelIds = uiState.favoriteChannelIds,
             currentChannelId = playerState.channelId,
             currentChannelName = playerState.channelName,
-            guide = uiState.guide,
-            guideLoading = uiState.guideLoading,
-            guideError = uiState.guideError,
-            guideStale = uiState.guideStale,
+            guidesByChannel = uiState.guidesByChannel,
+            guideWindow = uiState.guideWindow,
             tuneError = uiState.tuneError,
             selectedDate = uiState.selectedDate,
-            onSelectGroup = { viewModel.selectGroup(it) },
+            onSelectFilter = { viewModel.selectChannelFilter(it) },
             onSelectDate = { viewModel.selectDate(it) },
+            onShiftGuideWindow = { viewModel.shiftGuideWindow(it) },
             onSelectChannel = { channel -> viewModel.requestTune(channel) },
             onPlayCurrent = { viewModel.tuneCurrent() },
             onChannelFocused = { channel -> viewModel.onChannelFocused(channel.id) },
+            onVisibleGuideChannelsChanged = { ids -> viewModel.onVisibleGuideChannelsChanged(ids) },
+            onToggleCurrentFavorite = viewModel::toggleFavoriteCurrentChannel,
             onReconfigure = onReconfigure,
+            onClose = {
+                showSideSheet = false
+                showInfo = false
+            },
             modifier = Modifier.fillMaxSize(),
-        )
-
-        // 5. Always-on "Stats for nerds" HUD (top-right, YouTube-style debug).
-        PlaybackStatsHud(
-            stats = stats,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(16.dp),
         )
     }
 }

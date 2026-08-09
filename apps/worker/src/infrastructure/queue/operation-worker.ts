@@ -20,6 +20,10 @@ import { DrizzleRestoreRepository } from "../database/restore.repository";
 import { DrizzleOperationExecutionRepository } from "../database/operation-execution.repository";
 import { PrepareM3uSyncUseCase } from "@/application/operation-safety/prepare-m3u-sync.use-case";
 import { ApplyM3uSyncUseCase } from "@/application/operation-safety/apply-m3u-sync.use-case";
+import {
+  ApplySourceDeleteUseCase,
+  PrepareSourceDeleteUseCase,
+} from "@/application/operation-safety/source-delete.use-cases";
 import { PrepareEpgMatchUseCase } from "@/application/operation-safety/prepare-epg-match.use-case";
 import { ApplyEpgMatchUseCase } from "@/application/operation-safety/apply-epg-match.use-case";
 import { ReconcileCanonicalChannelsUseCase } from "@/application/operation-safety/reconcile-canonical-channels.use-case";
@@ -35,6 +39,8 @@ export function registerOperationHandlers(runner: JobRunner): void {
   const operationExecRepo = new DrizzleOperationExecutionRepository();
 
   const prepareM3u = new PrepareM3uSyncUseCase(sourceSyncRepo);
+  const prepareSourceDelete = new PrepareSourceDeleteUseCase(sourceSyncRepo);
+  const applySourceDelete = new ApplySourceDeleteUseCase(sourceSyncRepo);
   const applyM3u = new ApplyM3uSyncUseCase(
     sourceSyncRepo,
     (snapshotId: string) => operationExecRepo.loadSnapshotItems(snapshotId) as Promise<{
@@ -59,7 +65,12 @@ export function registerOperationHandlers(runner: JobRunner): void {
     try {
       let summary: Record<string, unknown> = {};
 
-      if (kind === "epg_match") {
+      if (kind === "source_delete") {
+        // A source-delete preview must not download or require an enabled M3U
+        // source. It is a source-scoped database impact query instead.
+        const result = await prepareSourceDelete.execute(sourceId);
+        summary = { ...result.counts };
+      } else if (kind === "epg_match") {
         const result = await prepareEpg.execute({ xmltvSourceId: sourceId });
         summary = { exact: result.summary?.exact ?? 0, fuzzy: result.summary?.fuzzy ?? 0, unmatched: result.summary?.unmatched ?? 0 };
       } else {
@@ -85,7 +96,12 @@ export function registerOperationHandlers(runner: JobRunner): void {
         status: "failed",
         summary: { error: message.slice(0, 500) },
         warnings: [],
-        blockers: [{ code: "prepare-failed", message: message.slice(0, 200) }],
+        blockers: [{
+          code: kind === "source_delete" && message === "Source not found"
+            ? "source-not-found"
+            : "prepare-failed",
+          message: message.slice(0, 200),
+        }],
       }).where(eq(operationChangeSets.id, changeSetId));
       return { taskId: job.payload.taskId, importedCount: 0 };
     }
@@ -104,7 +120,10 @@ export function registerOperationHandlers(runner: JobRunner): void {
     try {
       let appliedCount = 0;
 
-      if (kind === "epg_match") {
+      if (kind === "source_delete") {
+        const result = await applySourceDelete.execute(sourceId);
+        appliedCount = result.deleted ? 1 : 0;
+      } else if (kind === "epg_match") {
         const result = await applyEpg.execute({ approvedBindings: [] });
         appliedCount = result.appliedCount ?? 0;
       } else if (snapshotId) {
@@ -119,30 +138,35 @@ export function registerOperationHandlers(runner: JobRunner): void {
         appliedCount = result.upsertedCount ?? 0;
       }
 
-      // 009: load the source channels post-apply so the reconcile use case has
-      // real tvg-id / display name / group data to drive auto-merge + weak-
-      // match candidates (replaces the legacy empty-array call).
-      const presentChannels = await sourceSyncRepo.loadPresentChannels(sourceId);
-      const currentChannels = await sourceSyncRepo.loadCurrentChannels(sourceId);
-      const missingIds = currentChannels
-        .filter((c) => c.sourcePresence === "missing")
-        .map((c) => c.id);
+      // A source delete removes source-derived rows and intentionally leaves
+      // durable canonical channels alone; there is no source-channel set to
+      // reconcile after it. M3U sync keeps the post-apply reconciliation path.
+      if (kind !== "source_delete") {
+        // 009: load the source channels post-apply so the reconcile use case has
+        // real tvg-id / display name / group data to drive auto-merge + weak-
+        // match candidates (replaces the legacy empty-array call).
+        const presentChannels = await sourceSyncRepo.loadPresentChannels(sourceId);
+        const currentChannels = await sourceSyncRepo.loadCurrentChannels(sourceId);
+        const missingIds = currentChannels
+          .filter((c) => c.sourcePresence === "missing")
+          .map((c) => c.id);
 
-      await reconcile.execute({
-        sourceId,
-        sourceChannels: presentChannels.map((c) => ({
-          sourceChannelId: c.id,
-          channelIdentity: c.channelIdentity,
-          displayName: c.displayName,
-          groupTitle: null,
-          tvgId: null,
-          normalizedName: null,
-          normalizedGroup: null,
-          streamUrl: null,
-          sourceFingerprint: "post-apply",
-        })),
-        missingSourceChannelIds: missingIds,
-      });
+        await reconcile.execute({
+          sourceId,
+          sourceChannels: presentChannels.map((c) => ({
+            sourceChannelId: c.id,
+            channelIdentity: c.channelIdentity,
+            displayName: c.displayName,
+            groupTitle: null,
+            tvgId: null,
+            normalizedName: null,
+            normalizedGroup: null,
+            streamUrl: null,
+            sourceFingerprint: "post-apply",
+          })),
+          missingSourceChannelIds: missingIds,
+        });
+      }
 
       await db.update(operationChangeSets).set({
         status: "applied",

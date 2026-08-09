@@ -7,7 +7,7 @@
  * marking missing channels, recording sync status, and the new atomic apply
  * + reappearance/purge paths introduced by 009.
  */
-import { eq, inArray, notInArray, and, sql, lt, isNotNull } from "drizzle-orm";
+import { eq, inArray, notInArray, and, or, sql, lt, isNotNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { db } from "../../db";
 import {
@@ -16,6 +16,13 @@ import {
   sourceImportSnapshots,
   sourceImportSnapshotItems,
   channelStreams,
+  rawM3uChannels,
+  xmltvSources,
+  programmes,
+  canonicalEpgBindings,
+  canonicalChannelMembers,
+  scheduledJobConfigs,
+  channelOverrides,
 } from "../../schema";
 import type {
   ISourceSyncRepository,
@@ -24,7 +31,15 @@ import type {
   CurrentSourceChannel,
   StageSnapshotResult,
   ReconcileApplyResult,
+  SourceDeleteImpact,
+  SourceDeleteResult,
 } from "@/domain/source-sync";
+
+type SourceDeleteTarget = {
+  readonly sourceId: string;
+  readonly sourceName: string;
+  readonly sourceType: "m3u" | "xmltv";
+};
 
 export class DrizzleSourceSyncRepository implements ISourceSyncRepository {
   async loadSource(sourceId: string): Promise<SourceSnapshotInput | null> {
@@ -412,5 +427,216 @@ export class DrizzleSourceSyncRepository implements ISourceSyncRepository {
       purgedSourceChannels: purgedChannels.length,
       purgedStreams,
     };
+  }
+
+  /**
+   * Resolve a source-delete target without applying the sync source guard.
+   * Disabled sources are still valid delete targets; a missing source is the
+   * only invalid scope.
+   */
+  private async findSourceDeleteTarget(sourceId: string): Promise<SourceDeleteTarget | null> {
+    const [m3u, xmltv] = await Promise.all([
+      db
+        .select({ id: m3uSources.id, name: m3uSources.name })
+        .from(m3uSources)
+        .where(eq(m3uSources.id, sourceId))
+        .limit(1),
+      db
+        .select({ id: xmltvSources.id, name: xmltvSources.name })
+        .from(xmltvSources)
+        .where(eq(xmltvSources.id, sourceId))
+        .limit(1),
+    ]);
+    if (m3u[0]) {
+      return { sourceId: m3u[0].id, sourceName: m3u[0].name, sourceType: "m3u" };
+    }
+    if (xmltv[0]) {
+      return { sourceId: xmltv[0].id, sourceName: xmltv[0].name, sourceType: "xmltv" };
+    }
+    return null;
+  }
+
+  async prepareSourceDelete(sourceId: string): Promise<SourceDeleteImpact> {
+    const target = await this.findSourceDeleteTarget(sourceId);
+    if (!target) throw new Error("Source not found");
+
+    if (target.sourceType === "m3u") {
+      const [raw, channelsForSource, memberships, streams, schedules] = await Promise.all([
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(rawM3uChannels)
+          .where(eq(rawM3uChannels.sourceId, sourceId)),
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(channels)
+          .leftJoin(rawM3uChannels, eq(channels.rawChannelId, rawM3uChannels.id))
+          .where(
+            or(
+              eq(channels.m3uSourceId, sourceId),
+              eq(rawM3uChannels.sourceId, sourceId),
+            ),
+          ),
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(canonicalChannelMembers)
+          .innerJoin(channels, eq(canonicalChannelMembers.sourceChannelId, channels.id))
+          .leftJoin(rawM3uChannels, eq(channels.rawChannelId, rawM3uChannels.id))
+          .where(
+            or(
+              eq(channels.m3uSourceId, sourceId),
+              eq(rawM3uChannels.sourceId, sourceId),
+            ),
+          ),
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(channelStreams)
+          .leftJoin(channels, eq(channelStreams.sourceChannelId, channels.id))
+          .leftJoin(rawM3uChannels, eq(channelStreams.rawChannelId, rawM3uChannels.id))
+          .where(
+            or(
+              eq(channelStreams.m3uSourceId, sourceId),
+              eq(channels.m3uSourceId, sourceId),
+              eq(rawM3uChannels.sourceId, sourceId),
+            ),
+          ),
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(scheduledJobConfigs)
+          .where(
+            and(
+              eq(scheduledJobConfigs.scopeType, "source"),
+              eq(scheduledJobConfigs.scopeId, sourceId),
+            ),
+          ),
+      ]);
+
+      return {
+        sourceId,
+        sourceName: target.sourceName,
+        sourceType: target.sourceType,
+        counts: {
+          rawChannels: Number(raw[0]?.count ?? 0),
+          channels: Number(channelsForSource[0]?.count ?? 0),
+          programmes: 0,
+          epgMappings: 0,
+          canonicalMemberships: Number(memberships[0]?.count ?? 0),
+          streams: Number(streams[0]?.count ?? 0),
+          schedules: Number(schedules[0]?.count ?? 0),
+        },
+      };
+    }
+
+    const [programmesForSource, epgMappings, schedules] = await Promise.all([
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(programmes)
+        .where(eq(programmes.sourceId, sourceId)),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(canonicalEpgBindings)
+        .where(eq(canonicalEpgBindings.xmltvSourceId, sourceId)),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(scheduledJobConfigs)
+        .where(
+          and(
+            eq(scheduledJobConfigs.scopeType, "source"),
+            eq(scheduledJobConfigs.scopeId, sourceId),
+          ),
+        ),
+    ]);
+
+    return {
+      sourceId,
+      sourceName: target.sourceName,
+      sourceType: target.sourceType,
+      counts: {
+        rawChannels: 0,
+        channels: 0,
+        programmes: Number(programmesForSource[0]?.count ?? 0),
+        epgMappings: Number(epgMappings[0]?.count ?? 0),
+        canonicalMemberships: 0,
+        streams: 0,
+        schedules: Number(schedules[0]?.count ?? 0),
+      },
+    };
+  }
+
+  async applySourceDelete(sourceId: string): Promise<SourceDeleteResult> {
+    const impact = await this.prepareSourceDelete(sourceId);
+
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(scheduledJobConfigs)
+        .where(
+          and(
+            eq(scheduledJobConfigs.scopeType, "source"),
+            eq(scheduledJobConfigs.scopeId, sourceId),
+          ),
+        );
+
+      if (impact.sourceType === "m3u") {
+        const sourceRawChannels = await tx
+          .select({ id: rawM3uChannels.id })
+          .from(rawM3uChannels)
+          .where(eq(rawM3uChannels.sourceId, sourceId));
+        const sourceRawChannelIds = sourceRawChannels.map((channel) => channel.id);
+        const sourceChannels = await tx
+          .select({ id: channels.id })
+          .from(channels)
+          .leftJoin(rawM3uChannels, eq(channels.rawChannelId, rawM3uChannels.id))
+          .where(
+            or(
+              eq(channels.m3uSourceId, sourceId),
+              eq(rawM3uChannels.sourceId, sourceId),
+            ),
+          );
+        const sourceChannelIds = sourceChannels.map((channel) => channel.id);
+
+        // Remove source-derived output and memberships before deleting the
+        // source-channel rows. Canonical channels themselves remain durable so
+        // manual streams and operator lifecycle decisions are not destroyed.
+        const streamWhere = sourceChannelIds.length > 0
+          ? or(
+              eq(channelStreams.m3uSourceId, sourceId),
+              inArray(channelStreams.sourceChannelId, sourceChannelIds),
+              ...(sourceRawChannelIds.length > 0
+                ? [inArray(channelStreams.rawChannelId, sourceRawChannelIds)]
+                : []),
+            )
+          : sourceRawChannelIds.length > 0
+            ? or(
+                eq(channelStreams.m3uSourceId, sourceId),
+                inArray(channelStreams.rawChannelId, sourceRawChannelIds),
+              )
+            : eq(channelStreams.m3uSourceId, sourceId);
+        await tx.delete(channelStreams).where(streamWhere);
+
+        if (sourceChannelIds.length > 0) {
+          await tx
+            .delete(canonicalChannelMembers)
+            .where(inArray(canonicalChannelMembers.sourceChannelId, sourceChannelIds));
+          await tx
+            .delete(channelOverrides)
+            .where(inArray(channelOverrides.channelId, sourceChannelIds));
+          await tx
+            .delete(channels)
+            .where(inArray(channels.id, sourceChannelIds));
+        }
+
+        await tx.delete(m3uSources).where(eq(m3uSources.id, sourceId));
+        return;
+      }
+
+      // XMLTV bindings use RESTRICT on the source FK, so clear them before
+      // deleting programmes and the source row.
+      await tx
+        .delete(canonicalEpgBindings)
+        .where(eq(canonicalEpgBindings.xmltvSourceId, sourceId));
+      await tx.delete(programmes).where(eq(programmes.sourceId, sourceId));
+      await tx.delete(xmltvSources).where(eq(xmltvSources.id, sourceId));
+    });
+
+    return { ...impact, deleted: true };
   }
 }

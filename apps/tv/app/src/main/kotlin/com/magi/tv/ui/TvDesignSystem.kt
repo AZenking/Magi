@@ -127,20 +127,22 @@ fun MagiTvActionButton(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.04f else 1f,
+        targetValue = if (focused) 1.025f else 1f,
         animationSpec = tween(130),
         label = "action-focus",
     )
-    val shape = RoundedCornerShape(if (compact) 8.dp else 10.dp)
+    val shape = RoundedCornerShape(if (compact) 10.dp else 12.dp)
     val background = when {
         !enabled -> MagiTvPalette.SurfaceElevated.copy(alpha = 0.55f)
+        primary && focused -> MagiTvPalette.Focus
         primary -> MagiTvPalette.Primary
         focused -> MagiTvPalette.SurfaceFocused
         else -> MagiTvPalette.SurfaceElevated
     }
     val borderColor = when {
         !enabled -> MagiTvPalette.Border.copy(alpha = 0.45f)
-        focused || primary -> MagiTvPalette.Primary
+        focused -> MagiTvPalette.Focus
+        primary -> MagiTvPalette.Primary
         else -> MagiTvPalette.Border
     }
     val interactionSource = remember { MutableInteractionSource() }
@@ -155,13 +157,13 @@ fun MagiTvActionButton(
             .shadow(
                 elevation = if (focused) 10.dp else 0.dp,
                 shape = shape,
-                ambientColor = MagiTvPalette.Primary,
-                spotColor = MagiTvPalette.Primary,
+                ambientColor = MagiTvPalette.Focus,
+                spotColor = MagiTvPalette.Focus,
             )
             .clip(shape)
             .background(background)
             .border(
-                width = if (focused || primary) 2.dp else 1.dp,
+                width = if (focused) 3.dp else if (primary) 2.dp else 1.dp,
                 color = borderColor,
                 shape = shape,
             )
@@ -197,10 +199,10 @@ fun MagiTvFilterChip(
     modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(9.dp)
+    val shape = RoundedCornerShape(10.dp)
     val interactionSource = remember { MutableInteractionSource() }
     val background = when {
-        focused -> MagiTvPalette.Primary
+        focused -> MagiTvPalette.SurfaceFocused
         selected -> MagiTvPalette.PrimarySoft
         else -> MagiTvPalette.Surface
     }
@@ -211,8 +213,10 @@ fun MagiTvFilterChip(
             .clip(shape)
             .background(background)
             .border(
-                width = if (focused || selected) 2.dp else 1.dp,
-                color = if (focused || selected) {
+                width = if (focused) 3.dp else if (selected) 2.dp else 1.dp,
+                color = if (focused) {
+                    MagiTvPalette.Focus
+                } else if (selected) {
                     MagiTvPalette.Primary
                 } else {
                     MagiTvPalette.Border
@@ -292,7 +296,7 @@ fun MagiTvStatusBadge(
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(6.dp))
             .background(color)
             .padding(horizontal = 8.dp, vertical = 3.dp),
     ) {

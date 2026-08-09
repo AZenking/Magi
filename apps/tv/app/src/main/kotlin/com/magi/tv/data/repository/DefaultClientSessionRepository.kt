@@ -31,6 +31,10 @@ class DefaultClientSessionRepository(
     private val tokenManager: TokenManager,
     private val api: ClientApi,
     private val credentialStore: ClientCredentialStore,
+    private val getValidToken: suspend () -> String = tokenManager::getValidToken,
+    private val refreshTokenAfterUnauthorized: suspend (String?) -> String =
+        tokenManager::refreshTokenAfterUnauthorized,
+    private val clearLocalCredentials: suspend () -> Unit = tokenManager::clearCredentials,
 ) : ClientSessionRepository {
 
     override suspend fun registerDefaultDevice(): String {
@@ -91,34 +95,19 @@ class DefaultClientSessionRepository(
     }
 
     override suspend fun heartbeat(): HeartbeatObservation {
-        val token = tokenManager.getValidToken()
+        val token = getValidToken()
         return try {
-            val result = api.heartbeat(
-                authorization = "Bearer $token",
-                request = HeartbeatRequestDto(
-                    appVersion = BuildConfig.VERSION_NAME.take(64),
-                    platformVersion = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})".take(64),
-                ),
-            ).requireData()
-            HeartbeatObservation(
-                serverTime = Instant.parse(result.serverTime),
-                lastActiveAt = Instant.parse(result.lastActiveAt),
-                nextHeartbeatInSeconds = result.nextHeartbeatInSeconds,
-                onlineWindowSeconds = result.onlineWindowSeconds,
-                contentRevision = result.contentRevision?.let {
-                    ContentRevision(catalog = it.catalog, epg = it.epg)
-                },
-            )
+            sendHeartbeat(token)
         } catch (error: HttpException) {
-            // Fix 6: Only clear credentials on genuine device revocation (403
-            // with revoked code). A transient 401 (token expired mid-cycle,
-            // clock skew, refresh race) should NOT kick the user out — the
-            // heartbeat coordinator's exponential backoff will retry, and the
-            // next cycle's token refresh will recover.
+            // Heartbeat uses a dedicated Retrofit API, so it does not pass
+            // through MagiClient's OkHttp authenticator. Recover once here,
+            // using the same single-flight TokenManager refresh policy.
+            if (error.code() == 401) return retryHeartbeatAfterUnauthorized(token)
+
             val errorBody = runCatching { error.response()?.errorBody()?.string() }.getOrNull() ?: ""
             val isRevoked = error.code() == 403 && errorBody.contains("revoked")
             if (isRevoked) {
-                tokenManager.clearCredentials()
+                clearLocalCredentials()
             }
             throw ClientSessionException("heartbeat_failed", "设备心跳失败")
         } catch (error: CancellationException) {
@@ -127,6 +116,57 @@ class DefaultClientSessionRepository(
             if (error is ClientSessionException) throw error
             throw ClientSessionException("heartbeat_failed", error.message ?: "设备心跳失败")
         }
+    }
+
+    private suspend fun retryHeartbeatAfterUnauthorized(previousToken: String): HeartbeatObservation {
+        val refreshedToken = try {
+            refreshTokenAfterUnauthorized(previousToken)
+        } catch (error: TokenException) {
+            // TokenManager clears persisted credentials for terminal refresh
+            // failures (revoked/expired). Surface a recovery-specific error so
+            // TvApp moves to a fresh registration session instead of backing
+            // off forever with the old access token.
+            throw ClientSessionException(
+                code = if (error.code in TERMINAL_CREDENTIAL_CODES) {
+                    "requires_registration"
+                } else {
+                    "heartbeat_failed"
+                },
+                message = error.message ?: "设备心跳失败",
+            )
+        }
+
+        return try {
+            sendHeartbeat(refreshedToken)
+        } catch (error: HttpException) {
+            if (error.code() == 401) {
+                // A freshly forced token was rejected too. Keeping local state
+                // would only loop the foreground heartbeat; force a clean
+                // registration path instead.
+                clearLocalCredentials()
+                throw ClientSessionException("requires_registration", "设备凭据已失效，请重新登记")
+            }
+            throw ClientSessionException("heartbeat_failed", "设备心跳失败")
+        }
+    }
+
+    private suspend fun sendHeartbeat(token: String): HeartbeatObservation {
+        val result = api.heartbeat(
+            authorization = "Bearer $token",
+            request = HeartbeatRequestDto(
+                appVersion = BuildConfig.VERSION_NAME.take(64),
+                platformVersion = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})".take(64),
+            ),
+        ).requireData()
+        return HeartbeatObservation(
+            serverTime = Instant.parse(result.serverTime),
+            lastActiveAt = Instant.parse(result.lastActiveAt),
+            nextHeartbeatInSeconds = result.nextHeartbeatInSeconds,
+            onlineWindowSeconds = result.onlineWindowSeconds,
+            contentRevision = result.contentRevision?.let {
+                ContentRevision(catalog = it.catalog, epg = it.epg)
+            },
+        )
     }
 
     override suspend fun clearCredentials() = tokenManager.clearCredentials()
@@ -215,6 +255,13 @@ class DefaultClientSessionRepository(
         }
     }
 }
+
+private val TERMINAL_CREDENTIAL_CODES = setOf(
+    "invalid_grant",
+    "expired_token",
+    "device-client-revoked",
+    "client-revoked",
+)
 
 class ClientSessionException(
     val code: String,

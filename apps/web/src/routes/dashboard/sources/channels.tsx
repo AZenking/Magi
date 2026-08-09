@@ -8,6 +8,7 @@ import { Avatar, Button, Tag } from "antd";
 import { ProTableWrapper } from "@/components/pro-table-wrapper";
 import { ReloadOutlined } from "@ant-design/icons";
 import { PageHeader, PageStack } from "@/components/page-layout";
+import { M3uControlPlaneNav } from "@/features/dashboard/sources/m3u-control-plane-nav";
 
 export const Route = createFileRoute("/dashboard/sources/channels")({
   component: RawChannelsPage,
@@ -165,7 +166,11 @@ function RawChannelsPage() {
 
   return (
     <PageStack>
-      <PageHeader title="原始频道" />
+      <PageHeader
+        title="源频道"
+        description="查看各 M3U 源同步后的原始频道、EPG 绑定与线路健康；这里不直接修改输出频道。"
+      />
+      <M3uControlPlaneNav active="channels" />
 
       <ProTableWrapper<ChannelVo>
         columns={columns}

@@ -27,6 +27,13 @@ interface Summary {
   preserved?: number;
   conflicts?: number;
   unmatched?: number;
+  rawChannels?: number;
+  channels?: number;
+  programmes?: number;
+  epgMappings?: number;
+  canonicalMemberships?: number;
+  streams?: number;
+  schedules?: number;
 }
 
 export function OperationPreview({
@@ -117,6 +124,41 @@ export function OperationPreview({
                   ? { color: token.colorError }
                   : undefined,
             }}
+          />
+        )}
+        {summary.rawChannels != null && (
+          <StatisticCard
+            statistic={{ title: "原始频道", value: summary.rawChannels, description: "" }}
+          />
+        )}
+        {summary.channels != null && (
+          <StatisticCard
+            statistic={{ title: "标准频道", value: summary.channels, description: "" }}
+          />
+        )}
+        {summary.programmes != null && (
+          <StatisticCard
+            statistic={{ title: "节目", value: summary.programmes, description: "" }}
+          />
+        )}
+        {summary.epgMappings != null && (
+          <StatisticCard
+            statistic={{ title: "EPG 映射", value: summary.epgMappings, description: "" }}
+          />
+        )}
+        {summary.canonicalMemberships != null && (
+          <StatisticCard
+            statistic={{ title: "频道归并", value: summary.canonicalMemberships, description: "" }}
+          />
+        )}
+        {summary.streams != null && (
+          <StatisticCard
+            statistic={{ title: "线路", value: summary.streams, description: "" }}
+          />
+        )}
+        {summary.schedules != null && (
+          <StatisticCard
+            statistic={{ title: "调度", value: summary.schedules, description: "" }}
           />
         )}
       </StatisticCard.Group>
