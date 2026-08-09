@@ -12,16 +12,19 @@ COPY apps/worker/package.json apps/worker/
 RUN pnpm install --frozen-lockfile
 
 FROM base AS builder
+COPY --from=deps /root/.cache/node/corepack /root/.cache/node/corepack
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/worker/node_modules ./apps/worker/node_modules
 COPY --from=deps /app/packages ./packages
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
 COPY apps/worker ./apps/worker
 COPY packages ./packages
+COPY scripts/resolve-worker-aliases.mjs ./scripts/resolve-worker-aliases.mjs
 RUN pnpm --filter @magi/types --filter @magi/backend-core --filter @magi/utils build && \
     pnpm --filter @magi/worker build
 
 FROM base AS prod-deps
+COPY --from=deps /root/.cache/node/corepack /root/.cache/node/corepack
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
 COPY packages/tsconfig/package.json packages/tsconfig/
 COPY packages/types/package.json packages/types/

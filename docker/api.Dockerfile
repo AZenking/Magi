@@ -12,6 +12,7 @@ COPY apps/api/package.json apps/api/
 RUN pnpm install --frozen-lockfile
 
 FROM base AS builder
+COPY --from=deps /root/.cache/node/corepack /root/.cache/node/corepack
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=deps /app/packages ./packages
@@ -21,7 +22,14 @@ COPY packages ./packages
 RUN pnpm --filter @magi/types --filter @magi/backend-core --filter @magi/utils build && \
     pnpm --filter @magi/api build
 
+# A small, explicit target for Docker Compose migrations and first-time seed.
+# It keeps the migration files and drizzle-kit out of the long-running API image.
+FROM builder AS migrate
+COPY scripts/with-env.sh ./scripts/with-env.sh
+CMD ["sh", "scripts/with-env.sh", "pnpm", "--filter", "@magi/api", "exec", "drizzle-kit", "migrate", "--config=src/infrastructure/database/drizzle.config.ts"]
+
 FROM base AS prod-deps
+COPY --from=deps /root/.cache/node/corepack /root/.cache/node/corepack
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
 COPY packages/tsconfig/package.json packages/tsconfig/
 COPY packages/types/package.json packages/types/

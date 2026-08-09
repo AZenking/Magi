@@ -46,6 +46,8 @@ coverage/
 
 # Docker
 docker/.env
+docker/.env.prod
+docker/.env.ci
 .data/
 
 # Playwright

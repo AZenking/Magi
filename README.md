@@ -98,6 +98,54 @@ bash scripts/docker-up.sh
 bash scripts/docker-down.sh
 ```
 
+## Deployment from a checkout
+
+This is the simplest local or single-host setup. It builds from the checked-out
+code, runs database migrations before the API and Worker start, and keeps
+PostgreSQL, Redis, uploaded logos and configuration backups in named volumes.
+
+```bash
+cp docker/.env.prod.example docker/.env.prod
+# Edit docker/.env.prod: replace all example secrets and set the public URLs.
+
+# First deployment: start services and create/synchronize the admin account.
+MAGI_SEED=1 bash scripts/deploy.sh
+
+# Later deployments after pulling a new commit.
+bash scripts/deploy.sh
+```
+
+The stack exposes Web on `WEB_PORT` and API on `API_PORT`. Put both behind your
+existing HTTPS reverse proxy when they are reachable outside the LAN, and set
+`WEB_ORIGIN`, `BETTER_AUTH_URL`, `VITE_API_URL` and `PUBLIC_API_HOST` to their
+public values. `PUBLIC_API_HOST` is used when Magi generates player M3U URLs.
+
+## Server deployment from GitHub Actions images
+
+Pushes to `master` publish multi-architecture (`linux/amd64`, `linux/arm64`)
+API, Worker, Web and migration images to GitHub Container Registry. The server
+does not need Node.js or pnpm: it only pulls the selected image tag.
+
+```bash
+# On the server, once. Use a token with read:packages when the GHCR package is private.
+docker login ghcr.io -u azenking
+
+cp docker/.env.prod.example docker/.env.prod
+# Set IMAGE_PREFIX=ghcr.io/azenking and configure the public URLs and secrets.
+# Keep IMAGE_TAG=latest, or set IMAGE_TAG=sha-<commit> to deploy a specific build.
+
+# First server deployment also creates/synchronizes the admin account.
+MAGI_SEED=1 bash scripts/deploy-server.sh
+
+# Later deployments pull and start the selected image tag.
+bash scripts/deploy-server.sh
+```
+
+The workflow is [Publish container images](.github/workflows/deploy.yml). For
+an image package that should be publicly downloadable, set its visibility to
+public in the GitHub Packages settings; otherwise keep it private and retain
+the server's `docker login` credentials.
+
 ## Available Commands
 
 `package.json` 只保留基础开发命令；Docker 和初始化流程统一放在 `scripts/*.sh`。

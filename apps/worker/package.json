@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node ../../scripts/resolve-worker-aliases.mjs dist",
     "dev": "bash ../../scripts/with-env.sh tsx watch src/main.ts",
     "start": "bash ../../scripts/with-env.sh node dist/main.js",
     "lint": "eslint src/",
