@@ -148,6 +148,9 @@ an image package that should be publicly downloadable, set its visibility to
 public in the GitHub Packages settings; otherwise keep it private and retain
 the server's `docker login` credentials.
 
+For DSM Container Manager, Cloudflare Tunnel, GHCR connectivity and duplicate
+Compose-stack troubleshooting, see [Synology Container Manager deployment](docs/synology-container-manager.md).
+
 ## Available Commands
 
 `package.json` 只保留基础开发命令；Docker 和初始化流程统一放在 `scripts/*.sh`。
