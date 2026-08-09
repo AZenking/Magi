@@ -14,8 +14,9 @@ permissions:
   packages: write
 
 jobs:
-  publish:
-    runs-on: ubuntu-latest
+  build:
+    name: Build ${{ matrix.image }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     if: github.ref == 'refs/heads/master'
     strategy:
       fail-fast: false
@@ -24,20 +25,54 @@ jobs:
           - image: magi-api
             dockerfile: docker/api.Dockerfile
             target: runner
+            platform: linux/amd64
+            arch: amd64
+            runner: ubuntu-24.04
+          - image: magi-api
+            dockerfile: docker/api.Dockerfile
+            target: runner
+            platform: linux/arm64
+            arch: arm64
+            runner: ubuntu-24.04-arm
           - image: magi-migrate
             dockerfile: docker/api.Dockerfile
             target: migrate
+            platform: linux/amd64
+            arch: amd64
+            runner: ubuntu-24.04
+          - image: magi-migrate
+            dockerfile: docker/api.Dockerfile
+            target: migrate
+            platform: linux/arm64
+            arch: arm64
+            runner: ubuntu-24.04-arm
           - image: magi-worker
             dockerfile: docker/worker.Dockerfile
             target: runner
+            platform: linux/amd64
+            arch: amd64
+            runner: ubuntu-24.04
+          - image: magi-worker
+            dockerfile: docker/worker.Dockerfile
+            target: runner
+            platform: linux/arm64
+            arch: arm64
+            runner: ubuntu-24.04-arm
           - image: magi-web
             dockerfile: docker/web.Dockerfile
             target: runner
+            platform: linux/amd64
+            arch: amd64
+            runner: ubuntu-24.04
+          - image: magi-web
+            dockerfile: docker/web.Dockerfile
+            target: runner
+            platform: linux/arm64
+            arch: arm64
+            runner: ubuntu-24.04-arm
 
     steps:
       - uses: actions/checkout@v4
-
-      - uses: docker/setup-qemu-action@v3
 
       - uses: docker/setup-buildx-action@v3
 
@@ -54,18 +89,48 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           tags: |
-            type=raw,value=latest
-            type=sha,prefix=sha-
+            type=raw,value=sha-${{ github.sha }}-${{ matrix.arch }}
 
-      - name: Build and publish ${{ matrix.image }}
+      - name: Build and publish ${{ matrix.image }} for ${{ matrix.platform }}
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           target: ${{ matrix.target }}
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
+
+  publish-manifest:
+    name: Publish ${{ matrix.image }} manifest
+    needs: build
+    runs-on: ubuntu-24.04
+    if: github.ref == 'refs/heads/master'
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [magi-api, magi-migrate, magi-worker, magi-web]
+
+    steps:
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish multi-architecture manifest
+        env:
+          IMAGE_NAME: ${{ matrix.image }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}"
+          docker buildx imagetools create \
+            --tag "${image}:latest" \
+            --tag "${image}:sha-${GITHUB_SHA}" \
+            "${image}:sha-${GITHUB_SHA}-amd64" \
+            "${image}:sha-${GITHUB_SHA}-arm64"

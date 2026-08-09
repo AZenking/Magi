@@ -123,8 +123,10 @@ public values. `PUBLIC_API_HOST` is used when Magi generates player M3U URLs.
 ## Server deployment from GitHub Actions images
 
 Pushes to `master` publish multi-architecture (`linux/amd64`, `linux/arm64`)
-API, Worker, Web and migration images to GitHub Container Registry. The server
-does not need Node.js or pnpm: it only pulls the selected image tag.
+API, Worker, Web and migration images to GitHub Container Registry. Each
+architecture builds on a matching native GitHub runner, then GitHub Actions
+publishes one combined image manifest. The server does not need Node.js or
+pnpm: it only pulls the selected image tag.
 
 ```bash
 # On the server, once. Use a token with read:packages when the GHCR package is private.
