@@ -30,6 +30,14 @@ import { ReconcileCanonicalChannelsUseCase } from "@/application/operation-safet
 import { ApplyRecoveryRestoreUseCase } from "@/application/operation-safety/apply-recovery-restore.use-case";
 import { CleanupOperationStateUseCase } from "@/application/operation-safety/cleanup-operation-state.use-case";
 
+function messageWithCause(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  if (!(error.cause instanceof Error) || error.cause.message === error.message) {
+    return error.message;
+  }
+  return `${error.message}: ${error.cause.message}`;
+}
+
 export function registerOperationHandlers(runner: JobRunner): void {
   // Instantiate adapters + use cases once.
   const sourceSyncRepo = new DrizzleSourceSyncRepository();
@@ -91,7 +99,7 @@ export function registerOperationHandlers(runner: JobRunner): void {
 
       return { taskId: job.payload.taskId, importedCount: 0 };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = messageWithCause(error);
       await db.update(operationChangeSets).set({
         status: "failed",
         summary: { error: message.slice(0, 500) },

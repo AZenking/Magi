@@ -7,7 +7,7 @@
  * marking missing channels, recording sync status, and the new atomic apply
  * + reappearance/purge paths introduced by 009.
  */
-import { eq, inArray, notInArray, and, or, sql, lt, isNotNull } from "drizzle-orm";
+import { eq, gt, inArray, notInArray, and, or, sql, lt, isNotNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { db } from "../../db";
 import {
@@ -235,7 +235,10 @@ export class DrizzleSourceSyncRepository implements ISourceSyncRepository {
         and(
           eq(sourceImportSnapshots.sourceId, sourceId),
           eq(sourceImportSnapshots.contentFingerprint, contentFingerprint),
-          sql`${sourceImportSnapshots.expiresAt} > ${now}`,
+          // Use the column comparator so Drizzle serializes `now` as a
+          // timestamptz value. A raw sql template forwards Date directly to
+          // postgres-js, which cannot encode it in prepared statements.
+          gt(sourceImportSnapshots.expiresAt, now),
         ),
       )
       .limit(1);
