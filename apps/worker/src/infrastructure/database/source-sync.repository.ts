@@ -8,7 +8,8 @@
  * + reappearance/purge paths introduced by 009.
  */
 import { eq, gt, inArray, notInArray, and, or, sql, lt, isNotNull } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
+import { chunk, safeBatchSize } from "@magi/utils";
 import { db } from "../../db";
 import {
   m3uSources,
@@ -71,38 +72,46 @@ export class DrizzleSourceSyncRepository implements ISourceSyncRepository {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24h
 
-    await db.insert(sourceImportSnapshots).values({
-      id: snapshotId,
-      sourceId,
-      sourceType,
-      contentFingerprint,
-      sourceVersion,
-      status: "ready",
-      itemCount: items.length,
-      parserVersion: "1",
-      preparedTaskId,
-      createdAt: now,
-      expiresAt,
-    });
+    // Stage the snapshot head + items in a single transaction so a failure
+    // during the item insert rolls back the head row (avoids leaving a "ready"
+    // snapshot with zero items). Items are chunked to stay under PostgreSQL's
+    // 65535 bind-parameter limit (source_import_snapshot_items has 7 columns).
+    const itemRows = items.map((item, index) => ({
+      id: randomUUID(),
+      snapshotId,
+      channelIdentity: item.channelIdentity,
+      collisionOrdinal: 0,
+      itemOrder: index,
+      payload: {
+        displayName: item.displayName,
+        groupTitle: item.groupTitle,
+        tvgId: item.tvgId,
+        tvgLogo: item.tvgLogo,
+        streamUrl: item.streamUrl,
+      },
+        checksum: `sha256:${createHash("sha256").update(`${item.channelIdentity}:${contentFingerprint}`).digest("hex").slice(0, 64)}`,
+    }));
 
-    if (items.length > 0) {
-      const itemRows = items.map((item, index) => ({
-        id: randomUUID(),
-        snapshotId,
-        channelIdentity: item.channelIdentity,
-        collisionOrdinal: 0,
-        itemOrder: index,
-        payload: {
-          displayName: item.displayName,
-          groupTitle: item.groupTitle,
-          tvgId: item.tvgId,
-          tvgLogo: item.tvgLogo,
-          streamUrl: item.streamUrl,
-        },
-        checksum: `${item.channelIdentity}:${contentFingerprint}`,
-      }));
-      await db.insert(sourceImportSnapshotItems).values(itemRows);
-    }
+    await db.transaction(async (tx) => {
+      await tx.insert(sourceImportSnapshots).values({
+        id: snapshotId,
+        sourceId,
+        sourceType,
+        contentFingerprint,
+        sourceVersion,
+        status: "ready",
+        itemCount: items.length,
+        parserVersion: "1",
+        preparedTaskId,
+        createdAt: now,
+        expiresAt,
+      });
+
+      const batchSize = safeBatchSize(7);
+      for (const batch of chunk(itemRows, batchSize)) {
+        await tx.insert(sourceImportSnapshotItems).values(batch);
+      }
+    });
 
     return { snapshotId, itemCount: items.length };
   }
@@ -115,6 +124,7 @@ export class DrizzleSourceSyncRepository implements ISourceSyncRepository {
         displayName: channels.displayName,
         sourcePresence: channels.sourcePresence,
         version: channels.version,
+        tvgId: channels.tvgId,
       })
       .from(channels)
       .where(eq(channels.m3uSourceId, sourceId));
@@ -124,6 +134,7 @@ export class DrizzleSourceSyncRepository implements ISourceSyncRepository {
       displayName: r.displayName,
       sourcePresence: r.sourcePresence ?? "present",
       version: r.version ?? 1,
+      tvgId: r.tvgId,
     }));
   }
 
@@ -264,6 +275,7 @@ export class DrizzleSourceSyncRepository implements ISourceSyncRepository {
         displayName: channels.displayName,
         sourcePresence: channels.sourcePresence,
         version: channels.version,
+        tvgId: channels.tvgId,
       })
       .from(channels)
       .where(
@@ -278,6 +290,7 @@ export class DrizzleSourceSyncRepository implements ISourceSyncRepository {
       displayName: r.displayName,
       sourcePresence: r.sourcePresence ?? "present",
       version: r.version ?? 1,
+      tvgId: r.tvgId,
     }));
   }
 

@@ -38,7 +38,7 @@ export const sourceImportSnapshotItems = pgTable(
     snapshotId: uuid("snapshot_id")
       .notNull()
       .references(() => sourceImportSnapshots.id, { onDelete: "cascade" }),
-    channelIdentity: varchar("channel_identity", { length: 255 }).notNull(),
+    channelIdentity: varchar("channel_identity", { length: 512 }).notNull(),
     collisionOrdinal: integer("collision_ordinal").notNull().default(0),
     itemOrder: integer("item_order").notNull(),
     payload: jsonb("payload").notNull(),

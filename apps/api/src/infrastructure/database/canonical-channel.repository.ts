@@ -1,5 +1,6 @@
 import { eq, and, sql, ilike, inArray, asc, isNull } from "drizzle-orm";
 import type { ICanonicalChannelRepository, CanonicalChannel, EpgStatus, OutputStatus, ChannelLifecycle } from "@/domain/output-composition";
+import { chunk, safeBatchSize } from "@magi/utils";
 import { db } from "./connection";
 import { canonicalChannels, contentManifest } from "./schema";
 
@@ -87,9 +88,13 @@ export class CanonicalChannelRepository implements ICanonicalChannelRepository {
 
   async createBatch(channels: Omit<CanonicalChannel, "id" | "createdAt" | "updatedAt">[]): Promise<CanonicalChannel[]> {
     if (channels.length === 0) return [];
-    const rows = await db.insert(canonicalChannels).values(channels).returning();
+    const out: CanonicalChannel[] = [];
+    for (const batch of chunk(channels, safeBatchSize(18))) {
+      const rows = await db.insert(canonicalChannels).values(batch).returning();
+      out.push(...rows.map(toDomain));
+    }
     await bumpContentRevisions();
-    return rows.map(toDomain);
+    return out;
   }
 
   async update(id: string, data: Partial<CanonicalChannel>): Promise<CanonicalChannel | null> {

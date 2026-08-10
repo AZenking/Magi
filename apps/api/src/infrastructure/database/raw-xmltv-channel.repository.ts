@@ -1,5 +1,6 @@
 import { eq, and, or, ilike, sql } from "drizzle-orm";
 import type { IRawXmltvChannelRepository, RawXmltvChannel } from "@/domain/channel-catalog";
+import { chunk, safeBatchSize } from "@magi/utils";
 import { db } from "./connection";
 import { rawXmltvChannels } from "./schema";
 
@@ -54,8 +55,12 @@ export class RawXmltvChannelRepository implements IRawXmltvChannelRepository {
 
   async createBatch(channels: Omit<RawXmltvChannel, "id" | "createdAt" | "updatedAt">[]): Promise<RawXmltvChannel[]> {
     if (channels.length === 0) return [];
-    const rows = await db.insert(rawXmltvChannels).values(channels).returning();
-    return rows.map(toDomain);
+    const out: RawXmltvChannel[] = [];
+    for (const batch of chunk(channels, safeBatchSize(8))) {
+      const rows = await db.insert(rawXmltvChannels).values(batch).returning();
+      out.push(...rows.map(toDomain));
+    }
+    return out;
   }
 
   async deleteBySourceId(sourceId: string): Promise<number> {

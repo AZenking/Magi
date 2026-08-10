@@ -1,5 +1,6 @@
 import { eq, and, notInArray } from "drizzle-orm";
 import type { IRawM3uChannelRepository, RawM3uChannel } from "@/domain/channel-catalog";
+import { chunk, safeBatchSize } from "@magi/utils";
 import { db } from "./connection";
 import { rawM3uChannels } from "./schema";
 
@@ -30,8 +31,12 @@ export class RawM3uChannelRepository implements IRawM3uChannelRepository {
 
   async createBatch(channels: Omit<RawM3uChannel, "id" | "createdAt" | "updatedAt">[]): Promise<RawM3uChannel[]> {
     if (channels.length === 0) return [];
-    const rows = await db.insert(rawM3uChannels).values(channels).returning();
-    return rows.map(toDomain);
+    const out: RawM3uChannel[] = [];
+    for (const batch of chunk(channels, safeBatchSize(16))) {
+      const rows = await db.insert(rawM3uChannels).values(batch).returning();
+      out.push(...rows.map(toDomain));
+    }
+    return out;
   }
 
   async updateDisappearedFlag(sourceId: string, activeIdentities: string[]): Promise<number> {
