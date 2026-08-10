@@ -10,39 +10,39 @@ import {
   ChannelStreamModel,
 } from "@/domain/output-composition";
 import type { IProgrammeRepository } from "@/domain/channel-catalog";
+import {
+  comparePlaybackLines,
+  selectPlaybackLine,
+  type PlaybackLine,
+} from "@magi/backend-core";
 
-const healthOrder: Record<string, number> = {
-  online: 0,
-  unknown: 1,
-  degraded: 2,
-  offline: 3,
-};
+function toPlaybackLine(stream: StreamWithSource): PlaybackLine {
+  return {
+    id: stream.id,
+    isPrimary: stream.isPrimary,
+    position: stream.position ?? Number.MAX_SAFE_INTEGER,
+    eligibleForFailover: stream.eligibleForFailover !== false,
+    healthStatus: stream.healthStatus,
+    responseTime: stream.responseTime,
+    successRate: stream.successRate,
+    sourcePriority: stream.sourcePriority,
+    consecutiveFailures: stream.consecutiveFailures,
+    origin: stream.origin ?? "source",
+    missingSince: stream.missingSince ?? stream.purgedAt ?? null,
+  };
+}
+
+function compareStreams(a: StreamWithSource, b: StreamWithSource): number {
+  return comparePlaybackLines(toPlaybackLine(a), toPlaybackLine(b));
+}
 
 function selectBestStream(
   streams: StreamWithSource[],
 ): StreamWithSource | null {
-  // 009-m3u-control-plane T051: drop missing source streams first (manual
-  // lines survive), then pick by health → primary → position → responseTime.
-  const surviving = streams.filter((s) => {
-    if (s.sourceParticipateInOutput === false) return false;
-    if (s.origin === "manual") return true;
-    return s.missingSince == null;
-  });
-  return (
-    [...surviving]
-      .sort((a, b) => {
-        const healthDiff =
-          (healthOrder[a.healthStatus] ?? 3) -
-          (healthOrder[b.healthStatus] ?? 3);
-        if (healthDiff !== 0) return healthDiff;
-        if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1;
-        const positionDiff =
-          (a.position ?? Number.MAX_SAFE_INTEGER) -
-          (b.position ?? Number.MAX_SAFE_INTEGER);
-        if (positionDiff !== 0) return positionDiff;
-        return (a.responseTime ?? Infinity) - (b.responseTime ?? Infinity);
-      })[0] ?? null
-  );
+  const selected = selectPlaybackLine(streams.map(toPlaybackLine));
+  return selected
+    ? (streams.find((stream) => stream.id === selected.id) ?? null)
+    : null;
 }
 
 function escapeXml(value: string): string {
@@ -51,6 +51,14 @@ function escapeXml(value: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/** Keep player-facing M3U metadata on one line and inside its quoted value. */
+function escapeM3uValue(value: string): string {
+  return value
+    .replace(/[\r\n]+/g, " ")
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"');
 }
 
 function formatXmltvUtc(value: Date): string {
@@ -88,19 +96,23 @@ export class GenerateM3uV2OutputUseCase {
         : await this.streamRepo.findByCanonicalChannelIdWithSource(channel.id);
       const available = streams.filter(
         (stream) =>
+          stream.sourceParticipateInOutput !== false &&
           stream.eligibleForFailover !== false &&
           new ChannelStreamModel(stream).isAvailable(),
       );
       const selected =
         mode === "all"
-          ? available
+          ? [...available].sort(compareStreams)
           : [selectBestStream(available)].filter(
               (stream): stream is StreamWithSource => !!stream,
             );
       for (const stream of selected) {
         const outputId = `magi:${channel.id}`;
+        const name = escapeM3uValue(channel.standardName);
+        const logo = escapeM3uValue(channel.standardLogo ?? "");
+        const group = escapeM3uValue(channel.standardGroup ?? "");
         lines.push(
-          `#EXTINF:-1 tvg-id="${outputId}" tvg-name="${channel.standardName}" tvg-logo="${channel.standardLogo ?? ""}" group-title="${channel.standardGroup ?? ""}",${channel.standardName}`,
+          `#EXTINF:-1 tvg-id="${outputId}" tvg-name="${name}" tvg-logo="${logo}" group-title="${group}",${name}`,
         );
         lines.push(stream.streamUrl);
       }

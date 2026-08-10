@@ -48,8 +48,25 @@ export interface WeakMatchCandidateInput {
 }
 
 export interface ICanonicalReconcileRepository {
+  /** Run a full reconciliation against one database transaction when available. */
+  runInTransaction?<T>(
+    fn: (repo: ICanonicalReconcileRepository) => Promise<T>,
+  ): Promise<T>;
+
+  /** Mark pending weak-match candidates stale when their source input changed. */
+  markStaleCandidates?(
+    inputs: ReadonlyArray<{
+      sourceChannelId: string;
+      sourceFingerprint: string | null;
+    }>,
+  ): Promise<number>;
+
   /** Find the active canonical membership for a source channel, if any. */
-  findMembership(sourceChannelId: string): Promise<{ canonicalChannelId: string } | null>;
+  findMembership(sourceChannelId: string): Promise<{
+    canonicalChannelId: string;
+    active?: boolean;
+    membershipSource?: string;
+  } | null>;
 
   /** Add or reactivate a membership link. */
   upsertMembership(
@@ -59,10 +76,28 @@ export interface ICanonicalReconcileRepository {
   ): Promise<void>;
 
   /** Create a new canonical channel for an unmerged source channel. */
-  createCanonicalFromSource(sourceChannelId: string, displayName: string): Promise<{ canonicalChannelId: string }>;
+  createCanonicalFromSource(
+    sourceChannelId: string,
+    displayName: string,
+    groupTitle?: string | null,
+  ): Promise<{ canonicalChannelId: string }>;
 
   /** Deactivate a membership whose source channel has gone missing. */
-  deactivateMembership(canonicalChannelId: string, sourceChannelId: string): Promise<void>;
+  deactivateMembership(
+    canonicalChannelId: string,
+    sourceChannelId: string,
+  ): Promise<void>;
+
+  /** Create/update the source-derived stream after a channel is linked. */
+  upsertSourceStream(
+    canonicalChannelId: string,
+    sourceChannelId: string,
+    sourceId: string,
+    streamUrl: string,
+  ): Promise<void>;
+
+  /** Keep stream visibility in lockstep with membership disappearance. */
+  markSourceStreamMissing(sourceChannelId: string, now: Date): Promise<void>;
 
   // -------------------------------------------------------------------------
   // 009-m3u-control-plane additions (T025).

@@ -19,6 +19,8 @@ export interface RestoreItem {
 export interface IRestorePort {
   /** Write one captured object back to its table (infra: Drizzle upsert). */
   restoreObject(item: RestoreItem): Promise<void>;
+  /** Restore a complete graph in one transaction when the adapter supports it. */
+  restoreObjects?(items: readonly RestoreItem[]): Promise<void>;
 }
 
 export interface ApplyRecoveryRestoreInput {
@@ -34,8 +36,16 @@ export interface ApplyRecoveryRestoreResult {
 export class ApplyRecoveryRestoreUseCase {
   constructor(private readonly restore: IRestorePort) {}
 
-  async execute(input: ApplyRecoveryRestoreInput): Promise<ApplyRecoveryRestoreResult> {
+  async execute(
+    input: ApplyRecoveryRestoreInput,
+  ): Promise<ApplyRecoveryRestoreResult> {
     // Items are already ordered (parents first) by the create use case.
+    if (this.restore.restoreObjects) {
+      await this.restore.restoreObjects(input.items);
+      await input.updateProgress?.(100, "restore");
+      return { restoredCount: input.items.length };
+    }
+
     let restoredCount = 0;
     let i = 0;
     for (const item of input.items) {

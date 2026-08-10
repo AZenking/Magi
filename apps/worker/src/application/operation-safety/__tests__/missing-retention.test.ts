@@ -46,20 +46,56 @@ function makeRepo(): ISourceSyncRepository & {
 }
 
 describe("Missing-stream retention 009 (T023)", () => {
-  it("restoreMissing is called when a previously-missing channel reappears", async () => {
+  it("restores a previously-missing channel inside applyAtomic", async () => {
     const repo = makeRepo();
     // Current state: ch-1 present, ch-2 missing (line disappeared last sync).
     repo.loadPresentChannels.mockResolvedValueOnce([
-      { id: "ch-1", channelIdentity: "id:1", displayName: "C1", sourcePresence: "present", version: 1 },
+      {
+        id: "ch-1",
+        channelIdentity: "id:1",
+        displayName: "C1",
+        sourcePresence: "present",
+        version: 1,
+      },
     ]);
     repo.loadCurrentChannels.mockResolvedValueOnce([
-      { id: "ch-1", channelIdentity: "id:1", displayName: "C1", sourcePresence: "present", version: 1 },
-      { id: "ch-2", channelIdentity: "id:2", displayName: "C2", sourcePresence: "missing", version: 1 },
+      {
+        id: "ch-1",
+        channelIdentity: "id:1",
+        displayName: "C1",
+        sourcePresence: "present",
+        version: 1,
+      },
+      {
+        id: "ch-2",
+        channelIdentity: "id:2",
+        displayName: "C2",
+        sourcePresence: "missing",
+        version: 1,
+      },
     ]);
     // Snapshot has both — ch-2 is reappearing.
     const loadItems = vi.fn().mockResolvedValue([
-      { channelIdentity: "id:1", payload: { displayName: "C1", groupTitle: null, tvgId: null, tvgLogo: null, streamUrl: "http://1.ts" } },
-      { channelIdentity: "id:2", payload: { displayName: "C2", groupTitle: null, tvgId: null, tvgLogo: null, streamUrl: "http://2.ts" } },
+      {
+        channelIdentity: "id:1",
+        payload: {
+          displayName: "C1",
+          groupTitle: null,
+          tvgId: null,
+          tvgLogo: null,
+          streamUrl: "http://1.ts",
+        },
+      },
+      {
+        channelIdentity: "id:2",
+        payload: {
+          displayName: "C2",
+          groupTitle: null,
+          tvgId: null,
+          tvgLogo: null,
+          streamUrl: "http://2.ts",
+        },
+      },
     ]);
     const uc = new ApplyM3uSyncUseCase(repo as never, loadItems);
 
@@ -70,26 +106,58 @@ describe("Missing-stream retention 009 (T023)", () => {
       sourceVersion: 1,
     });
 
-    expect(repo.restoreMissing).toHaveBeenCalledWith(
-      "src-1",
-      ["ch-2"],
-      expect.any(Date),
+    expect(repo.applyAtomic).toHaveBeenCalledWith(
+      expect.objectContaining({ restoreSourceChannelIds: ["ch-2"] }),
     );
+    expect(repo.restoreMissing).not.toHaveBeenCalled();
   });
 
   it("missing source channels get marked via applyAtomic (no delete)", async () => {
     const repo = makeRepo();
     repo.loadPresentChannels.mockResolvedValueOnce([
-      { id: "ch-1", channelIdentity: "id:1", displayName: "C1", sourcePresence: "present", version: 1 },
-      { id: "ch-2", channelIdentity: "id:2", displayName: "C2", sourcePresence: "present", version: 1 },
+      {
+        id: "ch-1",
+        channelIdentity: "id:1",
+        displayName: "C1",
+        sourcePresence: "present",
+        version: 1,
+      },
+      {
+        id: "ch-2",
+        channelIdentity: "id:2",
+        displayName: "C2",
+        sourcePresence: "present",
+        version: 1,
+      },
     ]);
     repo.loadCurrentChannels.mockResolvedValueOnce([
-      { id: "ch-1", channelIdentity: "id:1", displayName: "C1", sourcePresence: "present", version: 1 },
-      { id: "ch-2", channelIdentity: "id:2", displayName: "C2", sourcePresence: "present", version: 1 },
+      {
+        id: "ch-1",
+        channelIdentity: "id:1",
+        displayName: "C1",
+        sourcePresence: "present",
+        version: 1,
+      },
+      {
+        id: "ch-2",
+        channelIdentity: "id:2",
+        displayName: "C2",
+        sourcePresence: "present",
+        version: 1,
+      },
     ]);
     // Snapshot only has ch-1 — ch-2 disappears.
     const loadItems = vi.fn().mockResolvedValue([
-      { channelIdentity: "id:1", payload: { displayName: "C1", groupTitle: null, tvgId: null, tvgLogo: null, streamUrl: "http://1.ts" } },
+      {
+        channelIdentity: "id:1",
+        payload: {
+          displayName: "C1",
+          groupTitle: null,
+          tvgId: null,
+          tvgLogo: null,
+          streamUrl: "http://1.ts",
+        },
+      },
     ]);
     const uc = new ApplyM3uSyncUseCase(repo as never, loadItems);
 
@@ -123,6 +191,10 @@ describe("Missing-stream retention 009 (T023)", () => {
 
     expect(result.purgedSourceChannels).toBe(3);
     expect(result.purgedStreams).toBe(5);
-    expect(repo.purgeExpiredMissing).toHaveBeenCalledWith(null, retention, cutoff);
+    expect(repo.purgeExpiredMissing).toHaveBeenCalledWith(
+      null,
+      retention,
+      cutoff,
+    );
   });
 });

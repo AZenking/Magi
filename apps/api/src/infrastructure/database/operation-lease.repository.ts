@@ -52,9 +52,27 @@ export class OperationLeaseRepository implements IOperationLeaseRepository {
     const [row] = await db
       .update(operationLeases)
       .set({ heartbeatAt: now, expiresAt })
-      .where(and(eq(operationLeases.scopeKey, scopeKey), eq(operationLeases.taskId, taskId)))
+      .where(
+        and(
+          eq(operationLeases.scopeKey, scopeKey),
+          eq(operationLeases.taskId, taskId),
+        ),
+      )
       .returning();
     return !!row;
+  }
+
+  async release(scopeKey: string, taskId: string): Promise<boolean> {
+    const result = await db
+      .delete(operationLeases)
+      .where(
+        and(
+          eq(operationLeases.scopeKey, scopeKey),
+          eq(operationLeases.taskId, taskId),
+        ),
+      )
+      .returning({ scopeKey: operationLeases.scopeKey });
+    return result.length > 0;
   }
 
   async reclaimIfExpired(scopeKey: string, now: Date): Promise<boolean> {

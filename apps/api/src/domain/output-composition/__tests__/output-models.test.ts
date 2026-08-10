@@ -1,8 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { CanonicalChannelModel, type CanonicalChannel } from "../canonical-channel.model";
-import { ChannelStreamModel, type ChannelStream } from "../channel-stream.model";
+import {
+  CanonicalChannelModel,
+  type CanonicalChannel,
+} from "../canonical-channel.model";
+import {
+  ChannelStreamModel,
+  type ChannelStream,
+} from "../channel-stream.model";
 
-function createCanonical(overrides: Partial<CanonicalChannel> = {}): CanonicalChannel {
+function createCanonical(
+  overrides: Partial<CanonicalChannel> = {},
+): CanonicalChannel {
   return {
     id: "cc-1",
     standardName: "CCTV-1",
@@ -58,15 +66,25 @@ function createStream(overrides: Partial<ChannelStream> = {}): ChannelStream {
 
 describe("CanonicalChannelModel", () => {
   it("shouldBeInOutput when visible and enabled", () => {
-    expect(new CanonicalChannelModel(createCanonical()).shouldBeInOutput()).toBe(true);
+    expect(
+      new CanonicalChannelModel(createCanonical()).shouldBeInOutput(),
+    ).toBe(true);
   });
 
   it("not in output when hidden", () => {
-    expect(new CanonicalChannelModel(createCanonical({ hidden: true })).shouldBeInOutput()).toBe(false);
+    expect(
+      new CanonicalChannelModel(
+        createCanonical({ hidden: true }),
+      ).shouldBeInOutput(),
+    ).toBe(false);
   });
 
   it("not in output when disabled", () => {
-    expect(new CanonicalChannelModel(createCanonical({ disabled: true })).shouldBeInOutput()).toBe(false);
+    expect(
+      new CanonicalChannelModel(
+        createCanonical({ disabled: true }),
+      ).shouldBeInOutput(),
+    ).toBe(false);
   });
 
   it("hasEpg when epgChannelId is set and status matched", () => {
@@ -74,7 +92,11 @@ describe("CanonicalChannelModel", () => {
   });
 
   it("no Epg when unmatched", () => {
-    expect(new CanonicalChannelModel(createCanonical({ epgChannelId: null, epgStatus: "unmatched" })).hasEpg()).toBe(false);
+    expect(
+      new CanonicalChannelModel(
+        createCanonical({ epgChannelId: null, epgStatus: "unmatched" }),
+      ).hasEpg(),
+    ).toBe(false);
   });
 
   it("isHealthy when outputStatus is active", () => {
@@ -82,21 +104,45 @@ describe("CanonicalChannelModel", () => {
   });
 
   it("not healthy when degraded", () => {
-    expect(new CanonicalChannelModel(createCanonical({ outputStatus: "degraded" })).isHealthy()).toBe(false);
+    expect(
+      new CanonicalChannelModel(
+        createCanonical({ outputStatus: "degraded" }),
+      ).isHealthy(),
+    ).toBe(false);
   });
 });
 
 describe("ChannelStreamModel", () => {
   it("isAvailable for online stream", () => {
-    expect(new ChannelStreamModel(createStream({ healthStatus: "online" })).isAvailable()).toBe(true);
+    expect(
+      new ChannelStreamModel(
+        createStream({ healthStatus: "online" }),
+      ).isAvailable(),
+    ).toBe(true);
   });
 
   it("isAvailable for unknown stream", () => {
-    expect(new ChannelStreamModel(createStream({ healthStatus: "unknown" })).isAvailable()).toBe(true);
+    expect(
+      new ChannelStreamModel(
+        createStream({ healthStatus: "unknown" }),
+      ).isAvailable(),
+    ).toBe(true);
   });
 
   it("not available for offline stream", () => {
-    expect(new ChannelStreamModel(createStream({ healthStatus: "offline" })).isAvailable()).toBe(false);
+    expect(
+      new ChannelStreamModel(
+        createStream({ healthStatus: "offline" }),
+      ).isAvailable(),
+    ).toBe(false);
+  });
+
+  it("not available after source-retention purge", () => {
+    expect(
+      new ChannelStreamModel(
+        createStream({ healthStatus: "online", purgedAt: new Date() }),
+      ).isAvailable(),
+    ).toBe(false);
   });
 
   it("online is better than unknown", () => {

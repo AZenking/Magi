@@ -11,15 +11,26 @@ const TEST_DB_URL =
   process.env.TEST_DATABASE_URL ??
   process.env.DATABASE_URL ??
   "postgres://magi:magi@localhost:15432/magi_test";
+// Keep the worker's Drizzle connection on the same database as the direct
+// probe/fixture connection; otherwise a successful probe can target a
+// different port/database than reconcileCanonicals.
+process.env.DATABASE_URL ??= TEST_DB_URL;
 
 const dbReady = await (async () => {
   const probe = postgres(TEST_DB_URL, { connect_timeout: 2, max: 1 });
   try {
     await probe`SELECT 1`;
     const rows = await probe`
-      SELECT column_name FROM information_schema.columns
-      WHERE table_name = 'canonical_channels' AND column_name = 'standard_name'`;
-    return rows.length > 0;
+      SELECT table_name, column_name FROM information_schema.columns
+      WHERE (table_name = 'canonical_channels' AND column_name = 'standard_name')
+         OR (table_name = 'channel_streams' AND column_name IN ('missing_since', 'purged_at', 'version'))`;
+    const columns = new Set(rows.map((row) => `${row.table_name}.${row.column_name}`));
+    return [
+      'canonical_channels.standard_name',
+      'channel_streams.missing_since',
+      'channel_streams.purged_at',
+      'channel_streams.version',
+    ].every((column) => columns.has(column));
   } catch {
     return false;
   } finally {
@@ -54,7 +65,7 @@ describe.skipIf(!dbReady)("reconcileCanonicals override preservation (T012)", ()
       const { reconcileCanonicals } = await import("../../../processors/reconcile-canonicals");
       try {
         await reconcileCanonicals();
-      } catch (e) {
+      } catch {
         // Binding insert may fail on test DB schema differences; the canonical
         // itself should still be created. Check what we got.
       }

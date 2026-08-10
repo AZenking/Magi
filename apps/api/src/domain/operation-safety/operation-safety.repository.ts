@@ -15,11 +15,17 @@ export interface IOperationChangeSetRepository {
     scopeId: string,
     statuses: readonly string[],
   ): Promise<OperationChangeSet[]>;
-  create(data: Omit<OperationChangeSet, "version">): Promise<OperationChangeSet>;
-  updateStatus(id: string, status: string, version: number): Promise<OperationChangeSet | null>;
+  create(
+    data: Omit<OperationChangeSet, "version">,
+  ): Promise<OperationChangeSet>;
+  updateStatus(
+    id: string,
+    status: string,
+    version: number,
+  ): Promise<OperationChangeSet | null>;
   updateSummary(
     id: string,
-    summary: Record<string, number>,
+    summary: Record<string, unknown>,
     warnings: unknown[],
     blockers: unknown[],
   ): Promise<void>;
@@ -37,6 +43,8 @@ export interface IOperationLeaseRepository {
     ttlMs: number,
   ): Promise<{ acquired: boolean; ownerTaskId: string | null }>;
   heartbeat(scopeKey: string, taskId: string): Promise<boolean>;
+  /** Release the lease only when it is still owned by this task. */
+  release(scopeKey: string, taskId: string): Promise<boolean>;
   /** Reclaim only after confirming the referenced task is not active. */
   reclaimIfExpired(scopeKey: string, now: Date): Promise<boolean>;
 }
@@ -49,22 +57,26 @@ export interface IRecoveryPointRepository {
   /** Reference-safe expiry; never deletes a recovery point still referenced by audit/task. */
   expireIfUnreferenced(id: string, now: Date): Promise<boolean>;
   /** Persist per-object recovery items (ordered: parents before children). */
-  createItems(items: ReadonlyArray<{
-    recoveryPointId: string;
-    entityType: string;
-    entityId: string;
-    entityVersion: number;
-    payload: Record<string, unknown>;
-    itemOrder: number;
-    checksum: string;
-  }>): Promise<void>;
+  createItems(
+    items: ReadonlyArray<{
+      recoveryPointId: string;
+      entityType: string;
+      entityId: string;
+      entityVersion: number;
+      payload: Record<string, unknown>;
+      itemOrder: number;
+      checksum: string;
+    }>,
+  ): Promise<void>;
   /** Load recovery items for a restore preview/apply. */
-  findItems(recoveryPointId: string): Promise<ReadonlyArray<{
-    entityType: string;
-    entityId: string | null;
-    entityVersion: number | null;
-    payload: unknown;
-    itemOrder: number;
-    checksum: string;
-  }>>;
+  findItems(recoveryPointId: string): Promise<
+    ReadonlyArray<{
+      entityType: string;
+      entityId: string | null;
+      entityVersion: number | null;
+      payload: unknown;
+      itemOrder: number;
+      checksum: string;
+    }>
+  >;
 }

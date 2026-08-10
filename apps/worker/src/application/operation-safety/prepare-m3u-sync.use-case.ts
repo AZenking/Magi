@@ -25,12 +25,17 @@ import {
   classifyAnomaly,
   type SnapshotItem,
 } from "@magi/backend-core";
-import type { ISourceSyncRepository, ParsedSourceChannel } from "@/domain/source-sync";
+import type {
+  ISourceSyncRepository,
+  ParsedSourceChannel,
+} from "@/domain/source-sync";
 
 export interface PrepareM3uSyncInput {
   readonly sourceId: string;
   readonly changeSetId: string;
   readonly preparedTaskId: string;
+  /** Optional request-time version guard carried by the preview protocol. */
+  readonly expectedSourceVersion?: number;
   readonly updateProgress?: (percent: number, step: string) => Promise<void>;
 }
 
@@ -47,9 +52,12 @@ export interface PrepareM3uSyncResult {
   readonly requiresConfirmation: boolean;
   /** Structured warnings emitted by the anomaly classifier (009). */
   readonly warnings: ReadonlyArray<{
-    readonly code: "empty-snapshot" | "deletion-ratio-exceeded";
+    readonly code:
+      | "empty-snapshot"
+      | "deletion-ratio-exceeded"
+      | "duplicate-identity";
     readonly message: string;
-    readonly deletionRatio: number;
+    readonly deletionRatio?: number;
   }>;
 }
 
@@ -63,6 +71,14 @@ export class PrepareM3uSyncUseCase {
     const source = await this.repo.loadSource(sourceId);
     if (!source || !source.enabled) {
       throw new Error("Source not found or disabled");
+    }
+    if (
+      input.expectedSourceVersion !== undefined &&
+      source.version !== input.expectedSourceVersion
+    ) {
+      throw new Error(
+        `Stale source version: expected ${input.expectedSourceVersion}, current ${source.version}`,
+      );
     }
 
     await input.updateProgress?.(10, "download");
@@ -133,6 +149,16 @@ export class PrepareM3uSyncUseCase {
       currentPresentCount: present.length,
       missingCount: summary.missing,
     });
+    const duplicateWarning =
+      summary.conflicts > 0
+        ? [
+            {
+              code: "duplicate-identity" as const,
+              message: `snapshot contains ${summary.conflicts} duplicate channel identity item(s)`,
+            },
+          ]
+        : [];
+    const warnings = [...anomaly.warnings, ...duplicateWarning];
 
     await input.updateProgress?.(100, "ready");
     return {
@@ -142,8 +168,9 @@ export class PrepareM3uSyncUseCase {
       fingerprint,
       reused: staged.reused,
       sourceVersion: source.version,
-      requiresConfirmation: anomaly.requiresConfirmation,
-      warnings: anomaly.warnings,
+      requiresConfirmation:
+        anomaly.requiresConfirmation || summary.conflicts > 0,
+      warnings,
     };
   }
 }

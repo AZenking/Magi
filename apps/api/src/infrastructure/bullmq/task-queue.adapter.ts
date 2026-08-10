@@ -1,6 +1,14 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { Queue, type JobsOptions } from "bullmq";
-import type { ITaskRepository, TaskType, TaskQueuePort, TaskPayload, EnqueueOptions, JobDetail, ScheduledJob } from "@/domain/task-execution";
+import type {
+  ITaskRepository,
+  TaskType,
+  TaskQueuePort,
+  TaskPayload,
+  EnqueueOptions,
+  JobDetail,
+  ScheduledJob,
+} from "@/domain/task-execution";
 import { QUEUE_NAMES } from "./bullmq.module";
 
 @Injectable()
@@ -30,7 +38,11 @@ export class BullmqTaskQueueAdapter implements TaskQueuePort {
     }
   }
 
-  async enqueue(taskType: TaskType, payload: TaskPayload, options?: EnqueueOptions): Promise<{ jobId: string; taskId: string }> {
+  async enqueue(
+    taskType: TaskType,
+    payload: TaskPayload,
+    options?: EnqueueOptions,
+  ): Promise<{ jobId: string; taskId: string }> {
     const queue = this.resolveQueue(taskType);
     const jobName = options?.jobName ?? taskType;
     const startedAt = new Date();
@@ -60,8 +72,20 @@ export class BullmqTaskQueueAdapter implements TaskQueuePort {
       });
     } catch (err: unknown) {
       const pgErr = err as { code?: string; constraint?: string };
-      if (pgErr.code === "23505" && pgErr.constraint === "sync_logs_one_active_per_source" && payload.sourceId) {
-        const existing = await this.taskRepo.findActiveBySource(taskType, payload.sourceId);
+      if (
+        pgErr.code === "23505" &&
+        pgErr.constraint === "sync_logs_one_active_per_source" &&
+        payload.sourceId
+      ) {
+        // A Safe Operations change set must not be detached from the active
+        // task that caused the uniqueness conflict. Its own change-set row is
+        // marked failed by the caller instead of silently pointing at an
+        // unrelated task.
+        if (payload.sourceType === "operation") throw err;
+        const existing = await this.taskRepo.findActiveBySource(
+          taskType,
+          payload.sourceId,
+        );
         return { jobId: existing!.jobId ?? existing!.id, taskId: existing!.id };
       }
       throw err;
@@ -78,12 +102,16 @@ export class BullmqTaskQueueAdapter implements TaskQueuePort {
         taskId: task.id,
         ...(options?.requestId && { requestId: options.requestId }),
         ...(options?.changeSetId && { changeSetId: options.changeSetId }),
-        ...(options?.inputFingerprint && { inputFingerprint: options.inputFingerprint }),
+        ...(options?.inputFingerprint && {
+          inputFingerprint: options.inputFingerprint,
+        }),
         ...(options?.scopeType && { scopeType: options.scopeType }),
         ...(options?.scopeId && { scopeId: options.scopeId }),
         ...(options?.parentTaskId && { parentTaskId: options.parentTaskId }),
         ...(options?.rootTaskId && { rootTaskId: options.rootTaskId }),
-        ...(options?.idempotencyKey && { idempotencyKey: options.idempotencyKey }),
+        ...(options?.idempotencyKey && {
+          idempotencyKey: options.idempotencyKey,
+        }),
         // 009 T010: propagate source-scoped lease key so the Worker can
         // heartbeat/release via IOperationLeasePort without re-deriving it.
         ...(options?.leaseScope && { leaseScope: options.leaseScope }),
@@ -97,7 +125,11 @@ export class BullmqTaskQueueAdapter implements TaskQueuePort {
       await this.taskRepo.update(task.id, { jobId: job.id ?? jobId });
       return { jobId: job.id ?? jobId, taskId: task.id };
     } catch (err) {
-      await this.taskRepo.update(task.id, { status: "failed", finishedAt: new Date(), error: `Queue add failed: ${(err as Error).message}`.slice(0, 500) });
+      await this.taskRepo.update(task.id, {
+        status: "failed",
+        finishedAt: new Date(),
+        error: `Queue add failed: ${(err as Error).message}`.slice(0, 500),
+      });
       throw err;
     }
   }
@@ -113,30 +145,45 @@ export class BullmqTaskQueueAdapter implements TaskQueuePort {
     const state = await job.getState();
     if (state === "waiting" || state === "delayed") {
       await job.remove();
-      await this.taskRepo.update(taskId, { status: "cancelled", finishedAt: new Date() });
+      await this.taskRepo.update(taskId, {
+        status: "cancelled",
+        finishedAt: new Date(),
+      });
       return true;
     }
 
     return false;
   }
 
-  async retry(taskId: string): Promise<{ retried: boolean; newTaskId?: string }> {
+  async retry(
+    taskId: string,
+  ): Promise<{ retried: boolean; newTaskId?: string }> {
     const task = await this.taskRepo.findById(taskId);
     if (!task || task.status !== "failed") return { retried: false };
 
     const queue = this.resolveQueue(task.taskType);
     const job = await queue.getJob(task.jobId!);
     if (!job) {
-      const { taskId: newTaskId } = await this.enqueue(task.taskType, { sourceId: task.sourceId, sourceType: task.sourceType });
+      const { taskId: newTaskId } = await this.enqueue(task.taskType, {
+        sourceId: task.sourceId,
+        sourceType: task.sourceType,
+      });
       return { retried: true, newTaskId };
     }
 
     await job.retry();
-    await this.taskRepo.update(taskId, { status: "pending", finishedAt: null, error: null });
+    await this.taskRepo.update(taskId, {
+      status: "pending",
+      finishedAt: null,
+      error: null,
+    });
     return { retried: true };
   }
 
-  async getJobState(jobId: string, queueName?: string | null): Promise<string | null> {
+  async getJobState(
+    jobId: string,
+    queueName?: string | null,
+  ): Promise<string | null> {
     const queues = queueName
       ? [this.getQueueByName(queueName)]
       : [this.sourceSyncQueue, this.epgQueue, this.healthCheckQueue];
@@ -149,7 +196,10 @@ export class BullmqTaskQueueAdapter implements TaskQueuePort {
     return null;
   }
 
-  async getJobDetail(jobId: string, queueName?: string | null): Promise<JobDetail | null> {
+  async getJobDetail(
+    jobId: string,
+    queueName?: string | null,
+  ): Promise<JobDetail | null> {
     const queues = queueName
       ? [this.getQueueByName(queueName)]
       : [this.sourceSyncQueue, this.epgQueue, this.healthCheckQueue];
@@ -162,7 +212,7 @@ export class BullmqTaskQueueAdapter implements TaskQueuePort {
         return {
           state,
           attemptsMade: job.attemptsMade,
-          progress: job.progress as number | object ?? 0,
+          progress: (job.progress as number | object) ?? 0,
           failedReason: job.failedReason ?? undefined,
           stacktrace: job.stacktrace?.length ? job.stacktrace : undefined,
           returnValue: job.returnvalue ?? undefined,
@@ -174,15 +224,24 @@ export class BullmqTaskQueueAdapter implements TaskQueuePort {
       }
     }
 
-    return { state: "unknown", attemptsMade: 0, progress: 0, jobAvailable: false };
+    return {
+      state: "unknown",
+      attemptsMade: 0,
+      progress: 0,
+      jobAvailable: false,
+    };
   }
 
   private getQueueByName(name: string): Queue | null {
     switch (name) {
-      case QUEUE_NAMES.SOURCE_SYNC: return this.sourceSyncQueue;
-      case QUEUE_NAMES.EPG: return this.epgQueue;
-      case QUEUE_NAMES.HEALTH_CHECK: return this.healthCheckQueue;
-      default: return null;
+      case QUEUE_NAMES.SOURCE_SYNC:
+        return this.sourceSyncQueue;
+      case QUEUE_NAMES.EPG:
+        return this.epgQueue;
+      case QUEUE_NAMES.HEALTH_CHECK:
+        return this.healthCheckQueue;
+      default:
+        return null;
     }
   }
 
@@ -248,15 +307,22 @@ export class BullmqTaskQueueAdapter implements TaskQueuePort {
     });
   }
 
-  async updateSchedule(jobId: string, config: { intervalMs: number }): Promise<void> {
-    const reg = BullmqTaskQueueAdapter.JOB_REGISTRY.find((r) => r.jobId === jobId);
+  async updateSchedule(
+    jobId: string,
+    config: { intervalMs: number },
+  ): Promise<void> {
+    const reg = BullmqTaskQueueAdapter.JOB_REGISTRY.find(
+      (r) => r.jobId === jobId,
+    );
     if (!reg) throw new Error(`Unknown scheduled job: ${jobId}`);
 
     const queue = this.getQueueByName(reg.queueName);
     if (!queue) throw new Error(`Queue not found: ${reg.queueName}`);
 
     // Remove existing repeatable
-    const existing = (await queue.getRepeatableJobs()).find((r) => r.key === jobId);
+    const existing = (await queue.getRepeatableJobs()).find(
+      (r) => r.key === jobId,
+    );
     if (existing) {
       await queue.removeRepeatableByKey(existing.key);
     }
@@ -265,14 +331,20 @@ export class BullmqTaskQueueAdapter implements TaskQueuePort {
     if (config.intervalMs > 0) {
       await queue.add(
         reg.taskType,
-        { sourceId: null, sourceType: reg.taskType === "stream-check" ? "m3u" : "system", taskType: reg.taskType },
+        {
+          sourceId: null,
+          sourceType: reg.taskType === "stream-check" ? "m3u" : "system",
+          taskType: reg.taskType,
+        },
         { repeat: { every: config.intervalMs }, jobId: reg.jobId },
       );
     }
   }
 
   async triggerScheduledJob(jobId: string): Promise<{ taskId: string }> {
-    const reg = BullmqTaskQueueAdapter.JOB_REGISTRY.find((r) => r.jobId === jobId);
+    const reg = BullmqTaskQueueAdapter.JOB_REGISTRY.find(
+      (r) => r.jobId === jobId,
+    );
     if (!reg) throw new Error(`Unknown scheduled job: ${jobId}`);
     return this.enqueue(reg.taskType, {
       sourceId: null,

@@ -80,7 +80,7 @@ export class DrizzleEpgSyncRepository implements IEpgSyncRepository {
     xmltvSourceId: string,
     epgChannelId: string,
     matchType: string,
-    expectedVersion: number,
+    _expectedVersion: number,
   ): Promise<boolean> {
     // Check if locked — skip if so.
     const [existing] = await db

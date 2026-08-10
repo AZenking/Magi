@@ -6,7 +6,16 @@
  * (snapshotId, itemOrder) unique constraints; duplicate identities within a
  * snapshot are numbered by collisionOrdinal and flagged conflict upstream.
  */
-import { pgTable, uuid, varchar, jsonb, integer, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  uuid,
+  varchar,
+  jsonb,
+  integer,
+  timestamp,
+  index,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 import { timestamps } from "./helpers";
 
 export const sourceImportSnapshots = pgTable(
@@ -15,17 +24,27 @@ export const sourceImportSnapshots = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     sourceId: uuid("source_id").notNull(),
     sourceType: varchar("source_type", { length: 10 }).notNull(), // m3u | xmltv
-    contentFingerprint: varchar("content_fingerprint", { length: 80 }).notNull(),
+    contentFingerprint: varchar("content_fingerprint", {
+      length: 80,
+    }).notNull(),
     sourceVersion: integer("source_version").notNull(),
     status: varchar("status", { length: 20 }).notNull(), // preparing | ready | invalid | expired
     itemCount: integer("item_count").notNull().default(0),
     parserVersion: varchar("parser_version", { length: 30 }).notNull(),
     preparedTaskId: uuid("prepared_task_id"),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
   (t) => [
-    uniqueIndex("snapshot_source_fingerprint_idx").on(t.sourceId, t.contentFingerprint),
+    // Fingerprints may recur after the previous snapshot expires. Keep this
+    // as a lookup index; stageSnapshotIdempotent serializes prepares per source
+    // and only reuses rows whose expiresAt is still in the future.
+    index("snapshot_source_fingerprint_idx").on(
+      t.sourceId,
+      t.contentFingerprint,
+    ),
     index("snapshot_source_idx").on(t.sourceId),
     index("snapshot_status_idx").on(t.status),
   ],

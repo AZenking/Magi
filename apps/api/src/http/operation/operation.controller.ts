@@ -4,7 +4,20 @@
  * Endpoints for the unified high-risk operation protocol
  * (contracts/operation-previews.md). Delegates to the T036 use cases.
  */
-import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Query, UseGuards, BadRequestException, Headers as HeadersDecorator } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+  BadRequestException,
+  Headers as HeadersDecorator,
+} from "@nestjs/common";
 import {
   PrepareOperationPreviewUseCase,
   FindOperationChangeSetUseCase,
@@ -38,13 +51,15 @@ export class OperationController {
   private readonly idempotencyRepo = new IdempotencyRepository();
   constructor(
     @Inject("TASK_QUEUE_PORT") private readonly queue: BullmqTaskQueueAdapter,
-    @Inject(AppendAuditEventUseCase) private readonly audit: AppendAuditEventUseCase,
+    @Inject(AppendAuditEventUseCase)
+    private readonly audit: AppendAuditEventUseCase,
   ) {}
 
   @Post("previews")
   @HttpCode(202)
   async preparePreview(
-    @Body() body: {
+    @Body()
+    body: {
       kind: OperationKind;
       scope: { type: OperationScopeType; id: string };
       parameters: Record<string, unknown>;
@@ -65,8 +80,13 @@ export class OperationController {
     const result = await useCase.execute({
       kind: body.kind,
       scopeType: body.scope.type,
-      scopeId: body.scope.id,
+      scopeId:
+        body.kind === "recovery_restore" &&
+        typeof body.parameters.recoveryPointId === "string"
+          ? body.parameters.recoveryPointId
+          : body.scope.id,
       sourceId: (body.parameters.sourceId as string) ?? null,
+      parameters: body.parameters,
       inputFingerprint: fingerprint,
       baseVersions: body.expectedVersions,
       requestedBy: user.id,
@@ -83,7 +103,10 @@ export class OperationController {
 
   @Get("change-sets/:id")
   async getChangeSet(@Param("id") id: string) {
-    const useCase = new FindOperationChangeSetUseCase(this.changeSetRepo, this.changeSetRepo);
+    const useCase = new FindOperationChangeSetUseCase(
+      this.changeSetRepo,
+      this.changeSetRepo,
+    );
     const cs = await useCase.findOne(id);
     return { success: true, data: cs };
   }
@@ -95,7 +118,10 @@ export class OperationController {
     @Query("pageSize") pageSize = "20",
     @Query("classification") classification?: string,
   ) {
-    const useCase = new FindOperationChangeSetUseCase(this.changeSetRepo, this.changeSetRepo);
+    const useCase = new FindOperationChangeSetUseCase(
+      this.changeSetRepo,
+      this.changeSetRepo,
+    );
     const result = await useCase.findItems({
       changeSetId: id,
       page: Number.parseInt(page, 10),
@@ -109,16 +135,27 @@ export class OperationController {
   @UseGuards(IfMatchRequiredGuard)
   async updateDecisions(
     @Param("id") id: string,
-    @Body() body: { decisions: Array<{ itemId: string; selected: boolean; candidateId?: string; lockManualDecision?: boolean }> },
-    @Query("_ifMatch") _ifMatchHeader: string,
-    @Body() fullBody: unknown,
+    @Body()
+    body: {
+      decisions: Array<{
+        itemId: string;
+        selected: boolean;
+        candidateId?: string;
+        lockManualDecision?: boolean;
+      }>;
+    },
+    @HeadersDecorator("if-match") ifMatchHeader: string,
   ) {
-    const headers = (fullBody as { __headers?: Record<string, string> })?.__headers;
-    const ifMatch = parseIfMatch(headers?.["if-match"] ?? null);
-    const useCase = new UpdateChangeDecisionsUseCase(this.changeSetRepo, this.changeSetRepo);
+    const ifMatch = parseIfMatch(ifMatchHeader);
+    if (ifMatch === null)
+      throw new BadRequestException("Invalid If-Match header");
+    const useCase = new UpdateChangeDecisionsUseCase(
+      this.changeSetRepo,
+      this.changeSetRepo,
+    );
     const result = await useCase.execute({
       changeSetId: id,
-      expectedVersion: ifMatch ?? 0,
+      expectedVersion: ifMatch,
       decisions: body.decisions,
     });
     return { success: true, data: result };
@@ -135,7 +172,8 @@ export class OperationController {
     @CurrentUser() user: { id: string },
   ) {
     const expectedVersion = parseIfMatch(ifMatch);
-    if (expectedVersion === null) throw new BadRequestException("Invalid If-Match header");
+    if (expectedVersion === null)
+      throw new BadRequestException("Invalid If-Match header");
     const useCase = new ApplyOperationUseCase(
       this.changeSetRepo,
       this.leaseRepo,
@@ -189,14 +227,18 @@ export class OperationController {
   async cancel(
     @Param("id") id: string,
     @CurrentUser() user: { id: string },
+    @HeadersDecorator("if-match") ifMatchHeader: string,
   ) {
+    const expectedVersion = parseIfMatch(ifMatchHeader);
+    if (expectedVersion === null)
+      throw new BadRequestException("Invalid If-Match header");
     const cs = await this.changeSetRepo.findById(id);
     const useCase = new CancelOperationPreviewUseCase(
       this.changeSetRepo,
       this.taskRepo,
       this.queue,
     );
-    const result = await useCase.execute({ changeSetId: id, expectedVersion: 0 });
+    const result = await useCase.execute({ changeSetId: id, expectedVersion });
     await this.audit.execute({
       actorType: "user",
       actorId: user.id,

@@ -26,7 +26,8 @@ export class UpdateChangeDecisionsUseCase {
 
   async execute(input: UpdateDecisionsInput): Promise<{ version: number }> {
     const cs = await this.changeSets.findById(input.changeSetId);
-    if (!cs) throw new ConflictException({ code: "resource-not-found", status: 404 });
+    if (!cs)
+      throw new ConflictException({ code: "resource-not-found", status: 404 });
     if (cs.status !== "ready") {
       throw new ConflictException({
         code: "invalid-state-transition",
@@ -43,15 +44,41 @@ export class UpdateChangeDecisionsUseCase {
       });
     }
 
-    for (const decision of input.decisions) {
-      await this.itemRepo.updateItemSelection(
-        decision.itemId,
-        decision.selected,
-        decision,
-      );
+    // Production repository implementations persist item decisions and bump
+    // the parent token in one transaction. This prevents a concurrent edit or
+    // a failed item write from leaving a half-updated change set.
+    const updated =
+      typeof this.itemRepo.updateDecisionsAndBumpVersion === "function"
+        ? await this.itemRepo.updateDecisionsAndBumpVersion(
+            input.changeSetId,
+            cs.version,
+            input.decisions.map((decision) => ({
+              itemId: decision.itemId,
+              selected: decision.selected,
+              decision,
+            })),
+          )
+        : await (async () => {
+            for (const decision of input.decisions) {
+              await this.itemRepo.updateItemSelection(
+                decision.itemId,
+                decision.selected,
+                decision,
+              );
+            }
+            return this.changeSets.updateStatus(
+              input.changeSetId,
+              "ready",
+              cs.version,
+            );
+          })();
+    if (!updated) {
+      throw new ConflictException({
+        code: "stale-resource",
+        status: 412,
+        currentVersion: cs.version,
+      });
     }
-
-    // Bump version so concurrent editors see the new state.
-    return { version: cs.version + 1 };
+    return { version: updated.version };
   }
 }

@@ -19,8 +19,6 @@ import { AuditEventWriterRepository } from "@/infrastructure/database/audit-even
 import { auditEvents, outboxEvents } from "@/infrastructure/database/schema";
 import type { AuditEvent } from "@/domain/audit";
 
-type InsertValues = ReturnType<typeof makeReturningChain>;
-
 function makeReturningChain(row: Record<string, unknown>) {
   return {
     values: vi.fn(() => ({

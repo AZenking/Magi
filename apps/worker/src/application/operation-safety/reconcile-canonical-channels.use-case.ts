@@ -51,14 +51,71 @@ export class ReconcileCanonicalChannelsUseCase {
   constructor(private readonly repo: ICanonicalReconcileRepository) {}
 
   async execute(input: ReconcileInput): Promise<ReconcileResult> {
+    if (this.repo.runInTransaction) {
+      return this.repo.runInTransaction((repo) =>
+        new ReconcileCanonicalChannelsUseCase(repo).executeCore(input),
+      );
+    }
+    return this.executeCore(input);
+  }
+
+  private async executeCore(input: ReconcileInput): Promise<ReconcileResult> {
     const sourceChannels = input.sourceChannels ?? [];
+    const sourceById = new Map(
+      sourceChannels.map((source) => [source.sourceChannelId, source]),
+    );
     const legacyIds = input.sourceChannelIds ?? [];
     const missingSourceChannelIds = input.missingSourceChannelIds;
+
+    await this.repo.markStaleCandidates?.([
+      ...sourceChannels.map((source) => ({
+        sourceChannelId: source.sourceChannelId,
+        sourceFingerprint: source.sourceFingerprint,
+      })),
+      ...missingSourceChannelIds.map((sourceChannelId) => ({
+        sourceChannelId,
+        sourceFingerprint: null,
+      })),
+    ]);
 
     let linkedCount = 0;
     let createdCount = 0;
     let candidatesEmitted = 0;
     let candidatesSuppressed = 0;
+
+    // Re-link a source channel to its prior canonical before considering any
+    // new merge. This is what makes a 30-day missing/reappearing line reuse
+    // the original membership and canonical identity (including tvg-id-null
+    // channels and manual memberships).
+    const processedSourceIds = new Set<string>();
+    for (const ch of sourceChannels) {
+      const existing = await this.repo.findMembership(ch.sourceChannelId);
+      if (!existing) continue;
+      const source =
+        existing.membershipSource === "manual" ? "manual" : "automatic";
+      if (existing.active === false) {
+        await this.repo.upsertMembership(
+          existing.canonicalChannelId,
+          {
+            sourceChannelId: ch.sourceChannelId,
+            channelIdentity: ch.channelIdentity,
+          },
+          source,
+        );
+      }
+      if (ch.streamUrl) {
+        await this.repo.upsertSourceStream(
+          existing.canonicalChannelId,
+          ch.sourceChannelId,
+          input.sourceId,
+          ch.streamUrl,
+        );
+      } else {
+        await this.repo.markSourceStreamMissing(ch.sourceChannelId, new Date());
+      }
+      processedSourceIds.add(ch.sourceChannelId);
+      linkedCount++;
+    }
 
     // ----- 1. Auto-merge by same non-null normalized tvg-id -----
     const groups = groupByNormalizedTvgId(
@@ -73,33 +130,59 @@ export class ReconcileCanonicalChannelsUseCase {
       })),
     );
 
-    const processedSourceIds = new Set<string>();
     let i = 0;
     for (const [normalizedTvgId, group] of groups) {
-      const existing = await this.repo.findCanonicalByNormalizedTvgId(normalizedTvgId);
+      const pendingGroup = group.filter(
+        (ch) => !processedSourceIds.has(ch.sourceChannelId),
+      );
+      if (pendingGroup.length === 0) continue;
+      const existing =
+        await this.repo.findCanonicalByNormalizedTvgId(normalizedTvgId);
       let canonicalChannelId: string;
       if (existing) {
         canonicalChannelId = existing.canonicalChannelId;
       } else {
-        const displayName = group[0]?.displayName ?? normalizedTvgId;
+        const displayName = pendingGroup[0]?.displayName ?? normalizedTvgId;
         const created = await this.repo.createCanonicalFromSource(
-          group[0]!.sourceChannelId,
+          pendingGroup[0]!.sourceChannelId,
           displayName,
+          pendingGroup[0]!.groupTitle,
         );
         canonicalChannelId = created.canonicalChannelId;
         createdCount++;
       }
 
-      for (const ch of group) {
-        const alreadyMember = await this.repo.findMembership(ch.sourceChannelId);
+      for (const ch of pendingGroup) {
+        const alreadyMember = await this.repo.findMembership(
+          ch.sourceChannelId,
+        );
+        const targetCanonicalId =
+          alreadyMember?.canonicalChannelId ?? canonicalChannelId;
         if (!alreadyMember) {
           await this.repo.upsertMembership(
-            canonicalChannelId,
+            targetCanonicalId,
             {
               sourceChannelId: ch.sourceChannelId,
               channelIdentity: ch.channelIdentity,
             },
             "automatic",
+          );
+        }
+        const streamUrl = sourceById.get(ch.sourceChannelId)?.streamUrl;
+        if (streamUrl) {
+          await this.repo.upsertSourceStream(
+            targetCanonicalId,
+            ch.sourceChannelId,
+            input.sourceId,
+            streamUrl,
+          );
+        } else {
+          // A source entry without a playable URL must not leave a stale
+          // source-derived line visible in output. Keep the row for history
+          // and retention, but mark it unavailable like a missing line.
+          await this.repo.markSourceStreamMissing(
+            ch.sourceChannelId,
+            new Date(),
           );
         }
         linkedCount++;
@@ -120,12 +203,22 @@ export class ReconcileCanonicalChannelsUseCase {
       if (processedSourceIds.has(sourceChannelId)) continue;
       const alreadyMember = await this.repo.findMembership(sourceChannelId);
       if (alreadyMember) {
+        if (alreadyMember.active === false) {
+          await this.repo.upsertMembership(
+            alreadyMember.canonicalChannelId,
+            { sourceChannelId, channelIdentity: sourceChannelId },
+            alreadyMember.membershipSource === "manual"
+              ? "manual"
+              : "automatic",
+          );
+        }
         linkedCount++;
         continue;
       }
       const created = await this.repo.createCanonicalFromSource(
         sourceChannelId,
         sourceChannelId,
+        null,
       );
       await this.repo.upsertMembership(
         created.canonicalChannelId,
@@ -170,7 +263,8 @@ export class ReconcileCanonicalChannelsUseCase {
           canonicalChannelId: candidate.canonicalChannelId,
           method: candidate.method,
         });
-        const suppressed = await this.repo.isCandidateSuppressed(suppressionKey);
+        const suppressed =
+          await this.repo.isCandidateSuppressed(suppressionKey);
         if (suppressed) {
           candidatesSuppressed++;
           continue;
@@ -193,9 +287,13 @@ export class ReconcileCanonicalChannelsUseCase {
     for (const missingId of missingSourceChannelIds) {
       const membership = await this.repo.findMembership(missingId);
       if (membership) {
-        await this.repo.deactivateMembership(membership.canonicalChannelId, missingId);
+        await this.repo.deactivateMembership(
+          membership.canonicalChannelId,
+          missingId,
+        );
         deactivatedCount++;
       }
+      await this.repo.markSourceStreamMissing(missingId, new Date());
     }
 
     await input.updateProgress?.(100, "done");

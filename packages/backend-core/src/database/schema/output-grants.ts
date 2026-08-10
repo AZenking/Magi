@@ -14,7 +14,6 @@ import {
   pgTable,
   uuid,
   varchar,
-  text,
   timestamp,
   index,
   uniqueIndex,
@@ -35,8 +34,12 @@ export const outputGrants = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     revokedReason: varchar("revoked_reason", { length: 500 }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     uniqueIndex("output_grant_token_hash_idx").on(t.tokenHash),

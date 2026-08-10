@@ -29,11 +29,17 @@ function toDomain(row: typeof sourceImportSnapshots.$inferSelect): SnapshotRow {
 
 export class SourceImportSnapshotRepository {
   async findById(id: string): Promise<SnapshotRow | null> {
-    const [row] = await db.select().from(sourceImportSnapshots).where(eq(sourceImportSnapshots.id, id)).limit(1);
+    const [row] = await db
+      .select()
+      .from(sourceImportSnapshots)
+      .where(eq(sourceImportSnapshots.id, id))
+      .limit(1);
     return row ? toDomain(row) : null;
   }
 
-  async create(data: Omit<SnapshotRow, "id" | "createdAt">): Promise<SnapshotRow> {
+  async create(
+    data: Omit<SnapshotRow, "id" | "createdAt">,
+  ): Promise<SnapshotRow> {
     const [row] = await db
       .insert(sourceImportSnapshots)
       .values({
@@ -51,13 +57,22 @@ export class SourceImportSnapshotRepository {
     return toDomain(row!);
   }
 
-  async updateStatus(id: string, status: string, itemCount?: number): Promise<void> {
+  async updateStatus(
+    id: string,
+    status: string,
+    itemCount?: number,
+  ): Promise<void> {
     const patch: Record<string, unknown> = { status };
     if (itemCount !== undefined) patch.itemCount = itemCount;
-    await db.update(sourceImportSnapshots).set(patch).where(eq(sourceImportSnapshots.id, id));
+    await db
+      .update(sourceImportSnapshots)
+      .set(patch)
+      .where(eq(sourceImportSnapshots.id, id));
   }
 
-  async findItems(snapshotId: string): Promise<(typeof sourceImportSnapshotItems.$inferSelect)[]> {
+  async findItems(
+    snapshotId: string,
+  ): Promise<(typeof sourceImportSnapshotItems.$inferSelect)[]> {
     return db
       .select()
       .from(sourceImportSnapshotItems)
@@ -66,28 +81,36 @@ export class SourceImportSnapshotRepository {
   }
 
   async createItems(
-    items: (Omit<
-      typeof sourceImportSnapshotItems.$inferInsert,
-      "id"
-    >)[],
+    items: Omit<typeof sourceImportSnapshotItems.$inferInsert, "id">[],
   ): Promise<void> {
     if (items.length === 0) return;
-    for (const batch of chunk(items, safeBatchSize(7))) {
-      await db.insert(sourceImportSnapshotItems).values(batch);
-    }
+    await db.transaction(async (tx) => {
+      for (const batch of chunk(items, safeBatchSize(7))) {
+        await tx.insert(sourceImportSnapshotItems).values(batch);
+      }
+    });
   }
 
   /** Reference-safe: only delete if no change set references this snapshot. */
-  async deleteIfUnreferenced(id: string, referencedByChangeSet: boolean): Promise<boolean> {
+  async deleteIfUnreferenced(
+    id: string,
+    referencedByChangeSet: boolean,
+  ): Promise<boolean> {
     if (referencedByChangeSet) return false;
-    const result = await db.delete(sourceImportSnapshots).where(eq(sourceImportSnapshots.id, id)).returning();
+    const result = await db
+      .delete(sourceImportSnapshots)
+      .where(eq(sourceImportSnapshots.id, id))
+      .returning();
     return result.length > 0;
   }
 
   /** Count items by collision status (duplicate-identity detection). */
   async countCollisionGroups(snapshotId: string): Promise<number> {
     const rows = await db
-      .select({ identity: sourceImportSnapshotItems.channelIdentity, n: sql<number>`count(*)::int` })
+      .select({
+        identity: sourceImportSnapshotItems.channelIdentity,
+        n: sql<number>`count(*)::int`,
+      })
       .from(sourceImportSnapshotItems)
       .where(eq(sourceImportSnapshotItems.snapshotId, snapshotId))
       .groupBy(sourceImportSnapshotItems.channelIdentity);

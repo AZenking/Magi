@@ -13,6 +13,8 @@ import type { IOperationLeasePort } from "@/domain/task-execution";
 
 @Injectable()
 export class OperationLeaseAdapter implements IOperationLeasePort {
+  private readonly holders = new Map<string, string>();
+
   constructor(
     @Inject(OperationLeaseRepository)
     private readonly repo: OperationLeaseRepository,
@@ -33,6 +35,7 @@ export class OperationLeaseAdapter implements IOperationLeasePort {
       null,
       input.ttlSeconds * 1000,
     );
+    if (result.acquired) this.holders.set(scopeKey, input.holderId);
     return {
       acquired: result.acquired,
       // The legacy repo uses scopeKey as the primary identifier; return it so
@@ -43,18 +46,15 @@ export class OperationLeaseAdapter implements IOperationLeasePort {
 
   async heartbeat(leaseId: string, ttlSeconds: number): Promise<boolean> {
     void ttlSeconds;
-    // The legacy repo derives its TTL extension from the current task id; we
-    // pass leaseId as both scopeKey and taskId since the adapter acquired it
-    // under the holderId earlier. Real-world T038+ work may rewrite this to
-    // thread the actual taskId through.
-    return this.repo.heartbeat(leaseId, leaseId);
+    const holderId = this.holders.get(leaseId);
+    if (!holderId) return false;
+    return this.repo.heartbeat(leaseId, holderId);
   }
 
   async release(leaseId: string): Promise<void> {
-    // The legacy repo exposes no direct release; reclaimIfExpired with a
-    // future `now` deletes the row regardless of TTL. We pass `now + 1 day`
-    // to ensure deletion.
-    const future = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    await this.repo.reclaimIfExpired(leaseId, future);
+    const holderId = this.holders.get(leaseId);
+    if (!holderId) return;
+    await this.repo.release(leaseId, holderId);
+    this.holders.delete(leaseId);
   }
 }

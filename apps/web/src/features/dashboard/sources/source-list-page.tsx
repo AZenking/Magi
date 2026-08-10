@@ -39,14 +39,18 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
   // The flow shows impact (channels/programmes/mappings/streams) plus the
   // reversible disable alternative before any irreversible change.
   const [deletingSource, setDeletingSource] = useState<SourceVo | null>(null);
-  const [deleteChangeSetId, setDeleteChangeSetId] = useState<string | null>(null);
+  const [deleteChangeSetId, setDeleteChangeSetId] = useState<string | null>(
+    null,
+  );
   const [deletePreviewKind, setDeletePreviewKind] = useState<
     "source_delete" | null
   >(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [checkingId, setCheckingId] = useState<string | null>(null);
   // Safe Operations (T046): M3U sync goes preview → confirm → task.
-  const [previewChangeSetId, setPreviewChangeSetId] = useState<string | null>(null);
+  const [previewChangeSetId, setPreviewChangeSetId] = useState<string | null>(
+    null,
+  );
   const preparePreview = usePreparePreview();
 
   const { data, isLoading, error, refetch } = useQuery({
@@ -138,7 +142,9 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
           kind: "source_delete",
           scope: { type: "source", id: source.id },
           parameters: { sourceId: source.id },
-          expectedVersions: {},
+          expectedVersions: {
+            [`source:${source.id}`]: source.version ?? 1,
+          },
         });
         setDeletePreviewKind("source_delete");
         setDeleteChangeSetId(result.changeSet.id);
@@ -185,7 +191,9 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
             kind: "m3u_sync",
             scope: { type: "source", id: source.id },
             parameters: { sourceId: source.id },
-            expectedVersions: {},
+            expectedVersions: {
+              [`source:${source.id}`]: source.version ?? 1,
+            },
           });
           setPreviewChangeSetId(result.changeSet.id);
           return;
@@ -276,14 +284,22 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
         checkingId,
         deletingId: deletingSource?.id ?? null,
       }),
-    [handleSync, handleCheck, handleDelete, syncingId, checkingId, deletingSource],
+    [
+      handleSync,
+      handleCheck,
+      handleDelete,
+      syncingId,
+      checkingId,
+      deletingSource,
+    ],
   );
 
   // Controlled sort state mirrors the server-side sort so the column header
   // shows the active direction after a manual change.
-  const sortState = useMemo<
-    { field: string; order: "ascend" | "descend" } | null
-  >(
+  const sortState = useMemo<{
+    field: string;
+    order: "ascend" | "descend";
+  } | null>(
     () =>
       sortBy && sortDir
         ? {
@@ -341,7 +357,13 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
         sortState={sortState}
         onSorterChange={(field, order) => {
           setSortBy(field ?? undefined);
-          setSortDir(order === "ascend" ? "asc" : order === "descend" ? "desc" : undefined);
+          setSortDir(
+            order === "ascend"
+              ? "asc"
+              : order === "descend"
+                ? "desc"
+                : undefined,
+          );
           setPage(1);
         }}
         pagination={{
@@ -405,7 +427,8 @@ export function SourceListPage({ type, title }: SourceListPageProps) {
         >
           <Space orientation="vertical" size={16} style={{ width: "100%" }}>
             <Text>
-              删除源「{deleteTarget.name}」前已计算对频道、节目、映射、线路与调度
+              删除源「{deleteTarget.name}
+              」前已计算对频道、节目、映射、线路与调度
               的影响。下方预览可安全浏览；「应用变更」后才会真正提交删除任务。
               如需可恢复的替代方案，请使用「改为停用」。
             </Text>
