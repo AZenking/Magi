@@ -41,8 +41,9 @@ POSTGRES_DB=magi
 REDIS_PASSWORD=<另一随机值>
 
 IMAGE_PREFIX=ghcr.io/azenking
-# 推荐固定为某次成功构建的完整 SHA；需要跟随最新成功构建时才使用 latest。
-IMAGE_TAG=sha-<完整提交SHA>
+# 发布版本提交会产生与根 package.json 相同的镜像标签，例如 0.2.0。
+# 首次部署或版本标签尚未发布时使用 latest；生产环境建议改为具体版本。
+IMAGE_TAG=latest
 
 WEB_PORT=18080
 API_PORT=18081
@@ -89,6 +90,18 @@ docker compose -f compose.yaml ps
 
 `seed` 会同步同名管理员的资料和密码。因此不要在每次 API 容器启动时无条件运行它；
 仅在首次初始化或明确需要重置 `.env` 中管理员密码时运行。
+
+## 版本发布流程
+
+根目录 `package.json` 的 `version` 是容器发布版本的唯一来源。发布新版本时：
+
+1. 先修改根目录 `package.json`，例如将 `0.1.0` 改为 `0.2.0`。
+2. 将版本修改与本次代码一起提交并推送到 `master`。
+3. GitHub Actions 读取该版本，构建四个镜像并发布 `0.2.0`、`latest` 和
+   `sha-<commit>` 标签，同时将版本写入 OCI 镜像标签。
+4. Actions 成功后，在群晖 `.env` 设置 `IMAGE_TAG=0.2.0`，执行上面的更新命令。
+
+未修改版本号的普通修复提交不会覆盖旧版本标签，只会更新 `latest` 和 SHA 标签。
 
 ## 3. Cloudflare Tunnel
 

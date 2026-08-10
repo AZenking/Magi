@@ -25,6 +25,8 @@ RUN pnpm --filter @magi/types --filter @magi/backend-core --filter @magi/utils b
 # A small, explicit target for Docker Compose migrations and first-time seed.
 # It keeps the migration files and drizzle-kit out of the long-running API image.
 FROM builder AS migrate
+ARG APP_VERSION=unknown
+LABEL org.opencontainers.image.version="${APP_VERSION}"
 COPY scripts/with-env.sh ./scripts/with-env.sh
 CMD ["sh", "scripts/with-env.sh", "pnpm", "--filter", "@magi/api", "exec", "drizzle-kit", "migrate", "--config=src/infrastructure/database/drizzle.config.ts"]
 
@@ -44,7 +46,9 @@ RUN pnpm install --frozen-lockfile --prod --filter @magi/api... && \
             /app/node_modules/.pnpm/prettier* /app/node_modules/.pnpm/webpack*
 
 FROM base AS runner
+ARG APP_VERSION=unknown
 ENV NODE_ENV=production
+LABEL org.opencontainers.image.version="${APP_VERSION}"
 COPY --from=builder /app/apps/api/dist ./dist
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=builder /app/packages/types/dist ./packages/types/dist

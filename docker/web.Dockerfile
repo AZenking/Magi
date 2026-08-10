@@ -22,7 +22,9 @@ RUN pnpm --filter @magi/types --filter @magi/utils build && \
     pnpm --filter @magi/web build
 
 FROM base AS runner
+ARG APP_VERSION=unknown
 ENV NODE_ENV=production
+LABEL org.opencontainers.image.version="${APP_VERSION}"
 COPY --from=builder /app/apps/web/dist ./dist
 COPY --from=builder /app/apps/web/prod-server.js ./prod-server.js
 

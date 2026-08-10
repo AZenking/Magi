@@ -39,7 +39,9 @@ RUN pnpm install --frozen-lockfile --prod --filter @magi/worker... && \
             /app/node_modules/.pnpm/prettier* /app/node_modules/.pnpm/webpack*
 
 FROM base AS runner
+ARG APP_VERSION=unknown
 ENV NODE_ENV=production
+LABEL org.opencontainers.image.version="${APP_VERSION}"
 RUN apk add --no-cache ffmpeg
 COPY --from=builder /app/apps/worker/dist ./dist
 COPY --from=prod-deps /app/node_modules ./node_modules

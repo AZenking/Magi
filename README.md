@@ -134,7 +134,8 @@ docker login ghcr.io -u azenking
 
 cp docker/.env.prod.example docker/.env.prod
 # Set IMAGE_PREFIX=ghcr.io/azenking and configure the public URLs and secrets.
-# Keep IMAGE_TAG=latest, or set IMAGE_TAG=sha-<commit> to deploy a specific build.
+# Set IMAGE_TAG to a released package version (for example 0.2.0), or to
+# sha-<commit> for a reproducible rollback. `latest` follows the newest build.
 
 # First server deployment also creates/synchronizes the admin account.
 MAGI_SEED=1 bash scripts/deploy-server.sh
