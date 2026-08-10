@@ -38,6 +38,8 @@ export interface CurrentSourceChannel {
   readonly displayName: string;
   readonly sourcePresence: string;
   readonly version: number;
+  /** Upstream tvg-id; needed by reconcile auto-merge (009 T025). */
+  readonly tvgId: string | null;
 }
 
 /** Snapshot-stage result with reuse hint (009: idempotent prepare). */

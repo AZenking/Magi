@@ -1,5 +1,6 @@
 import { eq, asc, and, inArray } from "drizzle-orm";
 import type { IChannelStreamRepository, ChannelStream, StreamWithSource, HealthStatus } from "@/domain/output-composition";
+import { chunk, safeBatchSize } from "@magi/utils";
 import { db } from "./connection";
 import { channelStreams, m3uSources } from "./schema";
 
@@ -80,8 +81,12 @@ export class ChannelStreamRepository implements IChannelStreamRepository {
 
   async createBatch(streams: Omit<ChannelStream, "id" | "createdAt" | "updatedAt">[]): Promise<ChannelStream[]> {
     if (streams.length === 0) return [];
-    const rows = await db.insert(channelStreams).values(streams).returning();
-    return rows.map(toDomain);
+    const out: ChannelStream[] = [];
+    for (const batch of chunk(streams, safeBatchSize(19))) {
+      const rows = await db.insert(channelStreams).values(batch).returning();
+      out.push(...rows.map(toDomain));
+    }
+    return out;
   }
 
   async update(id: string, data: Partial<ChannelStream>): Promise<ChannelStream | null> {

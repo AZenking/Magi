@@ -1,4 +1,5 @@
 import { eq, sql } from "drizzle-orm";
+import { chunk, safeBatchSize } from "@magi/utils";
 import { db } from "../db";
 import { contentManifest, xmltvSources, rawXmltvChannels, programmes } from "../schema";
 import { downloadSource, parseXMLTV, parseXmltvDate, isInEpgWindow } from "@magi/backend-core";
@@ -97,15 +98,16 @@ export async function processXmltvSync(
     await tx.delete(programmes).where(eq(programmes.sourceId, sourceId));
 
     if (data.channels.length > 0) {
-      await tx.insert(rawXmltvChannels).values(
-        data.channels.map((ch) => ({
-          sourceId,
-          xmltvId: ch.id,
-          displayName: ch.displayName,
-          icon: ch.icon,
-          syncedAt: now,
-        })),
-      );
+      const channelRows = data.channels.map((ch) => ({
+        sourceId,
+        xmltvId: ch.id,
+        displayName: ch.displayName,
+        icon: ch.icon,
+        syncedAt: now,
+      }));
+      for (const batch of chunk(channelRows, safeBatchSize(5))) {
+        await tx.insert(rawXmltvChannels).values(batch);
+      }
     }
 
     for (let i = 0; i < filteredProgrammes.length; i += PROGRAMME_BATCH_SIZE) {

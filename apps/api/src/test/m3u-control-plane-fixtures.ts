@@ -73,7 +73,13 @@ export function buildChangeSetVo(
 export interface BuildMergeCandidateInput {
   readonly id?: string;
   readonly sourceChannelId?: string;
+  readonly sourceChannelName?: string | null;
+  readonly sourceGroupTitle?: string | null;
+  readonly sourceTvgLogo?: string | null;
   readonly canonicalChannelId?: string | null;
+  readonly canonicalChannelName?: string | null;
+  readonly canonicalGroupTitle?: string | null;
+  readonly confidence?: number | null;
   readonly method?: MergeCandidateVo["method"];
   readonly reasons?: readonly string[];
   readonly status?: MergeCandidateVo["status"];
@@ -88,7 +94,13 @@ export function buildMergeCandidateVo(
   return {
     id: overrides.id ?? UUID("c001"),
     sourceChannelId: overrides.sourceChannelId ?? fixtureSourceChannelId,
+    sourceChannelName: overrides.sourceChannelName ?? null,
+    sourceGroupTitle: overrides.sourceGroupTitle ?? null,
+    sourceTvgLogo: overrides.sourceTvgLogo ?? null,
     canonicalChannelId: overrides.canonicalChannelId ?? null,
+    canonicalChannelName: overrides.canonicalChannelName ?? null,
+    canonicalGroupTitle: overrides.canonicalGroupTitle ?? null,
+    confidence: overrides.confidence ?? null,
     method: overrides.method ?? "normalized_name",
     reasons: overrides.reasons ? [...overrides.reasons] : ["display-name-match"],
     status: overrides.status ?? "pending",

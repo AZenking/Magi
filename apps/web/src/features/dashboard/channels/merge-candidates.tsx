@@ -14,6 +14,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   Button,
+  Image,
+  Popconfirm,
+  Progress,
   Space,
   Table,
   Tag,
@@ -21,6 +24,7 @@ import {
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import type { Key } from "react";
 import type { MergeCandidateVo } from "@magi/types";
 import { apiClient } from "@/services/api";
 import { useFeedback } from "@/lib/feedback";
@@ -43,6 +47,7 @@ export function MergeCandidateReview() {
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["merge-candidates", page, pageSize],
@@ -95,19 +100,96 @@ export function MergeCandidateReview() {
     },
   });
 
+  const batchReview = useMutation({
+    mutationFn: async (input: { decision: "accept" | "reject" }) => {
+      const res = await apiClient<Envelope<{ updated: number }>>(
+        "/output/merge-candidates/batch/review",
+        {
+          method: "POST",
+          body: {
+            ids: selectedRowKeys.map(String),
+            decision: input.decision,
+          },
+        },
+      );
+      return res.data;
+    },
+    onSuccess: async (data, input) => {
+      message.success(
+        `${input.decision === "accept" ? "已接受" : "已拒绝"} ${data.updated} 个候选`,
+      );
+      setSelectedRowKeys([]);
+      await qc.invalidateQueries({ queryKey: ["merge-candidates"] });
+    },
+    onError: (err: unknown) => {
+      notification.error({
+        title: "批量审核失败",
+        description: err instanceof Error ? err.message : "请稍后重试",
+      });
+    },
+  });
+
   const columns: ColumnsType<MergeCandidateVo> = [
     {
       title: "来源频道",
-      dataIndex: "sourceChannelId",
-      key: "sourceChannelId",
-      render: (id: string) => <Text code>{id.slice(0, 8)}</Text>,
+      key: "sourceChannel",
+      render: (_, r) => (
+        <Space size={8} align="start">
+          {r.sourceTvgLogo ? (
+            <Image
+              src={r.sourceTvgLogo}
+              width={32}
+              height={32}
+              style={{ objectFit: "contain", borderRadius: 4 }}
+              fallback="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIvPg=="
+              preview={false}
+            />
+          ) : null}
+          <div>
+            <Text strong>{r.sourceChannelName ?? r.sourceChannelId.slice(0, 8)}</Text>
+            {r.sourceGroupTitle ? (
+              <div>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {r.sourceGroupTitle}
+                </Text>
+              </div>
+            ) : null}
+          </div>
+        </Space>
+      ),
     },
     {
       title: "目标频道",
-      dataIndex: "canonicalChannelId",
-      key: "canonicalChannelId",
-      render: (id: string | null) =>
-        id ? <Text code>{id.slice(0, 8)}</Text> : <Text type="secondary">未指定</Text>,
+      key: "canonicalChannel",
+      render: (_, r) =>
+        r.canonicalChannelId ? (
+          <div>
+            <Text strong>
+              {r.canonicalChannelName ?? r.canonicalChannelId.slice(0, 8)}
+            </Text>
+            {r.canonicalGroupTitle ? (
+              <div>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {r.canonicalGroupTitle}
+                </Text>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <Text type="secondary">未指定</Text>
+        ),
+    },
+    {
+      title: "置信度",
+      dataIndex: "confidence",
+      key: "confidence",
+      width: 100,
+      render: (c: number | null) =>
+        c != null ? (
+          <Progress percent={Math.round(c * 100)} size="small" />
+        ) : (
+          <Text type="secondary">—</Text>
+        ),
     },
     {
       title: "匹配方式",
@@ -187,11 +269,42 @@ export function MergeCandidateReview() {
         />
       )}
 
+      {selectedRowKeys.length > 0 && (
+        <Space size={12}>
+          <Text type="secondary">已选 {selectedRowKeys.length} 项</Text>
+          <Popconfirm
+            title={`确定接受 ${selectedRowKeys.length} 个候选?`}
+            onConfirm={() => batchReview.mutate({ decision: "accept" })}
+          >
+            <Button type="primary" size="small" loading={batchReview.isPending}>
+              批量接受
+            </Button>
+          </Popconfirm>
+          <Popconfirm
+            title={`确定拒绝 ${selectedRowKeys.length} 个候选?`}
+            onConfirm={() => batchReview.mutate({ decision: "reject" })}
+          >
+            <Button danger size="small" loading={batchReview.isPending}>
+              批量拒绝
+            </Button>
+          </Popconfirm>
+          <Button size="small" type="link" onClick={() => setSelectedRowKeys([])}>
+            清除选择
+          </Button>
+        </Space>
+      )}
+
       <Table<MergeCandidateVo>
         rowKey="id"
         loading={isLoading}
         dataSource={data?.items ?? []}
         columns={columns}
+        rowSelection={{
+          type: "checkbox",
+          selectedRowKeys,
+          preserveSelectedRowKeys: true,
+          onChange: (keys) => setSelectedRowKeys(keys),
+        }}
         pagination={{
           current: page,
           pageSize,

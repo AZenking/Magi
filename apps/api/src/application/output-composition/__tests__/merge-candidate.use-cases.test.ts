@@ -20,7 +20,13 @@ function makeCandidate(overrides: Partial<MergeCandidateVo> = {}): MergeCandidat
   return {
     id: "mc-1",
     sourceChannelId: "src-ch-1",
+    sourceChannelName: null,
+    sourceGroupTitle: null,
+    sourceTvgLogo: null,
     canonicalChannelId: "canon-1",
+    canonicalChannelName: null,
+    canonicalGroupTitle: null,
+    confidence: null,
     method: "normalized_name",
     reasons: ["display-name-match"],
     status: "pending",

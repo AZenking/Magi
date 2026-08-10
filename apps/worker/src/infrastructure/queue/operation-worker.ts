@@ -166,7 +166,7 @@ export function registerOperationHandlers(runner: JobRunner): void {
             channelIdentity: c.channelIdentity,
             displayName: c.displayName,
             groupTitle: null,
-            tvgId: null,
+            tvgId: c.tvgId,
             normalizedName: null,
             normalizedGroup: null,
             streamUrl: null,

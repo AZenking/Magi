@@ -7,6 +7,7 @@
 import { eq, and } from "drizzle-orm";
 import type { IRecoveryPointRepository } from "@/domain/operation-safety";
 import type { RecoveryPoint } from "@/domain/operation-safety";
+import { chunk, safeBatchSize } from "@magi/utils";
 import { db } from "./connection";
 import { recoveryPoints, recoveryPointItems, auditEvents } from "./schema";
 
@@ -93,17 +94,18 @@ export class RecoveryPointRepository implements IRecoveryPointRepository {
     }>,
   ): Promise<void> {
     if (items.length === 0) return;
-    await db.insert(recoveryPointItems).values(
-      items.map((i) => ({
-        recoveryPointId: i.recoveryPointId,
-        entityType: i.entityType,
-        entityId: i.entityId,
-        entityVersion: i.entityVersion,
-        payload: i.payload,
-        itemOrder: i.itemOrder,
-        checksum: i.checksum,
-      })),
-    );
+    const rows = items.map((i) => ({
+      recoveryPointId: i.recoveryPointId,
+      entityType: i.entityType,
+      entityId: i.entityId,
+      entityVersion: i.entityVersion,
+      payload: i.payload,
+      itemOrder: i.itemOrder,
+      checksum: i.checksum,
+    }));
+    for (const batch of chunk(rows, safeBatchSize(7))) {
+      await db.insert(recoveryPointItems).values(batch);
+    }
   }
 
   async findItems(recoveryPointId: string): Promise<(typeof recoveryPointItems.$inferSelect)[]> {

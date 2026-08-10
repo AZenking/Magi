@@ -5,6 +5,7 @@
  * items are written in a single batch; reads are append-only.
  */
 import { eq, sql } from "drizzle-orm";
+import { chunk, safeBatchSize } from "@magi/utils";
 import { db } from "./connection";
 import { sourceImportSnapshots, sourceImportSnapshotItems } from "./schema";
 
@@ -71,7 +72,9 @@ export class SourceImportSnapshotRepository {
     >)[],
   ): Promise<void> {
     if (items.length === 0) return;
-    await db.insert(sourceImportSnapshotItems).values(items);
+    for (const batch of chunk(items, safeBatchSize(7))) {
+      await db.insert(sourceImportSnapshotItems).values(batch);
+    }
   }
 
   /** Reference-safe: only delete if no change set references this snapshot. */

@@ -8,7 +8,8 @@
  * + reappearance/purge paths introduced by 009.
  */
 import { eq, gt, inArray, notInArray, and, or, sql, lt, isNotNull } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
+import { chunk, safeBatchSize } from "@magi/utils";
 import { db } from "../../db";
 import {
   m3uSources,
@@ -71,38 +72,46 @@ export class DrizzleSourceSyncRepository implements ISourceSyncRepository {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24h
 
-    await db.insert(sourceImportSnapshots).values({
-      id: snapshotId,
-      sourceId,
-      sourceType,
-      contentFingerprint,
-      sourceVersion,
-      status: "ready",
-      itemCount: items.length,
-      parserVersion: "1",
-      preparedTaskId,
-      createdAt: now,
-      expiresAt,
-    });
+    // Stage the snapshot head + items in a single transaction so a failure
+    // during the item insert rolls back the head row (avoids leaving a "ready"
+    // snapshot with zero items). Items are chunked to stay under PostgreSQL's
+    // 65535 bind-parameter limit (source_import_snapshot_items has 7 columns).
+    const itemRows = items.map((item, index) => ({
+      id: randomUUID(),
+      snapshotId,
+      channelIdentity: item.channelIdentity,
+      collisionOrdinal: 0,
+      itemOrder: index,
+      payload: {
+        displayName: item.displayName,
+        groupTitle: item.groupTitle,
+        tvgId: item.tvgId,
+        tvgLogo: item.tvgLogo,
+        streamUrl: item.streamUrl,
+      },
+        checksum: `sha256:${createHash("sha256").update(`${item.channelIdentity}:${contentFingerprint}`).digest("hex").slice(0, 64)}`,
+    }));
 
-    if (items.length > 0) {
-      const itemRows = items.map((item, index) => ({
-        id: randomUUID(),
-        snapshotId,
-        channelIdentity: item.channelIdentity,
-        collisionOrdinal: 0,
-        itemOrder: index,
-        payload: {
-          displayName: item.displayName,
-          groupTitle: item.groupTitle,
-          tvgId: item.tvgId,
-          tvgLogo: item.tvgLogo,
-          streamUrl: item.streamUrl,
-        },
-        checksum: `${item.channelIdentity}:${contentFingerprint}`,
-      }));
-      await db.insert(sourceImportSnapshotItems).values(itemRows);
-    }
+    await db.transaction(async (tx) => {
+      await tx.insert(sourceImportSnapshots).values({
+        id: snapshotId,
+        sourceId,
+        sourceType,
+        contentFingerprint,
+        sourceVersion,
+        status: "ready",
+        itemCount: items.length,
+        parserVersion: "1",
+        preparedTaskId,
+        createdAt: now,
+        expiresAt,
+      });
+
+      const batchSize = safeBatchSize(7);
+      for (const batch of chunk(itemRows, batchSize)) {
+        await tx.insert(sourceImportSnapshotItems).values(batch);
+      }
+    });
 
     return { snapshotId, itemCount: items.length };
   }
@@ -115,6 +124,7 @@ export class DrizzleSourceSyncRepository implements ISourceSyncRepository {
         displayName: channels.displayName,
         sourcePresence: channels.sourcePresence,
         version: channels.version,
+        tvgId: channels.tvgId,
       })
       .from(channels)
       .where(eq(channels.m3uSourceId, sourceId));
@@ -124,6 +134,7 @@ export class DrizzleSourceSyncRepository implements ISourceSyncRepository {
       displayName: r.displayName,
       sourcePresence: r.sourcePresence ?? "present",
       version: r.version ?? 1,
+      tvgId: r.tvgId,
     }));
   }
 
@@ -264,6 +275,7 @@ export class DrizzleSourceSyncRepository implements ISourceSyncRepository {
         displayName: channels.displayName,
         sourcePresence: channels.sourcePresence,
         version: channels.version,
+        tvgId: channels.tvgId,
       })
       .from(channels)
       .where(
@@ -278,6 +290,7 @@ export class DrizzleSourceSyncRepository implements ISourceSyncRepository {
       displayName: r.displayName,
       sourcePresence: r.sourcePresence ?? "present",
       version: r.version ?? 1,
+      tvgId: r.tvgId,
     }));
   }
 
@@ -291,67 +304,103 @@ export class DrizzleSourceSyncRepository implements ISourceSyncRepository {
     readonly sourceVersion: number;
     readonly now: Date;
   }): Promise<ReconcileApplyResult> {
-    // NOTE: this method is intentionally structured so the entire body can be
-    // wrapped in `db.transaction` once we move to a transaction-aware db
-    // client. For 009's foundational layer we run sequential statements; the
-    // apply use case still owns the change-set state transition so partial
-    // failures surface as `failed` and leave recovery items intact.
+    // The entire apply — stable upsert, missing marking, stream hiding, and
+    // source-status update — runs in a single transaction. A failure in any
+    // step rolls back all prior writes so the source never ends up in a
+    // partially-applied state with lastSyncStatus="success".
+    return db.transaction(async (tx) => {
+      let sourcesActivated = 0;
+      let sourcesDeactivated = 0;
+      let streamsMissing = 0;
 
-    let sourcesActivated = 0;
-    let sourcesDeactivated = 0;
-    let streamsMissing = 0;
-    let streamsRestored = 0;
+      // 1. Stable upsert present channels (preserves operator/health columns).
+      for (const channel of input.presentChannels) {
+        const [existing] = await tx
+          .select({ id: channels.id })
+          .from(channels)
+          .where(eq(channels.channelIdentity, channel.channelIdentity))
+          .limit(1);
 
-    // 1. Stable upsert present channels (preserves operator/health columns).
-    for (const channel of input.presentChannels) {
-      const result = await this.stableUpsert(input.sourceId, channel);
-      if (result.created) sourcesActivated++;
-    }
+        if (existing) {
+          await tx
+            .update(channels)
+            .set({
+              displayName: channel.displayName,
+              groupTitle: channel.groupTitle,
+              tvgId: channel.tvgId,
+              tvgLogo: channel.tvgLogo,
+              streamUrl: channel.streamUrl,
+              sourcePresence: "present",
+              lastSeenAt: input.now,
+              missingSince: null,
+            })
+            .where(eq(channels.id, existing.id));
+        } else {
+          await tx.insert(channels).values({
+            channelIdentity: channel.channelIdentity,
+            m3uSourceId: input.sourceId,
+            displayName: channel.displayName,
+            groupTitle: channel.groupTitle,
+            tvgId: channel.tvgId,
+            tvgLogo: channel.tvgLogo,
+            streamUrl: channel.streamUrl,
+            sourcePresence: "present",
+            firstSeenAt: input.now,
+            lastSeenAt: input.now,
+            active: true,
+          });
+          sourcesActivated++;
+        }
+      }
 
-    // 2. Mark missing channels + bump their missingSince if first time.
-    if (input.missingSourceChannelIds.length > 0) {
-      const newlyMissing = await db
-        .update(channels)
-        .set({ sourcePresence: "missing", missingSince: input.now })
-        .where(
-          and(
-            eq(channels.m3uSourceId, input.sourceId),
-            inArray(channels.id, [...input.missingSourceChannelIds]),
-            eq(channels.sourcePresence, "present"),
-          ),
-        )
-        .returning({ id: channels.id });
-      sourcesDeactivated = newlyMissing.length;
+      // 2. Mark missing channels + bump their missingSince if first time.
+      if (input.missingSourceChannelIds.length > 0) {
+        const newlyMissing = await tx
+          .update(channels)
+          .set({ sourcePresence: "missing", missingSince: input.now })
+          .where(
+            and(
+              eq(channels.m3uSourceId, input.sourceId),
+              inArray(channels.id, [...input.missingSourceChannelIds]),
+              eq(channels.sourcePresence, "present"),
+            ),
+          )
+          .returning({ id: channels.id });
+        sourcesDeactivated = newlyMissing.length;
 
-      // Hide source-derived streams bound to those channels from output.
-      const hiddenStreams = await db
-        .update(channelStreams)
-        .set({ missingSince: input.now })
-        .where(
-          and(
-            inArray(channelStreams.rawChannelId, [
-              ...input.missingSourceChannelIds,
-            ]),
-            isNotNull(channelStreams.rawChannelId),
-          ),
-        )
-        .returning({ id: channelStreams.id });
-      streamsMissing = hiddenStreams.length;
-    }
+        // Hide source-derived streams bound to those channels from output.
+        const hiddenStreams = await tx
+          .update(channelStreams)
+          .set({ missingSince: input.now })
+          .where(
+            and(
+              inArray(channelStreams.rawChannelId, [
+                ...input.missingSourceChannelIds,
+              ]),
+              isNotNull(channelStreams.rawChannelId),
+            ),
+          )
+          .returning({ id: channelStreams.id });
+        streamsMissing = hiddenStreams.length;
+      }
 
-    // 3. Record source sync success + fingerprint.
-    await this.recordSourceSync(
-      input.sourceId,
-      "success",
-      input.contentFingerprint,
-    );
+      // 3. Record source sync success + fingerprint.
+      await tx
+        .update(m3uSources)
+        .set({
+          lastSyncAt: input.now,
+          lastSyncStatus: "success",
+          lastContentFingerprint: input.contentFingerprint,
+        })
+        .where(eq(m3uSources.id, input.sourceId));
 
-    return {
-      sourcesActivated,
-      sourcesDeactivated,
-      streamsMissing,
-      streamsRestored,
-    };
+      return {
+        sourcesActivated,
+        sourcesDeactivated,
+        streamsMissing,
+        streamsRestored: 0,
+      };
+    });
   }
 
   async restoreMissing(

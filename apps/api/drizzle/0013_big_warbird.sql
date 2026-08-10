@@ -1,0 +1,1 @@
+ALTER TABLE "source_import_snapshot_items" ALTER COLUMN "channel_identity" SET DATA TYPE varchar(512);

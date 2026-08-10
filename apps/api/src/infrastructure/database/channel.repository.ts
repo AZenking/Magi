@@ -1,5 +1,6 @@
 import { eq, and, or, ilike, sql, inArray } from "drizzle-orm";
 import type { IChannelRepository, Channel, EpgMatchType, StreamStatus, SourcePresence } from "@/domain/channel-catalog";
+import { chunk, safeBatchSize } from "@magi/utils";
 import { db } from "./connection";
 import { channels } from "./schema";
 
@@ -44,8 +45,12 @@ export class ChannelRepository implements IChannelRepository {
 
   async createBatch(channelData: Omit<Channel, "id" | "createdAt" | "updatedAt">[]): Promise<Channel[]> {
     if (channelData.length === 0) return [];
-    const rows = await db.insert(channels).values(channelData).returning();
-    return rows.map(toDomain);
+    const out: Channel[] = [];
+    for (const batch of chunk(channelData, safeBatchSize(23))) {
+      const rows = await db.insert(channels).values(batch).returning();
+      out.push(...rows.map(toDomain));
+    }
+    return out;
   }
 
   async update(id: string, data: Partial<Channel>): Promise<Channel | null> {
