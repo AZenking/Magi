@@ -20,6 +20,8 @@ function makeRepo(): ICanonicalReconcileRepository & {
   upsertMembership: ReturnType<typeof vi.fn>;
   createCanonicalFromSource: ReturnType<typeof vi.fn>;
   deactivateMembership: ReturnType<typeof vi.fn>;
+  upsertSourceStream: ReturnType<typeof vi.fn>;
+  markSourceStreamMissing: ReturnType<typeof vi.fn>;
 } {
   return {
     findMembership: vi.fn().mockResolvedValue(null),
@@ -28,6 +30,8 @@ function makeRepo(): ICanonicalReconcileRepository & {
       canonicalChannelId: "canon-new",
     }),
     deactivateMembership: vi.fn().mockResolvedValue(undefined),
+    upsertSourceStream: vi.fn().mockResolvedValue(undefined),
+    markSourceStreamMissing: vi.fn().mockResolvedValue(undefined),
     findCanonicalByNormalizedTvgId: vi.fn().mockResolvedValue(null),
     insertWeakMatchCandidate: vi.fn().mockResolvedValue(undefined),
     isCandidateSuppressed: vi.fn().mockResolvedValue(false),
@@ -205,7 +209,10 @@ describe("ReconcileCanonicalChannelsUseCase 009 (T021)", () => {
       missingSourceChannelIds: ["src-ch-gone"],
     });
 
-    expect(repo.deactivateMembership).toHaveBeenCalledWith("canon-x", "src-ch-gone");
+    expect(repo.deactivateMembership).toHaveBeenCalledWith(
+      "canon-x",
+      "src-ch-gone",
+    );
     expect(result.deactivatedCount).toBe(1);
   });
 

@@ -4,7 +4,7 @@
  * Implements IRecoveryPointRepository. Reference-safe expiry: never deletes a
  * recovery point still referenced by an audit event or active task.
  */
-import { eq, and } from "drizzle-orm";
+import { eq, and, lte } from "drizzle-orm";
 import type { IRecoveryPointRepository } from "@/domain/operation-safety";
 import type { RecoveryPoint } from "@/domain/operation-safety";
 import { chunk, safeBatchSize } from "@magi/utils";
@@ -31,16 +31,26 @@ function toDomain(row: typeof recoveryPoints.$inferSelect): RecoveryPoint {
 
 export class RecoveryPointRepository implements IRecoveryPointRepository {
   async findById(id: string): Promise<RecoveryPoint | null> {
-    const [row] = await db.select().from(recoveryPoints).where(eq(recoveryPoints.id, id)).limit(1);
+    const [row] = await db
+      .select()
+      .from(recoveryPoints)
+      .where(eq(recoveryPoints.id, id))
+      .limit(1);
     return row ? toDomain(row) : null;
   }
 
   async findByChangeSet(changeSetId: string): Promise<RecoveryPoint | null> {
-    const [row] = await db.select().from(recoveryPoints).where(eq(recoveryPoints.changeSetId, changeSetId)).limit(1);
+    const [row] = await db
+      .select()
+      .from(recoveryPoints)
+      .where(eq(recoveryPoints.changeSetId, changeSetId))
+      .limit(1);
     return row ? toDomain(row) : null;
   }
 
-  async create(data: Omit<RecoveryPoint, "id" | "createdAt">): Promise<RecoveryPoint> {
+  async create(
+    data: Omit<RecoveryPoint, "id" | "createdAt">,
+  ): Promise<RecoveryPoint> {
     const [row] = await db
       .insert(recoveryPoints)
       .values({
@@ -60,8 +70,15 @@ export class RecoveryPointRepository implements IRecoveryPointRepository {
     return toDomain(row!);
   }
 
-  async updateStatus(id: string, status: string): Promise<RecoveryPoint | null> {
-    const [row] = await db.update(recoveryPoints).set({ status }).where(eq(recoveryPoints.id, id)).returning();
+  async updateStatus(
+    id: string,
+    status: string,
+  ): Promise<RecoveryPoint | null> {
+    const [row] = await db
+      .update(recoveryPoints)
+      .set({ status })
+      .where(eq(recoveryPoints.id, id))
+      .returning();
     return row ? toDomain(row) : null;
   }
 
@@ -77,7 +94,7 @@ export class RecoveryPointRepository implements IRecoveryPointRepository {
     const [row] = await db
       .update(recoveryPoints)
       .set({ status: "expired" })
-      .where(and(eq(recoveryPoints.id, id), eq(recoveryPoints.expiresAt, now)))
+      .where(and(eq(recoveryPoints.id, id), lte(recoveryPoints.expiresAt, now)))
       .returning();
     return !!row;
   }
@@ -103,12 +120,16 @@ export class RecoveryPointRepository implements IRecoveryPointRepository {
       itemOrder: i.itemOrder,
       checksum: i.checksum,
     }));
-    for (const batch of chunk(rows, safeBatchSize(7))) {
-      await db.insert(recoveryPointItems).values(batch);
-    }
+    await db.transaction(async (tx) => {
+      for (const batch of chunk(rows, safeBatchSize(7))) {
+        await tx.insert(recoveryPointItems).values(batch);
+      }
+    });
   }
 
-  async findItems(recoveryPointId: string): Promise<(typeof recoveryPointItems.$inferSelect)[]> {
+  async findItems(
+    recoveryPointId: string,
+  ): Promise<(typeof recoveryPointItems.$inferSelect)[]> {
     return db
       .select()
       .from(recoveryPointItems)

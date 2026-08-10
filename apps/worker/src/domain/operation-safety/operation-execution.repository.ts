@@ -29,11 +29,22 @@ export interface IOperationExecutionRepository {
   >;
 
   /** Atomically transition a change set to a terminal status (with version check). */
-  finalizeChangeSet(changeSetId: string, status: string, version: number): Promise<boolean>;
+  finalizeChangeSet(
+    changeSetId: string,
+    status: string,
+    version: number,
+  ): Promise<boolean>;
 
   /** Acquire or confirm the scope lease (returns false if another task owns it). */
-  acquireLease(scopeKey: string, taskId: string, ttlMs: number): Promise<{ acquired: boolean; ownerTaskId: string | null }>;
+  acquireLease(
+    scopeKey: string,
+    taskId: string,
+    ttlMs: number,
+  ): Promise<{ acquired: boolean; ownerTaskId: string | null }>;
 
   /** Renew the lease heartbeat. */
   heartbeatLease(scopeKey: string, taskId: string): Promise<void>;
+
+  /** Release the lease only when it is still owned by this task. */
+  releaseLease(scopeKey: string, taskId: string): Promise<void>;
 }

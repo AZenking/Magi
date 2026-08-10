@@ -36,6 +36,8 @@ export interface CurrentSourceChannel {
   readonly id: string;
   readonly channelIdentity: string;
   readonly displayName: string;
+  readonly groupTitle: string | null;
+  readonly streamUrl: string | null;
   readonly sourcePresence: string;
   readonly version: number;
   /** Upstream tvg-id; needed by reconcile auto-merge (009 T025). */
@@ -86,6 +88,8 @@ export interface SourceDeleteImpact {
   readonly sourceId: string;
   readonly sourceName: string;
   readonly sourceType: "m3u" | "xmltv";
+  /** Source row version captured for delete-preview optimistic concurrency. */
+  readonly sourceVersion?: number;
   readonly counts: SourceDeleteCounts;
 }
 
@@ -132,10 +136,17 @@ export interface ISourceSyncRepository {
   loadPresentChannels(sourceId: string): Promise<CurrentSourceChannel[]>;
 
   /** Stable upsert a source channel (preserve id/operator/health). Returns the row. */
-  stableUpsert(sourceId: string, channel: ParsedSourceChannel): Promise<{ id: string; created: boolean }>;
+  stableUpsert(
+    sourceId: string,
+    channel: ParsedSourceChannel,
+  ): Promise<{ id: string; created: boolean }>;
 
   /** Mark absent identities as missing (no delete). Returns affected count. */
-  markMissing(sourceId: string, presentIdentities: readonly string[], now: Date): Promise<number>;
+  markMissing(
+    sourceId: string,
+    presentIdentities: readonly string[],
+    now: Date,
+  ): Promise<number>;
 
   /**
    * Atomically apply a prepared change set in one transaction (009 T017):
@@ -154,9 +165,13 @@ export interface ISourceSyncRepository {
     readonly changeSetId: string;
     readonly presentChannels: readonly ParsedSourceChannel[];
     readonly missingSourceChannelIds: readonly string[];
+    /** Channels that reappeared during this snapshot; restored in the same transaction. */
+    readonly restoreSourceChannelIds?: readonly string[];
     readonly contentFingerprint: string;
     readonly sourceVersion: number;
     readonly now: Date;
+    /** API-originated applies provide the pre-created recovery point. */
+    readonly recoveryPointId?: string;
   }): Promise<ReconcileApplyResult>;
 
   /** Update source sync status (lastSyncAt/lastSyncStatus/fingerprint). */
@@ -171,14 +186,22 @@ export interface ISourceSyncRepository {
    * Resets `sourcePresence` to `present` and clears `missingSince` for the
    * supplied IDs. Returns the count of rows actually restored.
    */
-  restoreMissing(sourceId: string, sourceChannelIds: readonly string[], now: Date): Promise<number>;
+  restoreMissing(
+    sourceId: string,
+    sourceChannelIds: readonly string[],
+    now: Date,
+  ): Promise<number>;
 
   /**
    * Purge source channels whose missing-since is older than the retention
    * window (009 T028, 30 days). Only auto-source relationships are cleaned;
    * manual streams and channels with active members are preserved.
    */
-  purgeExpiredMissing(sourceId: string | null, retentionSeconds: number, now: Date): Promise<{
+  purgeExpiredMissing(
+    sourceId: string | null,
+    retentionSeconds: number,
+    now: Date,
+  ): Promise<{
     readonly purgedSourceChannels: number;
     readonly purgedStreams: number;
   }>;
@@ -190,5 +213,9 @@ export interface ISourceSyncRepository {
   prepareSourceDelete(sourceId: string): Promise<SourceDeleteImpact>;
 
   /** Apply the approved source deletion in one database transaction. */
-  applySourceDelete(sourceId: string): Promise<SourceDeleteResult>;
+  applySourceDelete(
+    sourceId: string,
+    recovery?: { recoveryPointId: string; changeSetId: string },
+    expectedSourceVersion?: number,
+  ): Promise<SourceDeleteResult>;
 }

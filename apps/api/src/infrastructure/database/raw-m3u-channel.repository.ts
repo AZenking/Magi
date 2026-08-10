@@ -1,5 +1,8 @@
 import { eq, and, notInArray } from "drizzle-orm";
-import type { IRawM3uChannelRepository, RawM3uChannel } from "@/domain/channel-catalog";
+import type {
+  IRawM3uChannelRepository,
+  RawM3uChannel,
+} from "@/domain/channel-catalog";
 import { chunk, safeBatchSize } from "@magi/utils";
 import { db } from "./connection";
 import { rawM3uChannels } from "./schema";
@@ -16,30 +19,48 @@ function toDomain(row: typeof rawM3uChannels.$inferSelect): RawM3uChannel {
 
 export class RawM3uChannelRepository implements IRawM3uChannelRepository {
   async findBySourceId(sourceId: string): Promise<RawM3uChannel[]> {
-    const rows = await db.select().from(rawM3uChannels).where(eq(rawM3uChannels.sourceId, sourceId));
+    const rows = await db
+      .select()
+      .from(rawM3uChannels)
+      .where(eq(rawM3uChannels.sourceId, sourceId));
     return rows.map(toDomain);
   }
 
-  async findBySourceIdAndIdentity(sourceId: string, channelIdentity: string): Promise<RawM3uChannel | null> {
+  async findBySourceIdAndIdentity(
+    sourceId: string,
+    channelIdentity: string,
+  ): Promise<RawM3uChannel | null> {
     const [row] = await db
       .select()
       .from(rawM3uChannels)
-      .where(and(eq(rawM3uChannels.sourceId, sourceId), eq(rawM3uChannels.channelIdentity, channelIdentity)))
+      .where(
+        and(
+          eq(rawM3uChannels.sourceId, sourceId),
+          eq(rawM3uChannels.channelIdentity, channelIdentity),
+        ),
+      )
       .limit(1);
     return row ? toDomain(row) : null;
   }
 
-  async createBatch(channels: Omit<RawM3uChannel, "id" | "createdAt" | "updatedAt">[]): Promise<RawM3uChannel[]> {
+  async createBatch(
+    channels: Omit<RawM3uChannel, "id" | "createdAt" | "updatedAt">[],
+  ): Promise<RawM3uChannel[]> {
     if (channels.length === 0) return [];
     const out: RawM3uChannel[] = [];
-    for (const batch of chunk(channels, safeBatchSize(16))) {
-      const rows = await db.insert(rawM3uChannels).values(batch).returning();
-      out.push(...rows.map(toDomain));
-    }
+    await db.transaction(async (tx) => {
+      for (const batch of chunk(channels, safeBatchSize(16))) {
+        const rows = await tx.insert(rawM3uChannels).values(batch).returning();
+        out.push(...rows.map(toDomain));
+      }
+    });
     return out;
   }
 
-  async updateDisappearedFlag(sourceId: string, activeIdentities: string[]): Promise<number> {
+  async updateDisappearedFlag(
+    sourceId: string,
+    activeIdentities: string[],
+  ): Promise<number> {
     if (activeIdentities.length === 0) {
       const result = await db
         .update(rawM3uChannels)
@@ -62,7 +83,10 @@ export class RawM3uChannelRepository implements IRawM3uChannelRepository {
   }
 
   async deleteBySourceId(sourceId: string): Promise<number> {
-    const result = await db.delete(rawM3uChannels).where(eq(rawM3uChannels.sourceId, sourceId)).returning();
+    const result = await db
+      .delete(rawM3uChannels)
+      .where(eq(rawM3uChannels.sourceId, sourceId))
+      .returning();
     return result.length;
   }
 }

@@ -50,6 +50,7 @@ export function getSourceColumns({
       dataIndex: "name",
       search: false,
       ellipsis: true,
+      sorter: true,
     },
     {
       title: "URL",
@@ -66,6 +67,7 @@ export function getSourceColumns({
         true: { text: "启用" },
         false: { text: "禁用" },
       },
+      sorter: true,
       render: (_, record) => (
         <Tag color={record.enabled ? "success" : undefined}>
           {record.enabled ? "启用" : "禁用"}
@@ -76,6 +78,7 @@ export function getSourceColumns({
       title: "最后同步",
       dataIndex: "lastSyncAt",
       search: false,
+      sorter: true,
       render: (_, record) =>
         record.lastSyncAt
           ? new Intl.DateTimeFormat("zh-CN", {
@@ -109,6 +112,7 @@ export function getSourceColumns({
       title: "创建时间",
       dataIndex: "createdAt",
       search: false,
+      sorter: true,
       render: (_, record) =>
         new Intl.DateTimeFormat("zh-CN", {
           dateStyle: "short",

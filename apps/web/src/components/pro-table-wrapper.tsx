@@ -37,7 +37,10 @@ export interface ProTableWrapperProps<T = object> {
   /** Row selection config (antd rowSelection). */
   rowSelection?: TableRowSelection<T>;
   /** Sorter change handler for manual (server-side) sorting. */
-  onSorterChange?: (field: string | undefined, order: "ascend" | "descend" | null) => void;
+  onSorterChange?: (
+    field: string | undefined,
+    order: "ascend" | "descend" | null,
+  ) => void;
   /** Current sort state for controlled sorting. */
   sortState?: { field: string; order: "ascend" | "descend" } | null;
   /** Toolbar title. */
@@ -84,16 +87,29 @@ export function ProTableWrapper<T extends object>({
   proTableProps,
 }: ProTableWrapperProps<T>) {
   const actionRef = useRef<ActionType>(null);
+  const controlledColumns = columns.map((column) => {
+    if (!sortState || column.dataIndex == null) return column;
+    const field = Array.isArray(column.dataIndex)
+      ? column.dataIndex.join(".")
+      : String(column.dataIndex);
+    return field === sortState.field
+      ? { ...column, sortOrder: sortState.order }
+      : { ...column, sortOrder: undefined };
+  });
 
   return (
     <ProTable<T>
       {...proTableProps}
       actionRef={actionRef}
-      columns={columns}
+      columns={controlledColumns}
       dataSource={dataSource}
       rowKey={rowKey}
       loading={loading}
-      search={search === true ? { labelWidth: "auto", defaultCollapsed: false } : search}
+      search={
+        search === true
+          ? { labelWidth: "auto", defaultCollapsed: false }
+          : search
+      }
       options={{
         density: false,
         reload: false,
@@ -129,7 +145,9 @@ export function ProTableWrapper<T extends object>({
             status="error"
             title="数据加载失败"
             subTitle={error.message}
-            extra={onRetry ? <Button onClick={onRetry}>重试</Button> : undefined}
+            extra={
+              onRetry ? <Button onClick={onRetry}>重试</Button> : undefined
+            }
           />
         ) : undefined,
       }}
@@ -140,10 +158,7 @@ export function ProTableWrapper<T extends object>({
           onSorterChange(undefined, null);
           return;
         }
-        onSorterChange(
-          String(s.field),
-          s.order as "ascend" | "descend",
-        );
+        onSorterChange(String(s.field), s.order as "ascend" | "descend");
       }}
       onRow={
         onRowClick

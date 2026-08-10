@@ -23,9 +23,9 @@ export interface ChangeWarningRow {
 export interface AnomalyClassificationRow {
   readonly requiresConfirmation: boolean;
   readonly warnings: ReadonlyArray<{
-    readonly code: "empty-snapshot" | "deletion-ratio-exceeded";
+    readonly code: string;
     readonly message: string;
-    readonly deletionRatio: number;
+    readonly deletionRatio?: number;
   }>;
 }
 
@@ -37,6 +37,8 @@ export interface OperationChangeSet {
   readonly scopeId: string;
   readonly sourceId: string | null;
   readonly inputFingerprint: string;
+  /** Optimistic-concurrency versions supplied when the preview was created. */
+  readonly baseVersions?: Record<string, number>;
   readonly expiresAt: Date;
   version: number;
   readonly requestedBy: string;

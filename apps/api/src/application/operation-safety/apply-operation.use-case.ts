@@ -16,10 +16,7 @@
  * success.
  */
 import { randomUUID } from "node:crypto";
-import {
-  ConflictException,
-  ServiceUnavailableException,
-} from "@nestjs/common";
+import { ConflictException, ServiceUnavailableException } from "@nestjs/common";
 import type {
   IOperationChangeSetRepository,
   IOperationLeaseRepository,
@@ -33,7 +30,6 @@ import type { ITaskRepository } from "@/domain/task-execution";
 import type { TaskQueuePort } from "@/domain/task-execution/task-queue.port";
 import type { IdempotencyRepository } from "@/infrastructure/database/idempotency.repository";
 import { leaseScopeFor } from "@/application/operation-safety/m3u-control-plane-jobs";
-import { currentRequestId } from "@/shared/http/request-context.middleware";
 
 export type { OperationChangeSet };
 
@@ -79,10 +75,22 @@ export class ApplyOperationUseCase {
         requestFingerprint: fp,
         expiresAt,
       });
-      if (!recorded.recorded && recorded.hit.matchedFingerprint && recorded.hit.responseRef) {
+      if (
+        !recorded.recorded &&
+        recorded.hit.matchedFingerprint &&
+        recorded.hit.responseRef
+      ) {
         // Replay the original TaskRef.
-        const ref = recorded.hit.responseRef as { taskId: string; changeSetId: string; recoveryPointId: string };
-        return { ...ref, statusUrl: `/tasks/${ref.taskId}`, deduplicated: true };
+        const ref = recorded.hit.responseRef as {
+          taskId: string;
+          changeSetId: string;
+          recoveryPointId: string;
+        };
+        return {
+          ...ref,
+          statusUrl: `/tasks/${ref.taskId}`,
+          deduplicated: true,
+        };
       }
       if (!recorded.recorded && !recorded.hit.matchedFingerprint) {
         throw new ConflictException({
@@ -95,7 +103,8 @@ export class ApplyOperationUseCase {
 
     // --- 1. verify ready / not expired ---
     const cs = await this.changeSets.findById(input.changeSetId);
-    if (!cs) throw new ConflictException({ code: "resource-not-found", status: 404 });
+    if (!cs)
+      throw new ConflictException({ code: "resource-not-found", status: 404 });
     if (cs.status !== "ready") {
       throw new ConflictException({
         code: "invalid-state-transition",
@@ -119,6 +128,15 @@ export class ApplyOperationUseCase {
     //     change set is still the same version, which is the cheap precondition. ---
 
     // --- 3. blockers must be zero; required warnings acknowledged ---
+    const blockers = cs.blockers ?? [];
+    if (blockers.length > 0) {
+      throw new ConflictException({
+        code: "operation-blocked",
+        title: "Change set contains unresolved blockers",
+        status: 409,
+        blockers,
+      });
+    }
     // 009-m3u-control-plane T018: requiresConfirmation gate. When the change
     // set is flagged requiresConfirmation (FR-016), the operator MUST confirm
     // every anomaly warning code before apply can proceed. Same shape covers
@@ -140,17 +158,21 @@ export class ApplyOperationUseCase {
     }
 
     // --- 4. acquire the scope lease ---
-    const scopeKey = `${cs.scopeType}:${cs.scopeId}`;
-    void randomUUID; // kept for potential future use
+    const leaseScope =
+      cs.kind === "recovery_restore"
+        ? `recovery-restore:${cs.scopeId}`
+        : cs.sourceId && (cs.kind === "m3u_sync" || cs.kind === "source_delete")
+          ? leaseScopeFor(cs.sourceId)
+          : `${cs.scopeType}:${cs.scopeId}`;
     const pendingTaskId = randomUUID();
     const lease = await this.leases.acquireOrReturnExisting(
-      scopeKey,
+      leaseScope,
       cs.kind,
       pendingTaskId,
       cs.id,
       LEASE_TTL_MS,
     );
-    if (!lease.acquired && lease.ownerTaskId) {
+    if (!lease.acquired) {
       throw new ConflictException({
         code: "operation-in-progress",
         title: "A mutually exclusive task already owns this scope",
@@ -159,24 +181,33 @@ export class ApplyOperationUseCase {
     }
 
     // --- 5. create recovery point (creation failure => zero writes, FR-018) ---
+    const isRecoveryRestore = cs.kind === "recovery_restore";
     let recoveryPointId: string;
     try {
-      const rp = await this.recoveryPoints.create({
-        status: "creating",
-        operationKind: cs.kind,
-        scopeType: cs.scopeType,
-        scopeId: cs.scopeId,
-        changeSetId: cs.id,
-        taskId: pendingTaskId,
-        schemaVersion: 1,
-        itemCount: 0, // Worker fills the real count during apply
-        checksum: "pending",
-        createdBy: input.actorId,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30-day retention
-      });
-      recoveryPointId = rp.id;
+      if (isRecoveryRestore) {
+        // A recovery restore targets the already-existing point referenced by
+        // scopeId; creating a second point here would be circular and could
+        // invalidate the source snapshot being restored.
+        recoveryPointId = cs.scopeId;
+      } else {
+        const rp = await this.recoveryPoints.create({
+          status: "creating",
+          operationKind: cs.kind,
+          scopeType: cs.scopeType,
+          scopeId: cs.scopeId,
+          changeSetId: cs.id,
+          taskId: pendingTaskId,
+          schemaVersion: 1,
+          itemCount: 0, // Worker fills the real count during apply
+          checksum: "pending",
+          createdBy: input.actorId,
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30-day retention
+        });
+        recoveryPointId = rp.id;
+      }
     } catch {
       // Recovery-point creation failed — abort with zero writes (FR-018).
+      await this.leases.release?.(leaseScope, pendingTaskId);
       throw new ServiceUnavailableException({
         code: "operation-capacity-unavailable",
         title: "Could not create recovery point; apply aborted",
@@ -185,51 +216,93 @@ export class ApplyOperationUseCase {
     }
 
     // --- 6. transition change set to applying + enqueue the Worker apply job ---
-    await this.changeSets.updateStatus(cs.id, "applying", cs.version);
+    try {
+      const transitioned = await this.changeSets.updateStatus(
+        cs.id,
+        "applying",
+        cs.version,
+      );
+      if (!transitioned) {
+        await this.leases.release?.(leaseScope, pendingTaskId);
+        throw new ConflictException({
+          code: "stale-resource",
+          title: "Change set changed while applying",
+          status: 412,
+        });
+      }
+    } catch (error) {
+      await this.leases.release?.(leaseScope, pendingTaskId);
+      if (!isRecoveryRestore) {
+        await this.recoveryPoints.updateStatus?.(recoveryPointId, "invalid");
+      }
+      const current = await this.changeSets.findById(cs.id);
+      if (current?.status === "applying") {
+        await this.changeSets.updateStatus(cs.id, "failed", current.version);
+      }
+      throw error;
+    }
 
     const deduplicationId = `apply-${cs.id.slice(0, 8)}`.slice(0, 50);
-    // 009 T018: source-scoped lease so concurrent manual + scheduled triggers
-    // for the same source dedup at the lease layer.
-    const leaseScope = cs.sourceId ? leaseScopeFor(cs.sourceId) : undefined;
-    const enqueued = await this.queue.enqueue(
-      this.taskTypeFor(cs.kind),
-      {
-        changeSetId: cs.id,
-        recoveryPointId,
-        kind: cs.kind,
-        scopeType: cs.scopeType,
-        scopeId: cs.scopeId,
-        sourceId: cs.sourceId,
-        sourceType: "operation",
-        confirmedWarningCodes: [...input.confirmedWarningCodes],
-        operatorReason: input.operatorReason,
-        requestId: input.requestId,
-        // 009: thread snapshotId + sourceVersion so the Worker apply path can
-        // run the new atomic apply with the originally-prepared snapshot.
-        snapshotId: cs.snapshotId ?? null,
-        sourceVersion: cs.sourceVersion ?? null,
-      },
-      {
-        jobName: "operation-apply",
-        requestId: input.requestId ?? undefined,
-        changeSetId: cs.id,
-        deduplicationId,
-        scopeType: cs.scopeType,
-        scopeId: cs.scopeId,
-        inputFingerprint: cs.inputFingerprint,
-        leaseScope,
-      },
-    );
+    let enqueued: { taskId: string };
+    try {
+      enqueued = await this.queue.enqueue(
+        this.taskTypeFor(cs.kind),
+        {
+          changeSetId: cs.id,
+          recoveryPointId,
+          kind: cs.kind,
+          scopeType: cs.scopeType,
+          scopeId: cs.scopeId,
+          sourceId: cs.sourceId,
+          sourceType: "operation",
+          confirmedWarningCodes: [...input.confirmedWarningCodes],
+          operatorReason: input.operatorReason,
+          requestId: input.requestId,
+          // 009: thread snapshotId + sourceVersion so the Worker apply path can
+          // run the new atomic apply with the originally-prepared snapshot.
+          snapshotId: cs.snapshotId ?? null,
+          sourceVersion: cs.sourceVersion ?? null,
+          baseVersions: cs.baseVersions ?? {},
+          leaseTaskId: pendingTaskId,
+        },
+        {
+          jobName: "operation-apply",
+          requestId: input.requestId ?? undefined,
+          changeSetId: cs.id,
+          deduplicationId,
+          scopeType: cs.scopeType,
+          scopeId: cs.scopeId,
+          inputFingerprint: cs.inputFingerprint,
+          leaseScope,
+        },
+      );
+    } catch (error) {
+      await this.leases.release?.(leaseScope, pendingTaskId);
+      if (!isRecoveryRestore) {
+        await this.recoveryPoints.updateStatus?.(recoveryPointId, "invalid");
+      }
+      const current = await this.changeSets.findById(cs.id);
+      if (current?.status === "applying") {
+        await this.changeSets.updateStatus(cs.id, "failed", current.version);
+      }
+      throw error;
+    }
 
     const applyTaskId = enqueued.taskId;
 
     // Cache the response for idempotency replay.
     if (input.idempotencyKey) {
-      await this.idempotency.saveResponse(input.actorId, "operation-apply", input.idempotencyKey, 202, {
-        taskId: applyTaskId,
-        changeSetId: cs.id,
-        recoveryPointId,
-      });
+      await this.idempotency.saveResponse(
+        input.actorId,
+        "operation-apply",
+        input.idempotencyKey,
+        202,
+        {
+          taskId: applyTaskId,
+          changeSetId: cs.id,
+          recoveryPointId,
+        },
+      );
     }
 
     return {
@@ -243,10 +316,14 @@ export class ApplyOperationUseCase {
 
   private taskTypeFor(kind: string): "m3u-sync" | "epg-match" | "source-check" {
     switch (kind) {
-      case "m3u_sync": return "m3u-sync";
-      case "epg_match": return "epg-match";
-      case "source_delete": return "source-check";
-      default: return "m3u-sync";
+      case "m3u_sync":
+        return "m3u-sync";
+      case "epg_match":
+        return "epg-match";
+      case "source_delete":
+        return "source-check";
+      default:
+        return "m3u-sync";
     }
   }
 }

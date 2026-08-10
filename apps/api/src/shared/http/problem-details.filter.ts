@@ -122,9 +122,6 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     }
     // Unknown error — log the root cause server-side (pino-http only records a
     // generic "failed with status code 500"), but never leak details to clients.
-    // Unknown error — log the root cause server-side (pino-http only records a
-    // generic "failed with status code 500"), but never leak details to clients.
-    // eslint-disable-next-line no-console
     console.error("[ProblemDetailsFilter] unhandled exception:", exception);
     emit(res, 500, { code: "internal-error", detail: "An unexpected error occurred." }, requestId);
   }

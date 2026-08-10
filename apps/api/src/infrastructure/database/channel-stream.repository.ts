@@ -1,5 +1,10 @@
 import { eq, asc, and, inArray } from "drizzle-orm";
-import type { IChannelStreamRepository, ChannelStream, StreamWithSource, HealthStatus } from "@/domain/output-composition";
+import type {
+  IChannelStreamRepository,
+  ChannelStream,
+  StreamWithSource,
+  HealthStatus,
+} from "@/domain/output-composition";
 import { chunk, safeBatchSize } from "@magi/utils";
 import { db } from "./connection";
 import { channelStreams, m3uSources } from "./schema";
@@ -13,12 +18,19 @@ function toDomain(row: typeof channelStreams.$inferSelect): ChannelStream {
 }
 
 export class ChannelStreamRepository implements IChannelStreamRepository {
-  async findByCanonicalChannelId(canonicalChannelId: string): Promise<ChannelStream[]> {
-    const rows = await db.select().from(channelStreams).where(eq(channelStreams.canonicalChannelId, canonicalChannelId));
+  async findByCanonicalChannelId(
+    canonicalChannelId: string,
+  ): Promise<ChannelStream[]> {
+    const rows = await db
+      .select()
+      .from(channelStreams)
+      .where(eq(channelStreams.canonicalChannelId, canonicalChannelId));
     return rows.map(toDomain);
   }
 
-  async findByCanonicalChannelIdWithSource(canonicalChannelId: string): Promise<StreamWithSource[]> {
+  async findByCanonicalChannelIdWithSource(
+    canonicalChannelId: string,
+  ): Promise<StreamWithSource[]> {
     const rows = await db
       .select({
         stream: channelStreams,
@@ -70,26 +82,49 @@ export class ChannelStreamRepository implements IChannelStreamRepository {
   }
 
   async findById(id: string): Promise<ChannelStream | null> {
-    const [row] = await db.select().from(channelStreams).where(eq(channelStreams.id, id)).limit(1);
+    const [row] = await db
+      .select()
+      .from(channelStreams)
+      .where(eq(channelStreams.id, id))
+      .limit(1);
     return row ? toDomain(row) : null;
   }
 
-  async create(data: Omit<ChannelStream, "id" | "createdAt" | "updatedAt">): Promise<ChannelStream> {
+  async findBySourceChannelId(
+    sourceChannelId: string,
+  ): Promise<ChannelStream[]> {
+    const rows = await db
+      .select()
+      .from(channelStreams)
+      .where(eq(channelStreams.sourceChannelId, sourceChannelId));
+    return rows.map(toDomain);
+  }
+
+  async create(
+    data: Omit<ChannelStream, "id" | "createdAt" | "updatedAt">,
+  ): Promise<ChannelStream> {
     const [row] = await db.insert(channelStreams).values(data).returning();
     return toDomain(row!);
   }
 
-  async createBatch(streams: Omit<ChannelStream, "id" | "createdAt" | "updatedAt">[]): Promise<ChannelStream[]> {
+  async createBatch(
+    streams: Omit<ChannelStream, "id" | "createdAt" | "updatedAt">[],
+  ): Promise<ChannelStream[]> {
     if (streams.length === 0) return [];
     const out: ChannelStream[] = [];
-    for (const batch of chunk(streams, safeBatchSize(19))) {
-      const rows = await db.insert(channelStreams).values(batch).returning();
-      out.push(...rows.map(toDomain));
-    }
+    await db.transaction(async (tx) => {
+      for (const batch of chunk(streams, safeBatchSize(19))) {
+        const rows = await tx.insert(channelStreams).values(batch).returning();
+        out.push(...rows.map(toDomain));
+      }
+    });
     return out;
   }
 
-  async update(id: string, data: Partial<ChannelStream>): Promise<ChannelStream | null> {
+  async update(
+    id: string,
+    data: Partial<ChannelStream>,
+  ): Promise<ChannelStream | null> {
     const [row] = await db
       .update(channelStreams)
       .set({ ...data, updatedAt: new Date() })
@@ -99,17 +134,27 @@ export class ChannelStreamRepository implements IChannelStreamRepository {
   }
 
   async deleteById(id: string): Promise<boolean> {
-    const [row] = await db.delete(channelStreams).where(eq(channelStreams.id, id)).returning();
+    const [row] = await db
+      .delete(channelStreams)
+      .where(eq(channelStreams.id, id))
+      .returning();
     return !!row;
   }
 
-  async deleteByCanonicalChannelId(canonicalChannelId: string): Promise<number> {
-    const result = await db.delete(channelStreams).where(eq(channelStreams.canonicalChannelId, canonicalChannelId)).returning();
+  async deleteByCanonicalChannelId(
+    canonicalChannelId: string,
+  ): Promise<number> {
+    const result = await db
+      .delete(channelStreams)
+      .where(eq(channelStreams.canonicalChannelId, canonicalChannelId))
+      .returning();
     return result.length;
   }
 
   // --- Safe Operations (T018 ports). T115 implementations. ---
-  async findOrderedByCanonicalChannelId(canonicalChannelId: string): Promise<ChannelStream[]> {
+  async findOrderedByCanonicalChannelId(
+    canonicalChannelId: string,
+  ): Promise<ChannelStream[]> {
     const rows = await db
       .select()
       .from(channelStreams)
@@ -123,7 +168,10 @@ export class ChannelStreamRepository implements IChannelStreamRepository {
    * Positions are contiguous from 0; runs as a single transaction so a partial
    * failure leaves ordering unchanged.
    */
-  async reorder(canonicalChannelId: string, orderedIds: readonly string[]): Promise<ChannelStream[]> {
+  async reorder(
+    canonicalChannelId: string,
+    orderedIds: readonly string[],
+  ): Promise<ChannelStream[]> {
     if (orderedIds.length === 0) return [];
     await db.transaction(async (tx) => {
       await Promise.all(
@@ -131,7 +179,12 @@ export class ChannelStreamRepository implements IChannelStreamRepository {
           tx
             .update(channelStreams)
             .set({ position: index, updatedAt: new Date() })
-            .where(and(eq(channelStreams.id, id), eq(channelStreams.canonicalChannelId, canonicalChannelId))),
+            .where(
+              and(
+                eq(channelStreams.id, id),
+                eq(channelStreams.canonicalChannelId, canonicalChannelId),
+              ),
+            ),
         ),
       );
     });

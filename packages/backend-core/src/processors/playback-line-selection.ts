@@ -10,8 +10,8 @@
  *   1. Manual streams always survive source missing-retention.
  *   2. Source streams with `missingSince != null` sink to the bottom.
  *   3. Within the surviving set, primary wins on tie; otherwise order by:
- *      health (online > unknown > degraded > offline) → successRate desc →
- *      position asc → responseTime asc.
+ *      health (online > unknown > degraded > offline) → source priority desc
+ *      → successRate desc → position asc → responseTime asc.
  *   4. Empty input returns null (caller signals "no playable line").
  *
  * This function is pure: no side effects, no I/O. Same input always yields
@@ -28,6 +28,7 @@ export interface PlaybackLine {
   readonly healthStatus: PlaybackLineHealth;
   readonly responseTime: number | null;
   readonly successRate: number | null;
+  readonly sourcePriority?: number | null;
   readonly consecutiveFailures: number;
   readonly origin: "source" | "manual";
   readonly missingSince: Date | null;
@@ -56,10 +57,7 @@ export function selectPlaybackLine(
  * Comparison function — exposed so callers can sort the full set (e.g. to
  * produce a fallback chain) using the exact same logic.
  */
-export function comparePlaybackLines(
-  a: PlaybackLine,
-  b: PlaybackLine,
-): number {
+export function comparePlaybackLines(a: PlaybackLine, b: PlaybackLine): number {
   // 1. Manual survival — manual lines always rank above missing source lines.
   const aMissing = a.origin !== "manual" && a.missingSince != null ? 1 : 0;
   const bMissing = b.origin !== "manual" && b.missingSince != null ? 1 : 0;
@@ -73,15 +71,22 @@ export function comparePlaybackLines(
   // 3. Primary first on tie.
   if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1;
 
-  // 4. Position ascending.
-  if (a.position !== b.position) return a.position - b.position;
+  // 4. Source priority is a stable operator preference for otherwise equal
+  // primary/health lines. Keep it in the shared comparator so v1, v2, and
+  // Open playback cannot choose different providers.
+  const aPriority = a.sourcePriority ?? 0;
+  const bPriority = b.sourcePriority ?? 0;
+  if (aPriority !== bPriority) return bPriority - aPriority;
 
-  // 5. successRate descending.
+  // 5. Success rate descending.
   const aRate = a.successRate ?? -1;
   const bRate = b.successRate ?? -1;
   if (aRate !== bRate) return bRate - aRate;
 
-  // 6. responseTime ascending.
+  // 6. Position ascending.
+  if (a.position !== b.position) return a.position - b.position;
+
+  // 7. Response time ascending.
   const aTime = a.responseTime ?? Number.POSITIVE_INFINITY;
   const bTime = b.responseTime ?? Number.POSITIVE_INFINITY;
   return aTime - bTime;

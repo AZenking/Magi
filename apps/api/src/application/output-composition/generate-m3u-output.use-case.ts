@@ -1,9 +1,25 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { selectPlaybackLine } from "@magi/backend-core";
-import type { ICanonicalChannelRepository, IChannelStreamRepository, StreamWithSource } from "@/domain/output-composition";
-import { ChannelStreamModel, CanonicalChannelModel } from "@/domain/output-composition";
+import {
+  comparePlaybackLines,
+  selectPlaybackLine,
+  type PlaybackLine,
+} from "@magi/backend-core";
+import type {
+  ICanonicalChannelRepository,
+  IChannelStreamRepository,
+  StreamWithSource,
+} from "@/domain/output-composition";
+import {
+  ChannelStreamModel,
+  CanonicalChannelModel,
+} from "@/domain/output-composition";
 
-const healthOrder: Record<string, number> = { online: 0, unknown: 1, degraded: 2, offline: 3 };
+function escapeM3uValue(value: string): string {
+  return value
+    .replace(/[\r\n]+/g, " ")
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"');
+}
 
 /**
  * 009-m3u-control-plane T041: filter source-missing streams (manual lines
@@ -11,48 +27,33 @@ const healthOrder: Record<string, number> = { online: 0, unknown: 1, degraded: 2
  * missing-retention rule is owned by the shared helper; v1 keeps its quality
  * preference as a domain-specific tiebreaker.
  */
-function selectBestStream(streams: StreamWithSource[]): StreamWithSource | null {
-  if (streams.length === 0) return null;
-
-  // Filter out streams from non-participating sources
-  const eligible = streams.filter((s) => s.sourceParticipateInOutput !== false);
-  if (eligible.length === 0) return null;
-
-  // 009: drop source streams that are in missing-retention (manual lines stay).
-  // The shared `selectPlaybackLine` helper enforces the same survival rule, but
-  // for v1 we also want the legacy quality preference, so we pre-filter then
-  // sort by quality.
-  const surviving = eligible.filter((s) => {
-    if (s.origin === "manual") return true;
-    return s.missingSince == null;
-  });
-  if (surviving.length === 0) return null;
-
-  void selectPlaybackLine; // referenced for future failover-aware ordering
-  const sorted = [...surviving].sort(compareByQuality);
-  return sorted[0] ?? null;
+function toPlaybackLine(stream: StreamWithSource): PlaybackLine {
+  return {
+    id: stream.id,
+    isPrimary: stream.isPrimary,
+    position: stream.position ?? Number.MAX_SAFE_INTEGER,
+    eligibleForFailover: stream.eligibleForFailover !== false,
+    healthStatus: stream.healthStatus,
+    responseTime: stream.responseTime,
+    successRate: stream.successRate,
+    sourcePriority: stream.sourcePriority,
+    consecutiveFailures: stream.consecutiveFailures,
+    origin: stream.origin ?? "source",
+    missingSince: stream.missingSince ?? stream.purgedAt ?? null,
+  };
 }
 
-/** Legacy quality-based tiebreaker (T041 keeps it for v1-only quality preference). */
-function compareByQuality(a: StreamWithSource, b: StreamWithSource): number {
-  // 1. isPrimary first
-  if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1;
-  // 2. Source priority (higher = better)
-  const pa = a.sourcePriority ?? 0;
-  const pb = b.sourcePriority ?? 0;
-  if (pa !== pb) return pb - pa;
-  // 3. Quality: height then bitrate (higher = better)
-  const ha = a.streamHeight ?? 0;
-  const hb = b.streamHeight ?? 0;
-  if (ha !== hb) return hb - ha;
-  const ba = a.streamBitrate ?? 0;
-  const bb = b.streamBitrate ?? 0;
-  if (ba !== bb) return bb - ba;
-  // 4. Health then response time
-  const hsa = healthOrder[a.healthStatus] ?? 3;
-  const hsb = healthOrder[b.healthStatus] ?? 3;
-  if (hsa !== hsb) return hsa - hsb;
-  return (a.responseTime ?? Infinity) - (b.responseTime ?? Infinity);
+function compareStreams(a: StreamWithSource, b: StreamWithSource): number {
+  return comparePlaybackLines(toPlaybackLine(a), toPlaybackLine(b));
+}
+
+function selectBestStream(
+  streams: StreamWithSource[],
+): StreamWithSource | null {
+  const selected = selectPlaybackLine(streams.map(toPlaybackLine));
+  return selected
+    ? (streams.find((stream) => stream.id === selected.id) ?? null)
+    : null;
 }
 
 @Injectable()
@@ -74,22 +75,36 @@ export class GenerateM3uOutputUseCase {
       hidden: false,
     });
 
-    const visible = channels.filter((c) => new CanonicalChannelModel(c).shouldBeInOutput());
+    const visible = channels.filter((c) =>
+      new CanonicalChannelModel(c).shouldBeInOutput(),
+    );
     const lines: string[] = ["#EXTM3U"];
 
     for (const ch of visible) {
-      const streams = await this.streamRepo.findByCanonicalChannelIdWithSource(ch.id);
+      const streams = await this.streamRepo.findByCanonicalChannelIdWithSource(
+        ch.id,
+      );
 
       if (mode === "all") {
-        const eligible = streams.filter((s) =>
-          s.sourceParticipateInOutput !== false && new ChannelStreamModel(s).isAvailable()
-        );
+        const eligible = streams
+          .filter(
+            (s) =>
+              s.sourceParticipateInOutput !== false &&
+              s.eligibleForFailover !== false &&
+              new ChannelStreamModel(s).isAvailable(),
+          )
+          .sort(compareStreams);
         for (const s of eligible) {
           lines.push(this.extinfLine(ch, s));
           lines.push(s.streamUrl);
         }
       } else {
-        const available = streams.filter((s) => new ChannelStreamModel(s).isAvailable());
+        const available = streams.filter(
+          (s) =>
+            s.sourceParticipateInOutput !== false &&
+            s.eligibleForFailover !== false &&
+            new ChannelStreamModel(s).isAvailable(),
+        );
         const best = selectBestStream(available);
         if (!best) continue;
         lines.push(this.extinfLine(ch, best));
@@ -101,14 +116,22 @@ export class GenerateM3uOutputUseCase {
   }
 
   private extinfLine(
-    ch: { epgChannelId: string | null; standardName: string; standardLogo: string | null; standardGroup: string | null },
+    ch: {
+      epgChannelId: string | null;
+      standardName: string;
+      standardLogo: string | null;
+      standardGroup: string | null;
+    },
     stream?: StreamWithSource,
   ): string {
     const tvgId = ch.epgChannelId ?? "";
-    const tvgName = ch.standardName;
-    const tvgLogo = ch.standardLogo ?? "";
-    const group = ch.standardGroup ?? "";
-    const suffix = stream && !stream.isPrimary ? ` (${stream.m3uSourceId ? "alt" : "backup"})` : "";
-    return `#EXTINF:-1 tvg-id="${tvgId}" tvg-name="${tvgName}" tvg-logo="${tvgLogo}" group-title="${group}",${ch.standardName}${suffix}`;
+    const tvgName = escapeM3uValue(ch.standardName);
+    const tvgLogo = escapeM3uValue(ch.standardLogo ?? "");
+    const group = escapeM3uValue(ch.standardGroup ?? "");
+    const suffix =
+      stream && !stream.isPrimary
+        ? ` (${stream.m3uSourceId ? "alt" : "backup"})`
+        : "";
+    return `#EXTINF:-1 tvg-id="${escapeM3uValue(tvgId)}" tvg-name="${tvgName}" tvg-logo="${tvgLogo}" group-title="${group}",${tvgName}${suffix}`;
   }
 }

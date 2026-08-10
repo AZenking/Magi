@@ -7,12 +7,13 @@
  * string) as the membership key, so that canonical mappings survive channel UUID
  * changes during M3U re-sync.
  */
-import { eq, and } from "drizzle-orm";
+import { eq, and, or, isNull, sql, ne } from "drizzle-orm";
 import { db } from "../../db";
 import {
   canonicalChannelMembers,
   canonicalChannels,
   channels,
+  channelStreams,
   mergeCandidates,
 } from "../../schema";
 import { normalizeTvgId, normalizeName } from "@magi/backend-core";
@@ -22,17 +23,60 @@ import type {
   WeakMatchCandidateInput,
 } from "@/domain/source-sync/canonical-reconcile.repository";
 
+type ReconcileExecutor =
+  | typeof db
+  | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 export class DrizzleCanonicalReconcileRepository implements ICanonicalReconcileRepository {
-  async findMembership(sourceChannelId: string): Promise<{ canonicalChannelId: string } | null> {
-    const rows = await db
-      .select({ canonicalChannelId: canonicalChannelMembers.canonicalChannelId })
+  constructor(private readonly executor: ReconcileExecutor = db) {}
+
+  async runInTransaction<T>(
+    fn: (repo: ICanonicalReconcileRepository) => Promise<T>,
+  ): Promise<T> {
+    return db.transaction(async (tx) =>
+      fn(new DrizzleCanonicalReconcileRepository(tx)),
+    );
+  }
+
+  async markStaleCandidates(
+    inputs: ReadonlyArray<{
+      sourceChannelId: string;
+      sourceFingerprint: string | null;
+    }>,
+  ): Promise<number> {
+    let staleCount = 0;
+    for (const input of inputs) {
+      const predicate = [
+        eq(mergeCandidates.sourceChannelId, input.sourceChannelId),
+        eq(mergeCandidates.status, "pending"),
+        input.sourceFingerprint === null
+          ? sql`true`
+          : ne(mergeCandidates.sourceFingerprint, input.sourceFingerprint),
+      ];
+      const result = await this.executor
+        .update(mergeCandidates)
+        .set({ status: "stale" })
+        .where(and(...predicate))
+        .returning({ id: mergeCandidates.id });
+      staleCount += result.length;
+    }
+    return staleCount;
+  }
+
+  async findMembership(sourceChannelId: string): Promise<{
+    canonicalChannelId: string;
+    active: boolean;
+    membershipSource: string;
+  } | null> {
+    const rows = await this.executor
+      .select({
+        canonicalChannelId: canonicalChannelMembers.canonicalChannelId,
+        active: canonicalChannelMembers.active,
+        membershipSource: canonicalChannelMembers.membershipSource,
+      })
       .from(canonicalChannelMembers)
-      .where(
-        and(
-          eq(canonicalChannelMembers.sourceChannelId, sourceChannelId),
-          eq(canonicalChannelMembers.active, true),
-        ),
-      )
+      .where(eq(canonicalChannelMembers.sourceChannelId, sourceChannelId))
+      .orderBy(sql`${canonicalChannelMembers.active} desc`)
       .limit(1);
     return rows[0] ?? null;
   }
@@ -42,7 +86,7 @@ export class DrizzleCanonicalReconcileRepository implements ICanonicalReconcileR
     member: CanonicalMemberInput,
     source: "automatic" | "manual" | "migrated" = "automatic",
   ): Promise<void> {
-    await db
+    await this.executor
       .insert(canonicalChannelMembers)
       .values({
         canonicalChannelId,
@@ -53,35 +97,135 @@ export class DrizzleCanonicalReconcileRepository implements ICanonicalReconcileR
         joinedAt: new Date(),
       })
       .onConflictDoUpdate({
-        target: [canonicalChannelMembers.canonicalChannelId, canonicalChannelMembers.sourceChannelId],
+        target: [
+          canonicalChannelMembers.canonicalChannelId,
+          canonicalChannelMembers.sourceChannelId,
+        ],
         set: {
           active: true,
           leftAt: null,
           channelIdentity: member.channelIdentity,
           membershipSource: source,
+          version: sql`${canonicalChannelMembers.version} + 1`,
         },
       });
   }
 
-  async createCanonicalFromSource(sourceChannelId: string, displayName: string): Promise<{ canonicalChannelId: string }> {
-    const [row] = await db
+  async createCanonicalFromSource(
+    sourceChannelId: string,
+    displayName: string,
+    groupTitle: string | null = null,
+  ): Promise<{ canonicalChannelId: string }> {
+    const [row] = await this.executor
       .insert(canonicalChannels)
       .values({
         standardName: displayName,
+        standardGroup: groupTitle,
         outputStatus: "active",
       })
       .returning({ id: canonicalChannels.id });
     return { canonicalChannelId: row!.id };
   }
 
-  async deactivateMembership(canonicalChannelId: string, sourceChannelId: string): Promise<void> {
-    await db
+  async deactivateMembership(
+    canonicalChannelId: string,
+    sourceChannelId: string,
+  ): Promise<void> {
+    await this.executor
       .update(canonicalChannelMembers)
-      .set({ active: false, leftAt: new Date() })
+      .set({
+        active: false,
+        leftAt: new Date(),
+        version: sql`${canonicalChannelMembers.version} + 1`,
+      })
       .where(
         and(
           eq(canonicalChannelMembers.canonicalChannelId, canonicalChannelId),
           eq(canonicalChannelMembers.sourceChannelId, sourceChannelId),
+        ),
+      );
+  }
+
+  async upsertSourceStream(
+    canonicalChannelId: string,
+    sourceChannelId: string,
+    sourceId: string,
+    streamUrl: string,
+  ): Promise<void> {
+    const sourcePredicate = and(
+      eq(channelStreams.sourceChannelId, sourceChannelId),
+      or(eq(channelStreams.origin, "source"), isNull(channelStreams.origin)),
+    );
+    const [existing] = await this.executor
+      .select({ id: channelStreams.id })
+      .from(channelStreams)
+      .where(sourcePredicate)
+      .limit(1);
+
+    if (existing) {
+      // Keep canonical assignment, primary choice, health history and manual
+      // ordering intact; sync only owns URL/source/visibility facts.
+      await this.executor
+        .update(channelStreams)
+        .set({
+          canonicalChannelId,
+          streamUrl,
+          m3uSourceId: sourceId,
+          origin: "source",
+          missingSince: null,
+          purgedAt: null,
+          updatedAt: new Date(),
+          version: sql`${channelStreams.version} + 1`,
+        })
+        .where(eq(channelStreams.id, existing.id));
+      return;
+    }
+
+    const existingCanonicalStreams = await this.executor
+      .select({ id: channelStreams.id })
+      .from(channelStreams)
+      .where(eq(channelStreams.canonicalChannelId, canonicalChannelId));
+    const isPrimary = existingCanonicalStreams.length === 0;
+    const [created] = await this.executor
+      .insert(channelStreams)
+      .values({
+        canonicalChannelId,
+        m3uSourceId: sourceId,
+        sourceChannelId,
+        streamUrl,
+        origin: "source",
+        isPrimary,
+        position: existingCanonicalStreams.length,
+      })
+      .returning({ id: channelStreams.id });
+    if (isPrimary && created) {
+      await this.executor
+        .update(canonicalChannels)
+        .set({ primaryStreamId: created.id, updatedAt: new Date() })
+        .where(eq(canonicalChannels.id, canonicalChannelId));
+    }
+  }
+
+  async markSourceStreamMissing(
+    sourceChannelId: string,
+    now: Date,
+  ): Promise<void> {
+    await this.executor
+      .update(channelStreams)
+      .set({
+        missingSince: now,
+        purgedAt: null,
+        updatedAt: now,
+        version: sql`${channelStreams.version} + 1`,
+      })
+      .where(
+        and(
+          eq(channelStreams.sourceChannelId, sourceChannelId),
+          or(
+            eq(channelStreams.origin, "source"),
+            isNull(channelStreams.origin),
+          ),
+          isNull(channelStreams.missingSince),
         ),
       );
   }
@@ -96,7 +240,7 @@ export class DrizzleCanonicalReconcileRepository implements ICanonicalReconcileR
     // Resolve via active members: pull each member's source channel tvgId and
     // normalize. The first member whose normalized tvg-id matches returns its
     // canonical.
-    const members = await db
+    const members = await this.executor
       .select({
         canonicalChannelId: canonicalChannelMembers.canonicalChannelId,
         sourceChannelId: canonicalChannelMembers.sourceChannelId,
@@ -106,9 +250,15 @@ export class DrizzleCanonicalReconcileRepository implements ICanonicalReconcileR
     if (members.length === 0) return null;
 
     const sourceChannelIds = new Set(members.map((m) => m.sourceChannelId));
-    const sourceChannels = await db
+    const sourceChannels = await this.executor
       .select({ id: channels.id, tvgId: channels.tvgId })
-      .from(channels);
+      .from(channels)
+      .where(
+        or(
+          eq(channels.sourcePresence, "present"),
+          isNull(channels.sourcePresence),
+        ),
+      );
     const tvgBySourceChannelId = new Map<string, string | null>();
     for (const c of sourceChannels) {
       if (c.id && sourceChannelIds.has(c.id)) {
@@ -125,10 +275,12 @@ export class DrizzleCanonicalReconcileRepository implements ICanonicalReconcileR
     return null;
   }
 
-  async insertWeakMatchCandidate(input: WeakMatchCandidateInput): Promise<void> {
+  async insertWeakMatchCandidate(
+    input: WeakMatchCandidateInput,
+  ): Promise<void> {
     // The merge_candidates table stores reasons as Postgres array literal.
     const reasonsLiteral = `{${input.reasons.map((r) => r.replace(/,/g, " ")).join(",")}}`;
-    await db
+    await this.executor
       .insert(mergeCandidates)
       .values({
         sourceChannelId: input.sourceChannelId,
@@ -144,7 +296,7 @@ export class DrizzleCanonicalReconcileRepository implements ICanonicalReconcileR
   }
 
   async isCandidateSuppressed(suppressionKey: string): Promise<boolean> {
-    const [row] = await db
+    const [row] = await this.executor
       .select({ id: mergeCandidates.id })
       .from(mergeCandidates)
       .where(
@@ -165,14 +317,14 @@ export class DrizzleCanonicalReconcileRepository implements ICanonicalReconcileR
       memberSourceChannelIds: ReadonlyArray<string>;
     }>
   > {
-    const canonicalRows = await db
+    const canonicalRows = await this.executor
       .select({
         id: canonicalChannels.id,
         standardName: canonicalChannels.standardName,
         standardGroup: canonicalChannels.standardGroup,
       })
       .from(canonicalChannels);
-    const memberRows = await db
+    const memberRows = await this.executor
       .select({
         canonicalChannelId: canonicalChannelMembers.canonicalChannelId,
         sourceChannelId: canonicalChannelMembers.sourceChannelId,

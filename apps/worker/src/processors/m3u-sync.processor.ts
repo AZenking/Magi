@@ -20,13 +20,15 @@
  * processor only adds the inline equivalents for the legacy direct-trigger
  * paths (manual/scheduled) that don't go through the API.
  */
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { db } from "../db";
 import {
   m3uSources,
   operationChangeSets,
   sourceImportSnapshots,
+  recoveryPoints,
+  recoveryPointItems,
 } from "../schema";
 import { DrizzleSourceSyncRepository } from "../infrastructure/database/source-sync.repository";
 import { DrizzleOperationExecutionRepository } from "../infrastructure/database/operation-execution.repository";
@@ -34,6 +36,9 @@ import { DrizzleCanonicalReconcileRepository } from "../infrastructure/database/
 import { PrepareM3uSyncUseCase } from "../application/operation-safety/prepare-m3u-sync.use-case";
 import { ApplyM3uSyncUseCase } from "../application/operation-safety/apply-m3u-sync.use-case";
 import { ReconcileCanonicalChannelsUseCase } from "../application/operation-safety/reconcile-canonical-channels.use-case";
+import { ApplyRecoveryRestoreUseCase } from "../application/operation-safety/apply-recovery-restore.use-case";
+import { DrizzleRestoreRepository } from "../infrastructure/database/restore.repository";
+import { refreshOutputPublication } from "../infrastructure/database/output-publication.repository";
 import type { SyncProgress } from "@magi/backend-core";
 
 // 009-m3u-control-plane T032: the legacy `reconcileCanonicals` (merge-key
@@ -149,24 +154,55 @@ async function processOneSource(sourceId: string): Promise<{
   createdCount: number;
   missingMarkedCount: number;
 }> {
+  // Direct/manual and scheduled triggers use the same source-scoped lease as
+  // the API operation path. Acquire it before preparing so two concurrent
+  // triggers cannot both stage and later apply the same snapshot.
+  const leaseRepo = new DrizzleOperationExecutionRepository();
+  const leaseScope = `m3u-control-plane:source:${sourceId}`;
+  const leaseTaskId = randomUUID();
+  const lease = await leaseRepo.acquireLease(
+    leaseScope,
+    leaseTaskId,
+    2 * 60 * 1000,
+  );
+  if (!lease.acquired) {
+    throw new Error(`Source sync already in progress: ${sourceId}`);
+  }
+  try {
+    return await processOneSourceUnlocked(sourceId);
+  } finally {
+    await leaseRepo.releaseLease(leaseScope, leaseTaskId);
+  }
+}
+
+async function processOneSourceUnlocked(sourceId: string): Promise<{
+  changeSetId: string;
+  snapshotId: string;
+  requiresConfirmation: boolean;
+  upsertedCount: number;
+  createdCount: number;
+  missingMarkedCount: number;
+}> {
   const sourceSyncRepo = new DrizzleSourceSyncRepository();
   const operationExecRepo = new DrizzleOperationExecutionRepository();
   const prepareUc = new PrepareM3uSyncUseCase(sourceSyncRepo);
   const applyUc = new ApplyM3uSyncUseCase(
     sourceSyncRepo,
     (snapshotId: string) =>
-      operationExecRepo.loadSnapshotItems(snapshotId) as Promise<{
-        channelIdentity: string;
-        collisionOrdinal: number;
-        itemOrder: number;
-        payload: {
-          displayName: string;
-          groupTitle: string | null;
-          tvgId: string | null;
-          tvgLogo: string | null;
-          streamUrl: string | null;
-        };
-      }[]>,
+      operationExecRepo.loadSnapshotItems(snapshotId) as Promise<
+        {
+          channelIdentity: string;
+          collisionOrdinal: number;
+          itemOrder: number;
+          payload: {
+            displayName: string;
+            groupTitle: string | null;
+            tvgId: string | null;
+            tvgLogo: string | null;
+            streamUrl: string | null;
+          };
+        }[]
+      >,
   );
 
   const changeSetId = randomUUID();
@@ -210,8 +246,14 @@ async function processOneSource(sourceId: string): Promise<{
       .set({
         status: "failed",
         summary: { error: message.slice(0, 500) },
+        version: sql`${operationChangeSets.version} + 1`,
       })
-      .where(eq(operationChangeSets.id, changeSetId));
+      .where(
+        and(
+          eq(operationChangeSets.id, changeSetId),
+          eq(operationChangeSets.status, "preparing"),
+        ),
+      );
     throw error;
   }
 
@@ -224,17 +266,41 @@ async function processOneSource(sourceId: string): Promise<{
       snapshotId: prepareResult.snapshotId,
       summary: prepareResult.summary as unknown as Record<string, unknown>,
       warnings: prepareResult.warnings as unknown as never,
+      blockers:
+        prepareResult.summary.conflicts > 0
+          ? [
+              {
+                code: "duplicate-identity",
+                message:
+                  "Duplicate source identities must be resolved before apply",
+              },
+            ]
+          : [],
       requiresConfirmation: prepareResult.requiresConfirmation,
       sourceVersion: prepareResult.sourceVersion,
+      version: sql`${operationChangeSets.version} + 1`,
       anomalyClassification: {
         requiresConfirmation: prepareResult.requiresConfirmation,
         warnings: prepareResult.warnings,
       } as never,
     })
-    .where(eq(operationChangeSets.id, changeSetId));
+    .where(
+      and(
+        eq(operationChangeSets.id, changeSetId),
+        eq(operationChangeSets.status, "preparing"),
+      ),
+    );
 
   if (prepareResult.requiresConfirmation) {
     // Anomaly: leave in `ready` for operator confirmation (FR-016).
+    await refreshOutputPublication({
+      changeSetId,
+      status: "blocked",
+      blockingReason: prepareResult.warnings
+        .map((warning) => warning.message)
+        .join("; ")
+        .slice(0, 500),
+    });
     return {
       changeSetId,
       snapshotId: prepareResult.snapshotId,
@@ -246,57 +312,143 @@ async function processOneSource(sourceId: string): Promise<{
   }
 
   // Normal diff: auto-apply via the atomic path.
-  const applyResult = await applyUc.execute({
-    sourceId,
-    snapshotId: prepareResult.snapshotId,
+  const recoveryPointId = randomUUID();
+  await db.insert(recoveryPoints).values({
+    id: recoveryPointId,
+    status: "creating",
+    operationKind: "m3u_sync",
+    scopeType: "source",
+    scopeId: sourceId,
     changeSetId,
-    sourceVersion: prepareResult.sourceVersion,
-    contentFingerprint: prepareResult.fingerprint,
+    taskId: preparedTaskId,
+    schemaVersion: 1,
+    itemCount: 0,
+    checksum: "pending",
+    createdBy: "schedule",
+    expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
   });
+  try {
+    const applyResult = await applyUc.execute({
+      sourceId,
+      snapshotId: prepareResult.snapshotId,
+      changeSetId,
+      sourceVersion: prepareResult.sourceVersion,
+      contentFingerprint: prepareResult.fingerprint,
+      recoveryPointId,
+    });
 
-  await db
-    .update(operationChangeSets)
-    .set({
-      status: "applied",
-      applyTaskId: preparedTaskId,
-    })
-    .where(eq(operationChangeSets.id, changeSetId));
+    // Reconcile source channels → canonical channels before reporting the
+    // change set as applied. A failed reconcile must leave the change set
+    // retryable/failed rather than falsely claiming a complete output update.
+    const presentChannels = await sourceSyncRepo.loadPresentChannels(sourceId);
+    const currentChannels = await sourceSyncRepo.loadCurrentChannels(sourceId);
+    const missingIds = currentChannels
+      .filter((c) => c.sourcePresence === "missing")
+      .map((c) => c.id);
 
-  // Reconcile source channels → canonical channels so the output composition
-  // layer (GET /output/channels) sees them. Mirrors operation-worker.ts:152-177
-  // (operation-apply path). Runs after the change set is marked applied.
-  const presentChannels = await sourceSyncRepo.loadPresentChannels(sourceId);
-  const currentChannels = await sourceSyncRepo.loadCurrentChannels(sourceId);
-  const missingIds = currentChannels
-    .filter((c) => c.sourcePresence === "missing")
-    .map((c) => c.id);
+    const reconcileRepo = new DrizzleCanonicalReconcileRepository();
+    const reconcile = new ReconcileCanonicalChannelsUseCase(reconcileRepo);
+    await reconcile.execute({
+      sourceId,
+      sourceChannels: presentChannels.map((c) => ({
+        sourceChannelId: c.id,
+        channelIdentity: c.channelIdentity,
+        displayName: c.displayName,
+        groupTitle: c.groupTitle,
+        tvgId: c.tvgId,
+        normalizedName: null,
+        normalizedGroup: c.groupTitle,
+        streamUrl: c.streamUrl,
+        sourceFingerprint: prepareResult.fingerprint,
+      })),
+      missingSourceChannelIds: missingIds,
+    });
+    await refreshOutputPublication({
+      changeSetId,
+      status: "fresh",
+      blockingReason: null,
+    });
 
-  const reconcileRepo = new DrizzleCanonicalReconcileRepository();
-  const reconcile = new ReconcileCanonicalChannelsUseCase(reconcileRepo);
-  await reconcile.execute({
-    sourceId,
-    sourceChannels: presentChannels.map((c) => ({
-      sourceChannelId: c.id,
-      channelIdentity: c.channelIdentity,
-      displayName: c.displayName,
-      groupTitle: null,
-      tvgId: c.tvgId,
-      normalizedName: null,
-      normalizedGroup: null,
-      streamUrl: null,
-      sourceFingerprint: "post-apply",
-    })),
-    missingSourceChannelIds: missingIds,
-  });
+    await db
+      .update(operationChangeSets)
+      .set({
+        status: "applied",
+        applyTaskId: preparedTaskId,
+        version: sql`${operationChangeSets.version} + 1`,
+      })
+      .where(
+        and(
+          eq(operationChangeSets.id, changeSetId),
+          eq(operationChangeSets.status, "ready"),
+        ),
+      );
 
-  return {
-    changeSetId,
-    snapshotId: prepareResult.snapshotId,
-    requiresConfirmation: false,
-    upsertedCount: applyResult.upsertedCount,
-    createdCount: applyResult.createdCount,
-    missingMarkedCount: applyResult.missingMarkedCount,
-  };
+    return {
+      changeSetId,
+      snapshotId: prepareResult.snapshotId,
+      requiresConfirmation: false,
+      upsertedCount: applyResult.upsertedCount,
+      createdCount: applyResult.createdCount,
+      missingMarkedCount: applyResult.missingMarkedCount,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const [recoveryPoint] = await db
+      .select({ status: recoveryPoints.status })
+      .from(recoveryPoints)
+      .where(eq(recoveryPoints.id, recoveryPointId))
+      .limit(1);
+    let restored = false;
+    if (recoveryPoint?.status === "ready") {
+      try {
+        const items = await db
+          .select()
+          .from(recoveryPointItems)
+          .where(eq(recoveryPointItems.recoveryPointId, recoveryPointId))
+          .orderBy(recoveryPointItems.itemOrder);
+        await new ApplyRecoveryRestoreUseCase(
+          new DrizzleRestoreRepository(),
+        ).execute({
+          recoveryPointId,
+          items: items
+            .filter((item) => item.entityId !== null)
+            .map((item) => ({
+              entityType: item.entityType,
+              entityId: item.entityId!,
+              entityVersion: item.entityVersion ?? 1,
+              payload: item.payload as Record<string, unknown>,
+              itemOrder: item.itemOrder ?? 0,
+            })),
+        });
+        restored = true;
+      } catch {
+        // Fall through to an explicit invalid status below.
+      }
+    }
+    await db
+      .update(recoveryPoints)
+      .set({ status: restored ? "restored" : "invalid" })
+      .where(eq(recoveryPoints.id, recoveryPointId));
+    await refreshOutputPublication({
+      changeSetId,
+      status: "stale",
+      blockingReason: message.slice(0, 500),
+    }).catch(() => undefined);
+    await db
+      .update(operationChangeSets)
+      .set({
+        status: "failed",
+        summary: { error: message.slice(0, 500) },
+        version: sql`${operationChangeSets.version} + 1`,
+      })
+      .where(
+        and(
+          eq(operationChangeSets.id, changeSetId),
+          eq(operationChangeSets.status, "ready"),
+        ),
+      );
+    throw error;
+  }
 }
 
 // Re-export so callers that need to look up snapshot rows can do so without

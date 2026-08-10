@@ -5,7 +5,15 @@
  * applies (data-model.md). Items carry the full state required to restore one
  * object; reference ordering is explicit so parents restore before children.
  */
-import { pgTable, uuid, varchar, text, integer, timestamp, jsonb, index } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  uuid,
+  varchar,
+  integer,
+  timestamp,
+  jsonb,
+  index,
+} from "drizzle-orm/pg-core";
 
 export const recoveryPoints = pgTable(
   "recovery_points",
@@ -21,7 +29,9 @@ export const recoveryPoints = pgTable(
     itemCount: integer("item_count").notNull().default(0),
     checksum: varchar("checksum", { length: 80 }).notNull(),
     createdBy: varchar("created_by", { length: 255 }).notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
   },
   (t) => [

@@ -16,6 +16,8 @@ export interface SourceVo {
   checkResponseTime?: number | null;
   checkError?: string | null;
   qualityScore?: number | null;
+  /** Optimistic-concurrency token for source-scoped operations. */
+  version?: number;
   createdAt: string;
   updatedAt: string;
 }

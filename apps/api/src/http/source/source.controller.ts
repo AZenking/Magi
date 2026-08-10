@@ -12,12 +12,21 @@ import {
   Inject,
   UseGuards,
 } from "@nestjs/common";
-import type { ApiResponse, PaginatedResponse, SourceVo, CreateSource, UpdateSource, SourceEffectivePolicy } from "@magi/types";
-import { CreateSourceSchema, UpdateSourceSchema, SourceQuerySchema } from "@magi/types";
-import type { M3uSource } from "../../domain/source-management";
+import type {
+  ApiResponse,
+  PaginatedResponse,
+  SourceVo,
+  CreateSource,
+  UpdateSource,
+  SourceEffectivePolicy,
+} from "@magi/types";
 import {
-  FindSourcesUseCase,
-} from "../../application/source-management/find-sources.use-case";
+  CreateSourceSchema,
+  UpdateSourceSchema,
+  SourceQuerySchema,
+} from "@magi/types";
+import type { M3uSource } from "../../domain/source-management";
+import { FindSourcesUseCase } from "../../application/source-management/find-sources.use-case";
 import {
   FindSourceUseCase,
   type AnySource,
@@ -30,14 +39,20 @@ import {
   UpdateSourceUseCase,
   type UpdatedSource,
 } from "../../application/source-management/update-source.use-case";
-import { DeleteSourceUseCase } from "../../application/source-management/delete-source.use-case";
+import { PrepareOperationPreviewUseCase } from "../../application/operation-safety/prepare-operation-preview.use-case";
+import { OperationChangeSetRepository } from "../../infrastructure/database/operation-change-set.repository";
+import { SyncLogRepository } from "../../infrastructure/database/sync-log.repository";
 import { GetSourceEffectivePolicyUseCase } from "../../application/source-management/get-source-effective-policy.use-case";
 import { EnqueueSyncUseCase } from "../../application/task-execution/enqueue-sync.use-case";
+import { BullmqTaskQueueAdapter } from "../../infrastructure/bullmq/task-queue.adapter";
 import { AuthGuard } from "../../shared/guards/auth.guard";
 import { CurrentUser } from "../../shared/decorators/current-user.decorator";
 import { currentRequestId } from "../../shared/http/request-context.middleware";
 import { AppendAuditEventUseCase } from "../../application/audit/append-audit-event.use-case";
-import { AUDIT_ACTIONS, changedFieldNames } from "../../domain/audit/audit-actions";
+import {
+  AUDIT_ACTIONS,
+  changedFieldNames,
+} from "../../domain/audit/audit-actions";
 
 function toVo(source: AnySource | CreatedSource | UpdatedSource): SourceVo {
   return {
@@ -49,7 +64,8 @@ function toVo(source: AnySource | CreatedSource | UpdatedSource): SourceVo {
     role: source.role,
     priority: source.priority,
     participateInOutput: source.participateInOutput,
-    allowFallback: source.type === "m3u" ? (source as M3uSource).allowFallback : true,
+    allowFallback:
+      source.type === "m3u" ? (source as M3uSource).allowFallback : true,
     failureCount: source.failureCount,
     lastSyncAt: source.lastSyncAt?.toISOString() ?? undefined,
     lastSyncStatus: source.lastSyncStatus,
@@ -58,6 +74,7 @@ function toVo(source: AnySource | CreatedSource | UpdatedSource): SourceVo {
     checkResponseTime: source.checkResponseTime ?? undefined,
     checkError: source.checkError ?? undefined,
     qualityScore: source.qualityScore,
+    version: source.version ?? 1,
     createdAt: source.createdAt.toISOString(),
     updatedAt: source.updatedAt.toISOString(),
   };
@@ -67,23 +84,39 @@ function toVo(source: AnySource | CreatedSource | UpdatedSource): SourceVo {
 @UseGuards(AuthGuard)
 export class SourceController {
   constructor(
-    @Inject(FindSourcesUseCase) private readonly findSources: FindSourcesUseCase,
+    @Inject(FindSourcesUseCase)
+    private readonly findSources: FindSourcesUseCase,
     @Inject(FindSourceUseCase) private readonly findSource: FindSourceUseCase,
-    @Inject(CreateSourceUseCase) private readonly createSource: CreateSourceUseCase,
-    @Inject(UpdateSourceUseCase) private readonly updateSource: UpdateSourceUseCase,
-    @Inject(DeleteSourceUseCase) private readonly deleteSource: DeleteSourceUseCase,
-    @Inject(GetSourceEffectivePolicyUseCase) private readonly effectivePolicy: GetSourceEffectivePolicyUseCase,
-    @Inject(EnqueueSyncUseCase) private readonly enqueueSync: EnqueueSyncUseCase,
-    @Inject(AppendAuditEventUseCase) private readonly audit: AppendAuditEventUseCase,
+    @Inject(CreateSourceUseCase)
+    private readonly createSource: CreateSourceUseCase,
+    @Inject(UpdateSourceUseCase)
+    private readonly updateSource: UpdateSourceUseCase,
+    @Inject(GetSourceEffectivePolicyUseCase)
+    private readonly effectivePolicy: GetSourceEffectivePolicyUseCase,
+    @Inject(EnqueueSyncUseCase)
+    private readonly enqueueSync: EnqueueSyncUseCase,
+    @Inject("TASK_QUEUE_PORT")
+    private readonly queue: BullmqTaskQueueAdapter,
+    @Inject(AppendAuditEventUseCase)
+    private readonly audit: AppendAuditEventUseCase,
   ) {}
 
   @Get()
-  async findAll(@Query() query: unknown): Promise<ApiResponse<PaginatedResponse<SourceVo>>> {
+  async findAll(
+    @Query() query: unknown,
+  ): Promise<ApiResponse<PaginatedResponse<SourceVo>>> {
     const parsed = SourceQuerySchema.safeParse(query);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.flatten());
     }
-    const { type, search, page = 1, pageSize = 20, sortBy, sortDir } = parsed.data;
+    const {
+      type,
+      search,
+      page = 1,
+      pageSize = 20,
+      sortBy,
+      sortDir,
+    } = parsed.data;
 
     const { items, total } = await this.findSources.execute(type, {
       search,
@@ -152,7 +185,11 @@ export class SourceController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.flatten());
     }
-    const source = await this.updateSource.execute(id, type, parsed.data as UpdateSource);
+    const source = await this.updateSource.execute(
+      id,
+      type,
+      parsed.data as UpdateSource,
+    );
     await this.audit.execute({
       actorType: "user",
       actorId: user.id,
@@ -171,13 +208,38 @@ export class SourceController {
   }
 
   @Delete(":type/:id")
+  @HttpCode(202)
   async remove(
     @Param("type") type: "m3u" | "xmltv",
     @Param("id") id: string,
     @CurrentUser() user: { id: string },
-  ): Promise<ApiResponse<void>> {
+  ): Promise<
+    ApiResponse<{
+      changeSetId: string;
+      task: { id: string; statusUrl: string };
+    }>
+  > {
     const source = await this.findSource.execute(id, type);
-    await this.deleteSource.execute(id, type);
+    // Deletion is a high-risk operation. Keep the legacy DELETE route as a
+    // compatibility entry point, but route it through the same preview/apply
+    // protocol used by the dashboard so no request can bypass impact review,
+    // recovery capture, and source-scoped leasing.
+    const prepare = new PrepareOperationPreviewUseCase(
+      new OperationChangeSetRepository(),
+      new SyncLogRepository(),
+      this.queue,
+    );
+    const prepared = await prepare.execute({
+      kind: "source_delete",
+      scopeType: "source",
+      scopeId: id,
+      sourceId: id,
+      parameters: { sourceId: id, sourceType: type },
+      inputFingerprint: `source-delete:${type}:${id}:v${source.version ?? 1}`,
+      baseVersions: { [`source:${id}`]: source.version ?? 1 },
+      requestedBy: user.id,
+      requestId: currentRequestId() ?? null,
+    });
     await this.audit.execute({
       actorType: "user",
       actorId: user.id,
@@ -185,11 +247,18 @@ export class SourceController {
       targetType: "source",
       targetId: id,
       displayName: source.name,
-      result: "succeeded",
+      result: "accepted",
       requestId: currentRequestId(),
-      summary: { sourceType: type },
+      taskId: prepared.taskId,
+      summary: { sourceType: type, changeSetId: prepared.changeSetId },
     });
-    return { success: true };
+    return {
+      success: true,
+      data: {
+        changeSetId: prepared.changeSetId,
+        task: { id: prepared.taskId, statusUrl: prepared.statusUrl },
+      },
+    };
   }
 
   @Post(":type/:id/sync")

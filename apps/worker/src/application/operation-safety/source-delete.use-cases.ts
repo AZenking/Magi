@@ -16,7 +16,18 @@ export class PrepareSourceDeleteUseCase {
 export class ApplySourceDeleteUseCase {
   constructor(private readonly repo: ISourceSyncRepository) {}
 
-  execute(sourceId: string): Promise<SourceDeleteResult> {
+  execute(
+    sourceId: string,
+    recovery?: { recoveryPointId: string; changeSetId: string },
+    expectedSourceVersion?: number,
+  ): Promise<SourceDeleteResult> {
+    if (recovery || expectedSourceVersion !== undefined) {
+      return this.repo.applySourceDelete(
+        sourceId,
+        recovery,
+        expectedSourceVersion,
+      );
+    }
     return this.repo.applySourceDelete(sourceId);
   }
 }

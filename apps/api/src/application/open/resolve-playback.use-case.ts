@@ -11,16 +11,29 @@
  * line yield playable:false.
  */
 import { Inject, Injectable } from "@nestjs/common";
-import type { ICanonicalChannelRepository, IChannelStreamRepository, StreamWithSource } from "@/domain/output-composition";
+import { comparePlaybackLines, type PlaybackLine } from "@magi/backend-core";
+import type {
+  ICanonicalChannelRepository,
+  IChannelStreamRepository,
+  StreamWithSource,
+} from "@/domain/output-composition";
 import { CanonicalChannelModel } from "@/domain/output-composition";
 
-/** Mirrors the V2 health ranking (generate-v2-output.use-cases.ts). */
-const healthOrder: Record<string, number> = {
-  online: 0,
-  unknown: 1,
-  degraded: 2,
-  offline: 3,
-};
+function toPlaybackLine(stream: StreamWithSource): PlaybackLine {
+  return {
+    id: stream.id,
+    isPrimary: stream.isPrimary,
+    position: stream.position ?? Number.MAX_SAFE_INTEGER,
+    eligibleForFailover: stream.eligibleForFailover !== false,
+    healthStatus: stream.healthStatus,
+    responseTime: stream.responseTime,
+    successRate: stream.successRate,
+    sourcePriority: stream.sourcePriority,
+    consecutiveFailures: stream.consecutiveFailures,
+    origin: stream.origin ?? "source",
+    missingSince: stream.missingSince ?? stream.purgedAt ?? null,
+  };
+}
 
 /**
  * Order streams by the same policy as V2 output: drop sources opted out of
@@ -29,15 +42,14 @@ const healthOrder: Record<string, number> = {
  */
 function orderUsableStreams(streams: StreamWithSource[]): StreamWithSource[] {
   return [...streams]
-    .filter((s) => s.sourceParticipateInOutput !== false)
-    .sort((a, b) => {
-      const healthDiff = (healthOrder[a.healthStatus] ?? 3) - (healthOrder[b.healthStatus] ?? 3);
-      if (healthDiff !== 0) return healthDiff;
-      if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1;
-      const positionDiff = (a.position ?? Number.MAX_SAFE_INTEGER) - (b.position ?? Number.MAX_SAFE_INTEGER);
-      if (positionDiff !== 0) return positionDiff;
-      return (a.responseTime ?? Infinity) - (b.responseTime ?? Infinity);
-    });
+    .filter(
+      (s) =>
+        s.sourceParticipateInOutput !== false &&
+        s.eligibleForFailover !== false &&
+        (s.origin === "manual" ||
+          (s.missingSince == null && s.purgedAt == null)),
+    )
+    .sort((a, b) => comparePlaybackLines(toPlaybackLine(a), toPlaybackLine(b)));
 }
 
 /** A line is usable if it is online or unknown (matches ChannelStreamModel.isAvailable). */
@@ -48,8 +60,18 @@ function isUsable(s: StreamWithSource): boolean {
 export interface ResolvedPlayback {
   channelId: string;
   playable: boolean;
-  primary: { streamId: string; url: string; format: string | null; health: string } | null;
-  fallbacks: { streamId: string; url: string; format: string | null; health: string }[];
+  primary: {
+    streamId: string;
+    url: string;
+    format: string | null;
+    health: string;
+  } | null;
+  fallbacks: {
+    streamId: string;
+    url: string;
+    format: string | null;
+    health: string;
+  }[];
 }
 
 @Injectable()
@@ -71,7 +93,8 @@ export class ResolvePlaybackUseCase {
     if (!channel || !new CanonicalChannelModel(channel).shouldBeInOutput()) {
       return null;
     }
-    const streams = await this.streamRepo.findByCanonicalChannelIdWithSource(channelId);
+    const streams =
+      await this.streamRepo.findByCanonicalChannelIdWithSource(channelId);
     const ordered = orderUsableStreams(streams).filter(isUsable);
 
     const toLine = (s: StreamWithSource) => ({
@@ -85,7 +108,13 @@ export class ResolvePlaybackUseCase {
       channelId: `magi:${channelId}`,
       playable: ordered.length > 0,
       primary: ordered[0] ? toLine(ordered[0]) : null,
-      fallbacks: ordered.slice(1).map(toLine),
+      fallbacks: ordered
+        .slice(1)
+        .filter(
+          (stream) =>
+            stream.origin === "manual" || stream.sourceAllowFallback !== false,
+        )
+        .map(toLine),
     };
   }
 }

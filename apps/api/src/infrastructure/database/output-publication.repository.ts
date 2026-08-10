@@ -7,13 +7,15 @@
  * content — it generates fresh on demand. This row is the management UI's
  * source of truth for "what's currently being served".
  */
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "./connection";
 import { outputPublications } from "./schema";
 import type { IOutputPublicationRepository } from "@/domain/output-composition";
 import type { OutputPublicationVo } from "@magi/types";
 
-function toVo(row: typeof outputPublications.$inferSelect): OutputPublicationVo {
+function toVo(
+  row: typeof outputPublications.$inferSelect,
+): OutputPublicationVo {
   return {
     revision: row.revision,
     status: row.status as OutputPublicationVo["status"],
@@ -28,7 +30,9 @@ function toVo(row: typeof outputPublications.$inferSelect): OutputPublicationVo 
 const PRIMARY_SCOPE = "primary";
 
 export class OutputPublicationRepository implements IOutputPublicationRepository {
-  async read(scope: string = PRIMARY_SCOPE): Promise<OutputPublicationVo | null> {
+  async read(
+    scope: string = PRIMARY_SCOPE,
+  ): Promise<OutputPublicationVo | null> {
     const [row] = await db
       .select()
       .from(outputPublications)
@@ -48,31 +52,7 @@ export class OutputPublicationRepository implements IOutputPublicationRepository
     blockingReason: string | null;
     lastApplyChangeSetId: string | null;
   }): Promise<OutputPublicationVo> {
-    const [existing] = await db
-      .select({ id: outputPublications.id })
-      .from(outputPublications)
-      .where(eq(outputPublications.scope, input.scope))
-      .limit(1);
-
-    if (existing) {
-      const [row] = await db
-        .update(outputPublications)
-        .set({
-          revision: input.revision,
-          status: input.status,
-          publishedAt: input.publishedAt,
-          channelCount: input.channelCount,
-          playableChannelCount: input.playableChannelCount,
-          excludedChannelCount: input.excludedChannelCount,
-          blockingReason: input.blockingReason,
-          lastApplyChangeSetId: input.lastApplyChangeSetId,
-          updatedAt: new Date(),
-        })
-        .where(eq(outputPublications.id, existing.id))
-        .returning();
-      return toVo(row!);
-    }
-
+    const now = new Date();
     const [row] = await db
       .insert(outputPublications)
       .values({
@@ -86,11 +66,21 @@ export class OutputPublicationRepository implements IOutputPublicationRepository
         blockingReason: input.blockingReason,
         lastApplyChangeSetId: input.lastApplyChangeSetId,
       })
+      .onConflictDoUpdate({
+        target: outputPublications.scope,
+        set: {
+          revision: input.revision,
+          status: input.status,
+          publishedAt: input.publishedAt,
+          channelCount: input.channelCount,
+          playableChannelCount: input.playableChannelCount,
+          excludedChannelCount: input.excludedChannelCount,
+          blockingReason: input.blockingReason,
+          lastApplyChangeSetId: input.lastApplyChangeSetId,
+          updatedAt: now,
+        },
+      })
       .returning();
     return toVo(row!);
   }
 }
-
-// Suppress unused-import warning for `and` — kept here so future filtering
-// queries (e.g. list-all-publications) compile without re-importing.
-void and;

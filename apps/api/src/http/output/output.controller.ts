@@ -21,13 +21,29 @@ import {
   Res,
 } from "@nestjs/common";
 import multer from "multer";
-import type { ApiResponse, UpdateOutputChannel, CanonicalChannelVo, OutputChannelDetailVo, ChannelStreamVo, CreateChannelStream, UpdateChannelStream, ChannelLifecycle, EpgBindingVo, OutputGuideVo, ProgrammeVo } from "@magi/types";
+import type {
+  ApiResponse,
+  UpdateOutputChannel,
+  CanonicalChannelVo,
+  OutputChannelDetailVo,
+  ChannelStreamVo,
+  CreateChannelStream,
+  UpdateChannelStream,
+  ChannelLifecycle,
+  EpgBindingVo,
+  OutputGuideVo,
+  ProgrammeVo,
+} from "@magi/types";
 import {
   ReviewMergeCandidateRequestSchema,
   BatchReviewMergeCandidateRequestSchema,
 } from "@magi/types";
 import { AuthGuard } from "../../shared/guards/auth.guard";
-import { IfMatchRequiredGuard, parseIfMatch, etagFor } from "../../shared/http/precondition";
+import {
+  IfMatchRequiredGuard,
+  parseIfMatch,
+  etagFor,
+} from "../../shared/http/precondition";
 import { FindCanonicalChannelsUseCase } from "../../application/output-composition/find-canonical-channels.use-case";
 import { GenerateM3uOutputUseCase } from "../../application/output-composition/generate-m3u-output.use-case";
 import { GenerateXmltvOutputUseCase } from "../../application/output-composition/generate-xmltv-output.use-case";
@@ -46,13 +62,22 @@ import {
   UpdateFailoverPolicyUseCase,
   CheckChannelStreamUseCase,
 } from "../../application/output-composition/channel-failover.use-cases";
-import { FindChannelStreamsUseCase, CreateChannelStreamUseCase, UpdateChannelStreamUseCase, DeleteChannelStreamUseCase, SetPrimaryStreamUseCase } from "../../application/output-composition/channel-stream-crud.use-cases";
+import {
+  FindChannelStreamsUseCase,
+  CreateChannelStreamUseCase,
+  UpdateChannelStreamUseCase,
+  DeleteChannelStreamUseCase,
+  SetPrimaryStreamUseCase,
+} from "../../application/output-composition/channel-stream-crud.use-cases";
 import { EnqueueSyncUseCase } from "../../application/task-execution/enqueue-sync.use-case";
 import { LogoUploadService } from "../../infrastructure/storage/logo-upload.service";
 import { CurrentUser } from "../../shared/decorators/current-user.decorator";
 import { currentRequestId } from "../../shared/http/request-context.middleware";
 import { AppendAuditEventUseCase } from "../../application/audit/append-audit-event.use-case";
-import { AUDIT_ACTIONS, changedFieldNames } from "../../domain/audit/audit-actions";
+import {
+  AUDIT_ACTIONS,
+  changedFieldNames,
+} from "../../domain/audit/audit-actions";
 // 009-m3u-control-plane (T029): merge candidate endpoints.
 import {
   ListMergeCandidatesUseCase,
@@ -73,7 +98,9 @@ import { OutputPublicationRepository } from "../../infrastructure/database/outpu
 
 function toBindingVo(
   channelId: string,
-  binding?: import("../../domain/output-composition").CanonicalEpgBindingWithSource | null,
+  binding?:
+    | import("../../domain/output-composition").CanonicalEpgBindingWithSource
+    | null,
 ): EpgBindingVo | null {
   if (!binding) return null;
   const threshold = binding.sourceFreshnessThresholdMinutes ?? 24 * 60;
@@ -96,7 +123,9 @@ function toBindingVo(
 
 function toChannelVo(
   ch: import("../../domain/output-composition").CanonicalChannel,
-  binding?: import("../../domain/output-composition").CanonicalEpgBindingWithSource | null,
+  binding?:
+    | import("../../domain/output-composition").CanonicalEpgBindingWithSource
+    | null,
 ): CanonicalChannelVo {
   return {
     id: ch.id,
@@ -114,7 +143,9 @@ function toChannelVo(
     createdAt: ch.createdAt.toISOString(),
     updatedAt: ch.updatedAt.toISOString(),
     // Safe Operations (T057): lifecycle read model (contracts/channels.md).
-    lifecycle: ch.lifecycle ?? (ch.hidden ? "hidden" : ch.disabled ? "disabled" : "active"),
+    lifecycle:
+      ch.lifecycle ??
+      (ch.hidden ? "hidden" : ch.disabled ? "disabled" : "active"),
     lifecycleReason: ch.lifecycleReason ?? null,
     trashedAt: ch.trashedAt?.toISOString() ?? null,
     purgeAfter: ch.purgeAfter?.toISOString() ?? null,
@@ -141,7 +172,10 @@ function toProgrammeVo(
 }
 
 function toStreamVo(
-  s: import("../../domain/output-composition").ChannelStream & { m3uSourceName?: string | null; sourceChannelName?: string | null },
+  s: import("../../domain/output-composition").ChannelStream & {
+    m3uSourceName?: string | null;
+    sourceChannelName?: string | null;
+  },
 ): ChannelStreamVo {
   return {
     id: s.id,
@@ -226,20 +260,25 @@ export class OutputController {
     @Req() req: import("express").Request,
     @Res({ passthrough: true }) res: import("express").Response,
   ) {
-    const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } }).single("logo");
+    const upload = multer({
+      storage: multer.memoryStorage(),
+      limits: { fileSize: 2 * 1024 * 1024 },
+    }).single("logo");
     await new Promise<void>((resolve, reject) => {
       upload(req, res, (err: unknown) => (err ? reject(err) : resolve()));
     });
 
     const file = req.file;
     if (!file) throw new BadRequestException("No file uploaded");
-    if (!file.mimetype.startsWith("image/")) throw new BadRequestException("File must be an image");
+    if (!file.mimetype.startsWith("image/"))
+      throw new BadRequestException("File must be an image");
 
     const logoUrl = await this.logoUpload.save(file.buffer, file.mimetype);
     const ch = await this.updateChannel.execute(id, { standardLogo: logoUrl });
     await this.audit.execute({
       actorType: "user",
-      actorId: (req as import("express").Request & { user: { id: string } }).user.id,
+      actorId: (req as import("express").Request & { user: { id: string } })
+        .user.id,
       action: AUDIT_ACTIONS.channel.logoUpdate,
       targetType: "channel",
       targetId: id,
@@ -278,7 +317,17 @@ export class OutputController {
 
   @Get("channels")
   async listChannels(
-    @Query() query: { page?: string; pageSize?: string; epgStatus?: string; outputStatus?: string; search?: string; group?: string; lifecycle?: string; sourcePresence?: string },
+    @Query()
+    query: {
+      page?: string;
+      pageSize?: string;
+      epgStatus?: string;
+      outputStatus?: string;
+      search?: string;
+      group?: string;
+      lifecycle?: string;
+      sourcePresence?: string;
+    },
   ) {
     // T057: lifecycle is the single filter of truth when provided; the legacy
     // hidden/disabled booleans stay as the default (≈ active) during expand.
@@ -288,9 +337,7 @@ export class OutputController {
       pageSize: parseInt(query.pageSize ?? "20", 10),
       epgStatus: query.epgStatus,
       outputStatus: query.outputStatus,
-      ...(lifecycle
-        ? { lifecycle }
-        : { hidden: false, disabled: false }),
+      ...(lifecycle ? { lifecycle } : { hidden: false, disabled: false }),
       sourcePresence: query.sourcePresence || undefined,
       search: query.search || undefined,
       group: query.group || undefined,
@@ -308,7 +355,9 @@ export class OutputController {
         total: result.total,
         page: parseInt(query.page ?? "1", 10),
         pageSize: parseInt(query.pageSize ?? "20", 10),
-        totalPages: Math.ceil(result.total / parseInt(query.pageSize ?? "20", 10)),
+        totalPages: Math.ceil(
+          result.total / parseInt(query.pageSize ?? "20", 10),
+        ),
       },
     };
   }
@@ -321,7 +370,10 @@ export class OutputController {
   }
 
   @Get("channels/:id")
-  async getDetail(@Param("id") id: string, @Res({ passthrough: true }) res: import("express").Response): Promise<ApiResponse<OutputChannelDetailVo>> {
+  async getDetail(
+    @Param("id") id: string,
+    @Res({ passthrough: true }) res: import("express").Response,
+  ): Promise<ApiResponse<OutputChannelDetailVo>> {
     const { channel, streams } = await this.findDetail.execute(id);
     const binding = await this.epgBindingRepo.findByCanonicalChannelId(id);
 
@@ -412,22 +464,42 @@ export class OutputController {
     // For accept: create manual memberships before marking accepted (FR-005).
     if (parsed.data.decision === "accept") {
       const writer = new CanonicalChannelMemberWriter();
-      for (const id of parsed.data.ids) {
-        const candidate = await repo.findById(id);
-        if (candidate && candidate.status === "pending" && candidate.canonicalChannelId) {
-          await writer.upsertManualMembership(
-            candidate.canonicalChannelId,
-            candidate.sourceChannelId,
-            "",
+      const candidates = await Promise.all(
+        parsed.data.ids.map((id) => repo.findById(id)),
+      );
+      for (let index = 0; index < candidates.length; index++) {
+        const candidate = candidates[index];
+        if (!candidate) {
+          throw new NotFoundException(
+            `Merge candidate not found: ${parsed.data.ids[index]}`,
           );
         }
+        if (candidate.status !== "pending" || !candidate.canonicalChannelId) {
+          throw new BadRequestException({
+            code: "invalid-merge-candidate",
+            detail: `Candidate ${candidate.id} must be pending and have a canonical target before acceptance`,
+          });
+        }
+        await writer.upsertManualMembership(
+          candidate.canonicalChannelId,
+          candidate.sourceChannelId,
+          "",
+        );
       }
     }
 
     const updated =
       parsed.data.decision === "accept"
-        ? await repo.markAcceptedBatch(parsed.data.ids, user.id, parsed.data.reason)
-        : await repo.markRejectedBatch(parsed.data.ids, user.id, parsed.data.reason);
+        ? await repo.markAcceptedBatch(
+            parsed.data.ids,
+            user.id,
+            parsed.data.reason,
+          )
+        : await repo.markRejectedBatch(
+            parsed.data.ids,
+            user.id,
+            parsed.data.reason,
+          );
     return { success: true, data: { updated } };
   }
 
@@ -476,7 +548,8 @@ export class OutputController {
 
   @Post("grants")
   async createGrant(
-    @Body() body: {
+    @Body()
+    body: {
       displayName: string;
       deviceClientId?: string | null;
       profile?: "primary" | "all";
@@ -486,7 +559,8 @@ export class OutputController {
     @HeadersDecorator("x-playlist-base") baseHeader?: string,
   ) {
     const baseUrl =
-      baseHeader ?? `https://${process.env.PUBLIC_API_HOST ?? "magi.local"}/api/playlist/v2.m3u`;
+      baseHeader ??
+      `https://${process.env.PUBLIC_API_HOST ?? "magi.local"}/api/playlist/v2.m3u`;
     const crypto = new NodeOutputGrantCrypto();
     const repo = new OutputGrantRepository();
     const uc = new CreateOutputGrantUseCase(repo, crypto);
@@ -504,12 +578,17 @@ export class OutputController {
   @Post("grants/:id/rotate")
   async rotateGrant(
     @Param("id") id: string,
+    @CurrentUser() user: { id: string },
     @HeadersDecorator("x-playlist-base") baseHeader?: string,
   ) {
     const baseUrl =
-      baseHeader ?? `https://${process.env.PUBLIC_API_HOST ?? "magi.local"}/api/playlist/v2.m3u`;
+      baseHeader ??
+      `https://${process.env.PUBLIC_API_HOST ?? "magi.local"}/api/playlist/v2.m3u`;
     const crypto = new NodeOutputGrantCrypto();
     const repo = new OutputGrantRepository();
+    if (!(await repo.findByOwnerAndId(user.id, id))) {
+      throw new NotFoundException(`Output grant not found: ${id}`);
+    }
     const uc = new RotateOutputGrantUseCase(repo, crypto);
     try {
       const result = await uc.execute({ id, playlistBaseUrl: baseUrl });
@@ -526,8 +605,12 @@ export class OutputController {
   async revokeGrant(
     @Param("id") id: string,
     @Body() body: { reason?: string | null },
+    @CurrentUser() user: { id: string },
   ) {
     const repo = new OutputGrantRepository();
+    if (!(await repo.findByOwnerAndId(user.id, id))) {
+      throw new NotFoundException(`Output grant not found: ${id}`);
+    }
     const uc = new RevokeOutputGrantUseCase(repo);
     try {
       const result = await uc.execute({
@@ -620,9 +703,18 @@ export class OutputController {
     @Body() body: { target: ChannelLifecycle; reason?: string },
     @Headers("if-match") ifMatch: string,
     @CurrentUser() user: { id: string },
-  ): Promise<ApiResponse<{ previous: string; current: string; changedAt: string; purgeAfter: string | null; version: number }>> {
+  ): Promise<
+    ApiResponse<{
+      previous: string;
+      current: string;
+      changedAt: string;
+      purgeAfter: string | null;
+      version: number;
+    }>
+  > {
     const expectedVersion = parseIfMatch(ifMatch);
-    if (expectedVersion === null) throw new BadRequestException("Invalid If-Match header");
+    if (expectedVersion === null)
+      throw new BadRequestException("Invalid If-Match header");
     const result = await this.changeLifecycle.execute({
       channelId: id,
       target: body.target,
@@ -656,7 +748,13 @@ export class OutputController {
   // T057: purge eligibility preview — read-only; the destructive apply goes
   // through POST /operations/previews kind=channel_purge (contracts/channels.md).
   @Get("channels/:id/purge-preview")
-  async purgePreview(@Param("id") id: string): Promise<ApiResponse<import("../../application/output-composition/purge-channel.use-case").PurgePreview>> {
+  async purgePreview(
+    @Param("id") id: string,
+  ): Promise<
+    ApiResponse<
+      import("../../application/output-composition/purge-channel.use-case").PurgePreview
+    >
+  > {
     const preview = await this.purgeChannel.preview({ channelId: id });
     return { success: true, data: preview };
   }
@@ -666,12 +764,19 @@ export class OutputController {
   @UseGuards(IfMatchRequiredGuard)
   async patchEpgBinding(
     @Param("id") id: string,
-    @Body() body: { xmltvSourceId: string | null; epgChannelId: string | null; locked: boolean; reason?: string },
+    @Body()
+    body: {
+      xmltvSourceId: string | null;
+      epgChannelId: string | null;
+      locked: boolean;
+      reason?: string;
+    },
     @Headers("if-match") ifMatch: string,
     @CurrentUser() user: { id: string },
   ): Promise<ApiResponse<EpgBindingVo>> {
     const expectedVersion = parseIfMatch(ifMatch);
-    if (expectedVersion === null) throw new BadRequestException("Invalid If-Match header");
+    if (expectedVersion === null)
+      throw new BadRequestException("Invalid If-Match header");
     const result = await this.updateEpgBinding.execute({
       channelId: id,
       xmltvSourceId: body.xmltvSourceId,
@@ -697,7 +802,16 @@ export class OutputController {
     });
     return {
       success: true,
-      data: toBindingVo(id, enriched ?? { ...result, xmltvSourceName: null, sourceEnabled: null, sourceLastSyncAt: null, sourceFreshnessThresholdMinutes: null })!,
+      data: toBindingVo(
+        id,
+        enriched ?? {
+          ...result,
+          xmltvSourceName: null,
+          sourceEnabled: null,
+          sourceLastSyncAt: null,
+          sourceFreshnessThresholdMinutes: null,
+        },
+      )!,
     };
   }
 
@@ -709,7 +823,9 @@ export class OutputController {
     if (!body.ids?.length) return { success: true, data: { updated: 0 } };
 
     if (body.action === "hide" || body.action === "show") {
-      const result = await this.updateChannel.batchUpdate(body.ids, { hidden: body.action === "hide" });
+      const result = await this.updateChannel.batchUpdate(body.ids, {
+        hidden: body.action === "hide",
+      });
       await this.audit.execute({
         actorType: "user",
         actorId: user.id,
@@ -718,7 +834,11 @@ export class OutputController {
         targetId: currentRequestId() ?? "batch",
         result: "succeeded",
         requestId: currentRequestId(),
-        summary: { operation: body.action, requestedCount: body.ids.length, updatedCount: result },
+        summary: {
+          operation: body.action,
+          requestedCount: body.ids.length,
+          updatedCount: result,
+        },
       });
       return { success: true, data: { updated: result } };
     }
@@ -733,7 +853,11 @@ export class OutputController {
         targetId: currentRequestId() ?? "batch",
         result: "succeeded",
         requestId: currentRequestId(),
-        summary: { operation: body.action, requestedCount: body.ids.length, updatedCount: result },
+        summary: {
+          operation: body.action,
+          requestedCount: body.ids.length,
+          updatedCount: result,
+        },
       });
       return { success: true, data: { updated: result } };
     }
@@ -763,7 +887,9 @@ export class OutputController {
   }
 
   @Get("channels/:id/streams")
-  async listStreams(@Param("id") id: string): Promise<ApiResponse<ChannelStreamVo[]>> {
+  async listStreams(
+    @Param("id") id: string,
+  ): Promise<ApiResponse<ChannelStreamVo[]>> {
     const streams = await this.findStreamsUc.execute(id);
     return { success: true, data: streams.map(toStreamVo) };
   }
@@ -857,13 +983,26 @@ export class OutputController {
   @UseGuards(IfMatchRequiredGuard)
   async updateStreamOrder(
     @Param("id") id: string,
-    @Body() body: { streams: Array<{ id: string; position: number; isPrimary: boolean; eligibleForFailover: boolean }> },
+    @Body()
+    body: {
+      streams: Array<{
+        id: string;
+        position: number;
+        isPrimary: boolean;
+        eligibleForFailover: boolean;
+      }>;
+    },
     @Headers("if-match") ifMatch: string,
     @CurrentUser() user: { id: string },
   ): Promise<ApiResponse<ChannelStreamVo[]>> {
     const expectedVersion = parseIfMatch(ifMatch);
-    if (expectedVersion === null) throw new BadRequestException("Invalid If-Match header");
-    const streams = await this.reorderStreams.execute(id, expectedVersion, body.streams);
+    if (expectedVersion === null)
+      throw new BadRequestException("Invalid If-Match header");
+    const streams = await this.reorderStreams.execute(
+      id,
+      expectedVersion,
+      body.streams,
+    );
     await this.audit.execute({
       actorType: "user",
       actorId: user.id,
@@ -882,7 +1021,13 @@ export class OutputController {
   @UseGuards(IfMatchRequiredGuard)
   async updateFailoverPolicy(
     @Param("id") id: string,
-    @Body() body: { mode: string; failureThreshold: number; recoveryThreshold: number; cooldownSeconds: number },
+    @Body()
+    body: {
+      mode: string;
+      failureThreshold: number;
+      recoveryThreshold: number;
+      cooldownSeconds: number;
+    },
     @CurrentUser() user: { id: string },
   ): Promise<ApiResponse<unknown>> {
     const data = await this.failoverPolicy.execute(id, body as never);
@@ -900,7 +1045,9 @@ export class OutputController {
   }
 
   @Get("channels/:id/failover-policy")
-  async getFailoverPolicy(@Param("id") id: string): Promise<ApiResponse<unknown>> {
+  async getFailoverPolicy(
+    @Param("id") id: string,
+  ): Promise<ApiResponse<unknown>> {
     const data = await this.failoverPolicy.find(id);
     return { success: true, data };
   }
@@ -930,7 +1077,10 @@ export class OutputController {
     return { success: true, data: result };
   }
 
-  private async validateStreamOwnership(channelId: string, streamId: string): Promise<void> {
+  private async validateStreamOwnership(
+    channelId: string,
+    streamId: string,
+  ): Promise<void> {
     const stream = await this.findStreamsUc.executeFindOne(streamId);
     if (!stream || stream.canonicalChannelId !== channelId) {
       throw new ForbiddenException("Stream does not belong to this channel");

@@ -22,6 +22,7 @@ export interface PreparePreviewInput {
   readonly scopeType: OperationScopeType;
   readonly scopeId: string;
   readonly sourceId: string | null;
+  readonly parameters?: Record<string, unknown>;
   readonly inputFingerprint: string;
   readonly baseVersions: Record<string, number>;
   readonly requestedBy: string;
@@ -54,6 +55,7 @@ export class PrepareOperationPreviewUseCase {
       scopeId: input.scopeId,
       sourceId: input.sourceId,
       inputFingerprint: input.inputFingerprint,
+      baseVersions: input.baseVersions,
       expiresAt,
       requestedBy: input.requestedBy,
       prepareTaskId: null,
@@ -71,33 +73,52 @@ export class PrepareOperationPreviewUseCase {
     // scheduled triggers dedup at the lease layer (FR-004). Other operation
     // kinds don't have a natural sourceId and skip this.
     const leaseScope =
-      (input.kind === "m3u_sync" || input.kind === "source_delete") && input.sourceId
+      (input.kind === "m3u_sync" || input.kind === "source_delete") &&
+      input.sourceId
         ? leaseScopeFor(input.sourceId)
-        : undefined;
-    const enqueued = await this.queue.enqueue(
-      this.taskTypeFor(input.kind),
-      {
-        changeSetId,
-        kind: input.kind,
-        scopeType: input.scopeType,
-        scopeId: input.scopeId,
-        sourceId: input.sourceId,
-        sourceType: "operation",
-        inputFingerprint: input.inputFingerprint,
-        baseVersions: input.baseVersions,
-        requestId: input.requestId,
-      },
-      {
-        jobName: "operation-prepare",
-        requestId: input.requestId ?? undefined,
-        changeSetId,
-        deduplicationId,
-        scopeType: input.scopeType,
-        scopeId: input.scopeId,
-        inputFingerprint: input.inputFingerprint,
-        leaseScope,
-      },
-    );
+        : input.kind === "recovery_restore"
+          ? `recovery-restore:${input.scopeId}`
+          : undefined;
+    let enqueued: { taskId: string };
+    try {
+      enqueued = await this.queue.enqueue(
+        this.taskTypeFor(input.kind),
+        {
+          changeSetId,
+          kind: input.kind,
+          scopeType: input.scopeType,
+          scopeId: input.scopeId,
+          sourceId: input.sourceId,
+          sourceType: "operation",
+          parameters: input.parameters ?? {},
+          inputFingerprint: input.inputFingerprint,
+          baseVersions: input.baseVersions,
+          requestId: input.requestId,
+        },
+        {
+          jobName: "operation-prepare",
+          requestId: input.requestId ?? undefined,
+          changeSetId,
+          deduplicationId,
+          scopeType: input.scopeType,
+          scopeId: input.scopeId,
+          inputFingerprint: input.inputFingerprint,
+          leaseScope,
+        },
+      );
+    } catch (error) {
+      // Do not leave a second racing change set stuck in `preparing` when the
+      // legacy task table rejects a concurrent source task.
+      const current = await this.changeSets.findById(changeSetId);
+      if (current?.status === "preparing") {
+        await this.changeSets.updateStatus(
+          changeSetId,
+          "failed",
+          current.version,
+        );
+      }
+      throw error;
+    }
 
     const taskId = enqueued.taskId;
 
@@ -108,7 +129,17 @@ export class PrepareOperationPreviewUseCase {
     };
   }
 
-  private taskTypeFor(kind: OperationKind): "m3u-sync" | "xmltv-sync" | "epg-match" | "source-check" | "stream-check" | "import-epg" | "refresh-epg" | "cleanup" {
+  private taskTypeFor(
+    kind: OperationKind,
+  ):
+    | "m3u-sync"
+    | "xmltv-sync"
+    | "epg-match"
+    | "source-check"
+    | "stream-check"
+    | "import-epg"
+    | "refresh-epg"
+    | "cleanup" {
     // Operation preview tasks are mapped to the closest existing TaskType so
     // the task table's type constraint is satisfied. The `kind` is preserved on
     // the change set + queue job name for precise routing.

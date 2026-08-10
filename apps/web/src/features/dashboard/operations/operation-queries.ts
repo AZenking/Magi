@@ -12,7 +12,14 @@ import { apiClient } from "@/services/api";
 export const operationKeys = {
   changeSet: (id: string) => ["operation", "change-set", id] as const,
   changeItems: (id: string, page: number, classification?: string) =>
-    ["operation", "change-set", id, "items", page, classification ?? "all"] as const,
+    [
+      "operation",
+      "change-set",
+      id,
+      "items",
+      page,
+      classification ?? "all",
+    ] as const,
   task: (id: string) => ["task", id] as const,
 };
 
@@ -21,7 +28,8 @@ interface ChangeSetData {
   id: string;
   status: string;
   version: number;
-  summary?: Record<string, number>;
+  baseVersions?: Record<string, number>;
+  summary?: Record<string, unknown>;
   warnings?: { code: string; message: string; deletionRatio?: number }[];
   blockers?: { code: string; message: string }[];
   /** 009-m3u-control-plane: anomaly flag + structured classification. */
@@ -29,7 +37,7 @@ interface ChangeSetData {
   anomalyClassification?: {
     requiresConfirmation: boolean;
     warnings: Array<{
-      code: "empty-snapshot" | "deletion-ratio-exceeded";
+      code: "empty-snapshot" | "deletion-ratio-exceeded" | "duplicate-identity";
       message: string;
       deletionRatio: number;
     }>;
@@ -75,14 +83,26 @@ export function useChangeSet(changeSetId: string | null) {
   });
 }
 
-export function useChangeItems(changeSetId: string | null, page: number, classification?: string) {
+export function useChangeItems(
+  changeSetId: string | null,
+  page: number,
+  classification?: string,
+) {
   return useQuery({
-    queryKey: operationKeys.changeItems(changeSetId ?? "", page, classification),
+    queryKey: operationKeys.changeItems(
+      changeSetId ?? "",
+      page,
+      classification,
+    ),
     queryFn: async () => {
       const res = await apiClient<Envelope<ChangeItemsData>>(
         `/operations/change-sets/${changeSetId}/items`,
         {
-          params: { page, pageSize: 20, ...(classification && { classification }) },
+          params: {
+            page,
+            pageSize: 20,
+            ...(classification && { classification }),
+          },
         },
       );
       return res.data;
@@ -106,10 +126,13 @@ export function usePreparePreview() {
       parameters: Record<string, unknown>;
       expectedVersions: Record<string, number>;
     }) => {
-      const res = await apiClient<Envelope<PreparePreviewData>>("/operations/previews", {
-        method: "POST",
-        body: input,
-      });
+      const res = await apiClient<Envelope<PreparePreviewData>>(
+        "/operations/previews",
+        {
+          method: "POST",
+          body: input,
+        },
+      );
       return res.data;
     },
     onSuccess: () => {
@@ -127,20 +150,22 @@ export function useApplyChangeSet() {
       confirmedWarningCodes?: string[];
       operatorReason?: string;
     }) => {
-      const res = await apiClient<Envelope<{ task: { id: string; statusUrl: string }; recoveryPointId: string | null }>>(
-        `/operations/change-sets/${input.changeSetId}/apply`,
-        {
-          method: "POST",
-          body: {
-            confirmedWarningCodes: input.confirmedWarningCodes ?? [],
-            operatorReason: input.operatorReason,
-          },
-          headers: {
-            "Idempotency-Key": input.idempotencyKey,
-            "If-Match": `"${input.version}"`,
-          },
+      const res = await apiClient<
+        Envelope<{
+          task: { id: string; statusUrl: string };
+          recoveryPointId: string | null;
+        }>
+      >(`/operations/change-sets/${input.changeSetId}/apply`, {
+        method: "POST",
+        body: {
+          confirmedWarningCodes: input.confirmedWarningCodes ?? [],
+          operatorReason: input.operatorReason,
         },
-      );
+        headers: {
+          "Idempotency-Key": input.idempotencyKey,
+          "If-Match": `"${input.version}"`,
+        },
+      });
       return res.data;
     },
   });
@@ -160,7 +185,9 @@ export function useCancelChangeSet() {
       return res.data;
     },
     onSuccess: (_d, input) => {
-      qc.invalidateQueries({ queryKey: operationKeys.changeSet(input.changeSetId) });
+      qc.invalidateQueries({
+        queryKey: operationKeys.changeSet(input.changeSetId),
+      });
     },
   });
 }

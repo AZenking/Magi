@@ -4,7 +4,7 @@
  * Normalized membership connecting canonical channels to source channels by
  * stable identity (research §3, data-model.md). Replaces `mergedFromIds`.
  */
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { db } from "./connection";
 import { canonicalChannelMembers } from "./schema";
 
@@ -20,20 +20,28 @@ export interface CanonicalMemberRow {
   version: number;
 }
 
-function toDomain(row: typeof canonicalChannelMembers.$inferSelect): CanonicalMemberRow {
+function toDomain(
+  row: typeof canonicalChannelMembers.$inferSelect,
+): CanonicalMemberRow {
   return { ...row };
 }
 
 export class CanonicalChannelMemberRepository {
-  async findByCanonicalChannelId(canonicalChannelId: string): Promise<CanonicalMemberRow[]> {
+  async findByCanonicalChannelId(
+    canonicalChannelId: string,
+  ): Promise<CanonicalMemberRow[]> {
     const rows = await db
       .select()
       .from(canonicalChannelMembers)
-      .where(eq(canonicalChannelMembers.canonicalChannelId, canonicalChannelId));
+      .where(
+        eq(canonicalChannelMembers.canonicalChannelId, canonicalChannelId),
+      );
     return rows.map(toDomain);
   }
 
-  async findBySourceChannelId(sourceChannelId: string): Promise<CanonicalMemberRow[]> {
+  async findBySourceChannelId(
+    sourceChannelId: string,
+  ): Promise<CanonicalMemberRow[]> {
     const rows = await db
       .select()
       .from(canonicalChannelMembers)
@@ -42,7 +50,9 @@ export class CanonicalChannelMemberRepository {
   }
 
   /** Find the active membership for a source channel (unique per source). */
-  async findActiveBySourceChannelId(sourceChannelId: string): Promise<CanonicalMemberRow | null> {
+  async findActiveBySourceChannelId(
+    sourceChannelId: string,
+  ): Promise<CanonicalMemberRow | null> {
     const [row] = await db
       .select()
       .from(canonicalChannelMembers)
@@ -73,18 +83,34 @@ export class CanonicalChannelMemberRepository {
         active: true,
       })
       .onConflictDoUpdate({
-        target: [canonicalChannelMembers.canonicalChannelId, canonicalChannelMembers.sourceChannelId],
-        set: { active: true, leftAt: null },
+        target: [
+          canonicalChannelMembers.canonicalChannelId,
+          canonicalChannelMembers.sourceChannelId,
+        ],
+        set: {
+          active: true,
+          leftAt: null,
+          channelIdentity: data.channelIdentity,
+          membershipSource: data.membershipSource,
+          version: sql`${canonicalChannelMembers.version} + 1`,
+        },
       })
       .returning();
     return toDomain(row!);
   }
 
   /** Mark a membership inactive (source member can remain inactive). */
-  async deactivate(canonicalChannelId: string, sourceChannelId: string): Promise<void> {
+  async deactivate(
+    canonicalChannelId: string,
+    sourceChannelId: string,
+  ): Promise<void> {
     await db
       .update(canonicalChannelMembers)
-      .set({ active: false, leftAt: new Date() })
+      .set({
+        active: false,
+        leftAt: new Date(),
+        version: sql`${canonicalChannelMembers.version} + 1`,
+      })
       .where(
         and(
           eq(canonicalChannelMembers.canonicalChannelId, canonicalChannelId),

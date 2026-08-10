@@ -8,7 +8,7 @@
  * the primary when it's still healthy. This is the pure decision logic
  * that stream-check.processor calls after health updates.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { decideFailoverTarget, DEFAULT_FAILOVER_POLICY } from "@magi/backend-core";
 import type { StreamForFailover, FailoverPolicyConfig } from "@magi/backend-core";
 

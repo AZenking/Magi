@@ -29,6 +29,8 @@ export interface ApplyM3uSyncInput {
   /** 009: required to reject stale snapshots after source config edit. */
   readonly sourceVersion?: number;
   readonly contentFingerprint?: string;
+  /** Recovery point created by the API before the Worker mutates state. */
+  readonly recoveryPointId?: string;
   readonly updateProgress?: (percent: number, step: string) => Promise<void>;
 }
 
@@ -51,6 +53,7 @@ export class ApplyM3uSyncUseCase {
     private readonly loadSnapshotItems: (snapshotId: string) => Promise<
       ReadonlyArray<{
         channelIdentity: string;
+        collisionOrdinal?: number;
         payload: {
           displayName: string;
           groupTitle: string | null;
@@ -68,6 +71,20 @@ export class ApplyM3uSyncUseCase {
     // Re-load the immutable staged snapshot (never re-download — TOCTOU safety).
     await input.updateProgress?.(10, "load-snapshot");
     const items = await this.loadSnapshotItems(snapshotId);
+
+    // A duplicate stable identity is a collision, not two updates to the same
+    // source row. It must remain a review blocker; silently applying the last
+    // duplicate would lose one of the upstream lines and its retention history.
+    const identityCounts = new Map<string, number>();
+    for (const item of items) {
+      identityCounts.set(
+        item.channelIdentity,
+        (identityCounts.get(item.channelIdentity) ?? 0) + 1,
+      );
+    }
+    if ([...identityCounts.values()].some((count) => count > 1)) {
+      throw new Error("Snapshot contains duplicate channel identities");
+    }
 
     // Load the current present + missing channels so we can compute real
     // present/missing source-channel IDs (009 T017).
@@ -99,6 +116,7 @@ export class ApplyM3uSyncUseCase {
     input: ApplyM3uSyncInput,
     items: ReadonlyArray<{
       channelIdentity: string;
+      collisionOrdinal?: number;
       payload: {
         displayName: string;
         groupTitle: string | null;
@@ -129,27 +147,22 @@ export class ApplyM3uSyncUseCase {
 
     // Identity → row id for the present baseline (so we can compute which
     // currently-present IDs are missing from this snapshot).
-    const presentIdentityToId = new Map(
-      presentBaseline.map((c) => [c.channelIdentity, c.id]),
-    );
     const presentIdentities = new Set(items.map((i) => i.channelIdentity));
     const missingSourceChannelIds = presentBaseline
       .filter((c) => !presentIdentities.has(c.channelIdentity))
       .map((c) => c.id);
 
     // Compute reappearance set: channels currently in 'missing' state whose
-    // identity re-appears in this snapshot. Restore them BEFORE applyAtomic so
-    // their source-channel row stays stable across the missing → present flip.
+    // identity re-appears in this snapshot. The repository restores these
+    // inside the same transaction as the apply, so a later failure rolls back
+    // both the restoration and the rest of the snapshot.
     const reappearingIds = currentChannels
       .filter(
-        (c) => c.sourcePresence === "missing" && presentIdentities.has(c.channelIdentity),
+        (c) =>
+          c.sourcePresence === "missing" &&
+          presentIdentities.has(c.channelIdentity),
       )
       .map((c) => c.id);
-
-    await input.updateProgress?.(40, "restore-missing");
-    if (reappearingIds.length > 0) {
-      await this.repo.restoreMissing(sourceId, reappearingIds, now);
-    }
 
     await input.updateProgress?.(70, "apply-atomic");
     const result = await this.repo.applyAtomic({
@@ -158,9 +171,11 @@ export class ApplyM3uSyncUseCase {
       changeSetId: changeSetId!,
       presentChannels,
       missingSourceChannelIds,
+      restoreSourceChannelIds: reappearingIds,
       contentFingerprint: input.contentFingerprint ?? "",
       sourceVersion: input.sourceVersion ?? 1,
       now,
+      recoveryPointId: input.recoveryPointId,
     });
 
     await input.updateProgress?.(100, "done");
@@ -172,7 +187,7 @@ export class ApplyM3uSyncUseCase {
       sourcesActivated: result.sourcesActivated,
       sourcesDeactivated: result.sourcesDeactivated,
       streamsMissing: result.streamsMissing,
-      streamsRestored: result.streamsRestored + reappearingIds.length,
+      streamsRestored: result.streamsRestored,
     };
   }
 
@@ -180,6 +195,7 @@ export class ApplyM3uSyncUseCase {
     input: ApplyM3uSyncInput,
     items: ReadonlyArray<{
       channelIdentity: string;
+      collisionOrdinal?: number;
       payload: {
         displayName: string;
         groupTitle: string | null;

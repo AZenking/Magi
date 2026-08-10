@@ -5,6 +5,7 @@
  * (contracts/operation-previews.md: GET /operations/change-sets/{id} + /items)
  */
 import type { IOperationChangeSetRepository } from "@/domain/operation-safety";
+import type { OperationChangeSet } from "@/domain/operation-safety";
 import { OperationChangeSetRepository } from "@/infrastructure/database/operation-change-set.repository";
 
 export interface FindChangeSetResult {
@@ -14,7 +15,12 @@ export interface FindChangeSetResult {
   readonly expiresAt: Date;
   readonly version: number;
   readonly operationFingerprint?: string;
-  readonly summary?: Record<string, number>;
+  readonly baseVersions?: Record<string, number>;
+  readonly snapshotId?: string | null;
+  readonly sourceVersion?: number | null;
+  readonly requiresConfirmation?: boolean;
+  readonly anomalyClassification?: OperationChangeSet["anomalyClassification"];
+  readonly summary?: Record<string, unknown>;
   readonly warnings?: { code: string; message: string }[];
   readonly blockers?: { code: string; message: string }[];
 }
@@ -45,9 +51,16 @@ export class FindOperationChangeSetUseCase {
       expiresAt: cs.expiresAt,
       version: cs.version,
       operationFingerprint: cs.inputFingerprint,
+      baseVersions: cs.baseVersions ?? {},
+      snapshotId: cs.snapshotId ?? null,
+      sourceVersion: cs.sourceVersion ?? null,
+      requiresConfirmation: cs.requiresConfirmation ?? false,
+      anomalyClassification: cs.anomalyClassification ?? null,
       summary: extras?.summary ?? undefined,
-      warnings: (extras?.warnings ?? undefined) as FindChangeSetResult["warnings"],
-      blockers: (extras?.blockers ?? undefined) as FindChangeSetResult["blockers"],
+      warnings: (extras?.warnings ??
+        undefined) as FindChangeSetResult["warnings"],
+      blockers: (extras?.blockers ??
+        undefined) as FindChangeSetResult["blockers"],
     };
   }
 

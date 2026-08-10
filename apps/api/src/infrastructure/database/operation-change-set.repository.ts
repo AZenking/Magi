@@ -16,7 +16,9 @@ import {
   auditEvents,
 } from "./schema";
 
-function toDomain(row: typeof operationChangeSets.$inferSelect): OperationChangeSet {
+function toDomain(
+  row: typeof operationChangeSets.$inferSelect,
+): OperationChangeSet {
   return {
     id: row.id,
     kind: row.kind as OperationChangeSet["kind"],
@@ -25,17 +27,32 @@ function toDomain(row: typeof operationChangeSets.$inferSelect): OperationChange
     scopeId: row.scopeId,
     sourceId: row.sourceId,
     inputFingerprint: row.inputFingerprint,
+    baseVersions: (row.baseVersions ?? {}) as Record<string, number>,
     expiresAt: row.expiresAt,
     version: row.version,
     requestedBy: row.requestedBy,
     prepareTaskId: row.prepareTaskId,
     applyTaskId: row.applyTaskId,
+    snapshotId: row.snapshotId,
+    sourceVersion: row.sourceVersion,
+    summary: row.summary as Record<string, unknown> | null,
+    warnings: row.warnings as OperationChangeSet["warnings"],
+    blockers: row.blockers as OperationChangeSet["blockers"],
+    requiresConfirmation: row.requiresConfirmation,
+    anomalyClassification:
+      row.anomalyClassification as OperationChangeSet["anomalyClassification"],
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }
 
 export class OperationChangeSetRepository implements IOperationChangeSetRepository {
   async findById(id: string): Promise<OperationChangeSet | null> {
-    const [row] = await db.select().from(operationChangeSets).where(eq(operationChangeSets.id, id)).limit(1);
+    const [row] = await db
+      .select()
+      .from(operationChangeSets)
+      .where(eq(operationChangeSets.id, id))
+      .limit(1);
     return row ? toDomain(row) : null;
   }
 
@@ -58,7 +75,9 @@ export class OperationChangeSetRepository implements IOperationChangeSetReposito
     return rows.map(toDomain);
   }
 
-  async create(data: Omit<OperationChangeSet, "version">): Promise<OperationChangeSet> {
+  async create(
+    data: Omit<OperationChangeSet, "version">,
+  ): Promise<OperationChangeSet> {
     const [row] = await db
       .insert(operationChangeSets)
       .values({
@@ -69,28 +88,37 @@ export class OperationChangeSetRepository implements IOperationChangeSetReposito
         scopeId: data.scopeId,
         sourceId: data.sourceId,
         inputFingerprint: data.inputFingerprint,
+        baseVersions: data.baseVersions ?? {},
         expiresAt: data.expiresAt,
         requestedBy: data.requestedBy,
         prepareTaskId: data.prepareTaskId,
         applyTaskId: data.applyTaskId,
-        baseVersions: {},
       })
       .returning();
     return toDomain(row!);
   }
 
-  async updateStatus(id: string, status: string, version: number): Promise<OperationChangeSet | null> {
+  async updateStatus(
+    id: string,
+    status: string,
+    version: number,
+  ): Promise<OperationChangeSet | null> {
     const [row] = await db
       .update(operationChangeSets)
       .set({ status, version: version + 1, updatedAt: new Date() })
-      .where(and(eq(operationChangeSets.id, id), eq(operationChangeSets.version, version)))
+      .where(
+        and(
+          eq(operationChangeSets.id, id),
+          eq(operationChangeSets.version, version),
+        ),
+      )
       .returning();
     return row ? toDomain(row) : null;
   }
 
   async updateSummary(
     id: string,
-    summary: Record<string, number>,
+    summary: Record<string, unknown>,
     warnings: unknown[],
     blockers: unknown[],
   ): Promise<void> {
@@ -102,7 +130,7 @@ export class OperationChangeSetRepository implements IOperationChangeSetReposito
 
   /** Raw summary/warnings/blockers read for the preview UI (GET change-set). */
   async findSummaryById(id: string): Promise<{
-    summary: Record<string, number> | null;
+    summary: Record<string, unknown> | null;
     warnings: unknown[] | null;
     blockers: unknown[] | null;
   } | null> {
@@ -117,7 +145,7 @@ export class OperationChangeSetRepository implements IOperationChangeSetReposito
       .limit(1);
     if (!row) return null;
     return {
-      summary: row.summary as Record<string, number> | null,
+      summary: row.summary as Record<string, unknown> | null,
       warnings: row.warnings as unknown[] | null,
       blockers: row.blockers as unknown[] | null,
     };
@@ -137,30 +165,107 @@ export class OperationChangeSetRepository implements IOperationChangeSetReposito
       .where(eq(auditEvents.changeSetId, id))
       .limit(1);
     if (audit) return false;
-    const result = await db.delete(operationChangeSets).where(eq(operationChangeSets.id, id)).returning();
+    const result = await db
+      .delete(operationChangeSets)
+      .where(eq(operationChangeSets.id, id))
+      .returning();
     return result.length > 0;
   }
 
   // --- Change-item queries (consumed by US1 use cases). ---
-  async findItems(changeSetId: string, params: { page: number; pageSize: number; classification?: string }): Promise<{
+  async findItems(
+    changeSetId: string,
+    params: { page: number; pageSize: number; classification?: string },
+  ): Promise<{
     items: (typeof operationChangeItems.$inferSelect)[];
     total: number;
   }> {
     const { page, pageSize, classification } = params;
     const conditions = [eq(operationChangeItems.changeSetId, changeSetId)];
-    if (classification) conditions.push(eq(operationChangeItems.classification, classification));
+    if (classification)
+      conditions.push(eq(operationChangeItems.classification, classification));
     const where = and(...conditions);
     const [items, countResult] = await Promise.all([
-      db.select().from(operationChangeItems).where(where).orderBy(operationChangeItems.itemOrder).limit(pageSize).offset((page - 1) * pageSize),
-      db.select({ count: sql<number>`count(*)::int` }).from(operationChangeItems).where(where),
+      db
+        .select()
+        .from(operationChangeItems)
+        .where(where)
+        .orderBy(operationChangeItems.itemOrder)
+        .limit(pageSize)
+        .offset((page - 1) * pageSize),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(operationChangeItems)
+        .where(where),
     ]);
     return { items, total: countResult[0]?.count ?? 0 };
   }
 
-  async updateItemSelection(itemId: string, selected: boolean, decision: unknown): Promise<void> {
+  async updateItemSelection(
+    itemId: string,
+    selected: boolean,
+    decision: unknown,
+  ): Promise<void> {
     await db
       .update(operationChangeItems)
       .set({ selected, decision })
       .where(eq(operationChangeItems.id, itemId));
+  }
+
+  /** Atomically persist item decisions and bump the parent change-set version. */
+  async updateDecisionsAndBumpVersion(
+    changeSetId: string,
+    expectedVersion: number,
+    decisions: ReadonlyArray<{
+      itemId: string;
+      selected: boolean;
+      decision: unknown;
+    }>,
+  ): Promise<OperationChangeSet | null> {
+    return db.transaction(async (tx) => {
+      const itemIds = decisions.map((decision) => decision.itemId);
+      if (new Set(itemIds).size !== itemIds.length) return null;
+      if (itemIds.length > 0) {
+        const ownedItems = await tx
+          .select({ id: operationChangeItems.id })
+          .from(operationChangeItems)
+          .where(
+            and(
+              eq(operationChangeItems.changeSetId, changeSetId),
+              inArray(operationChangeItems.id, itemIds),
+            ),
+          );
+        if (ownedItems.length !== itemIds.length) return null;
+      }
+      const [row] = await tx
+        .update(operationChangeSets)
+        .set({
+          status: "ready",
+          version: expectedVersion + 1,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(operationChangeSets.id, changeSetId),
+            eq(operationChangeSets.status, "ready"),
+            eq(operationChangeSets.version, expectedVersion),
+          ),
+        )
+        .returning();
+      if (!row) return null;
+
+      for (const decision of decisions) {
+        await tx
+          .update(operationChangeItems)
+          .set({ selected: decision.selected, decision: decision.decision })
+          .where(
+            and(
+              eq(operationChangeItems.id, decision.itemId),
+              eq(operationChangeItems.changeSetId, changeSetId),
+            ),
+          );
+      }
+      return toDomain(row);
+    });
   }
 }

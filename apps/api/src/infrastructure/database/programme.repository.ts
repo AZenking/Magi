@@ -9,7 +9,11 @@ function toDomain(row: typeof programmes.$inferSelect): Programme {
 
 export class ProgrammeRepository implements IProgrammeRepository {
   async findById(id: string): Promise<Programme | null> {
-    const [row] = await db.select().from(programmes).where(eq(programmes.id, id)).limit(1);
+    const [row] = await db
+      .select()
+      .from(programmes)
+      .where(eq(programmes.id, id))
+      .limit(1);
     return row ? toDomain(row) : null;
   }
 
@@ -20,22 +24,36 @@ export class ProgrammeRepository implements IProgrammeRepository {
     sourceId?: string;
   }): Promise<{ items: Programme[]; total: number }> {
     const conditions = [];
-    if (params.xmltvChannelId) conditions.push(eq(programmes.xmltvChannelId, params.xmltvChannelId));
-    if (params.sourceId) conditions.push(eq(programmes.sourceId, params.sourceId));
+    if (params.xmltvChannelId)
+      conditions.push(eq(programmes.xmltvChannelId, params.xmltvChannelId));
+    if (params.sourceId)
+      conditions.push(eq(programmes.sourceId, params.sourceId));
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
     const { page, pageSize } = params;
 
     const [items, countResult] = await Promise.all([
-      db.select().from(programmes).where(where).orderBy(programmes.startAt).limit(pageSize).offset((page - 1) * pageSize),
-      db.select({ count: sql<number>`count(*)::int` }).from(programmes).where(where),
+      db
+        .select()
+        .from(programmes)
+        .where(where)
+        .orderBy(programmes.startAt)
+        .limit(pageSize)
+        .offset((page - 1) * pageSize),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(programmes)
+        .where(where),
     ]);
 
     return { items: items.map(toDomain), total: countResult[0]?.count ?? 0 };
   }
 
   async findBySourceId(sourceId: string): Promise<Programme[]> {
-    const rows = await db.select().from(programmes).where(eq(programmes.sourceId, sourceId));
+    const rows = await db
+      .select()
+      .from(programmes)
+      .where(eq(programmes.sourceId, sourceId));
     return rows.map(toDomain);
   }
 
@@ -51,8 +69,17 @@ export class ProgrammeRepository implements IProgrammeRepository {
     const { page, pageSize } = params;
 
     const [items, countResult] = await Promise.all([
-      db.select().from(programmes).where(where).orderBy(programmes.startAt).limit(pageSize).offset((page - 1) * pageSize),
-      db.select({ count: sql<number>`count(*)::int` }).from(programmes).where(where),
+      db
+        .select()
+        .from(programmes)
+        .where(where)
+        .orderBy(programmes.startAt)
+        .limit(pageSize)
+        .offset((page - 1) * pageSize),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(programmes)
+        .where(where),
     ]);
 
     return { items: items.map(toDomain), total: countResult[0]?.count ?? 0 };
@@ -81,20 +108,27 @@ export class ProgrammeRepository implements IProgrammeRepository {
     return rows.map(toDomain);
   }
 
-  async createBatch(programmeData: Omit<Programme, "id" | "createdAt">[]): Promise<Programme[]> {
+  async createBatch(
+    programmeData: Omit<Programme, "id" | "createdAt">[],
+  ): Promise<Programme[]> {
     if (programmeData.length === 0) return [];
     const BATCH_SIZE = 500;
     const allRows: Programme[] = [];
-    for (let i = 0; i < programmeData.length; i += BATCH_SIZE) {
-      const batch = programmeData.slice(i, i + BATCH_SIZE);
-      const rows = await db.insert(programmes).values(batch).returning();
-      allRows.push(...rows.map(toDomain));
-    }
+    await db.transaction(async (tx) => {
+      for (let i = 0; i < programmeData.length; i += BATCH_SIZE) {
+        const batch = programmeData.slice(i, i + BATCH_SIZE);
+        const rows = await tx.insert(programmes).values(batch).returning();
+        allRows.push(...rows.map(toDomain));
+      }
+    });
     return allRows;
   }
 
   async deleteBySourceId(sourceId: string): Promise<number> {
-    const result = await db.delete(programmes).where(eq(programmes.sourceId, sourceId)).returning();
+    const result = await db
+      .delete(programmes)
+      .where(eq(programmes.sourceId, sourceId))
+      .returning();
     return result.length;
   }
 }

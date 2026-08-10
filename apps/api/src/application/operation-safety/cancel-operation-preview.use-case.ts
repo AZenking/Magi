@@ -24,7 +24,8 @@ export class CancelOperationPreviewUseCase {
 
   async execute(input: CancelPreviewInput): Promise<{ status: string }> {
     const cs = await this.changeSets.findById(input.changeSetId);
-    if (!cs) throw new ConflictException({ code: "resource-not-found", status: 404 });
+    if (!cs)
+      throw new ConflictException({ code: "resource-not-found", status: 404 });
     if (cs.version !== input.expectedVersion) {
       throw new ConflictException({
         code: "stale-resource",
@@ -41,7 +42,18 @@ export class CancelOperationPreviewUseCase {
       });
     }
 
-    const updated = await this.changeSets.updateStatus(input.changeSetId, "cancelled", cs.version);
+    const updated = await this.changeSets.updateStatus(
+      input.changeSetId,
+      "cancelled",
+      cs.version,
+    );
+    if (!updated) {
+      throw new ConflictException({
+        code: "stale-resource",
+        status: 412,
+        currentVersion: cs.version,
+      });
+    }
     // Best-effort task cancellation (prepare job may still be running).
     if (cs.prepareTaskId) {
       await this.queue.cancel(cs.prepareTaskId).catch(() => false);
@@ -49,6 +61,6 @@ export class CancelOperationPreviewUseCase {
         cancelRequestedAt: new Date(),
       });
     }
-    return { status: updated?.status ?? "cancelled" };
+    return { status: updated.status };
   }
 }

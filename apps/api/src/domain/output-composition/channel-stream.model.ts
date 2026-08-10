@@ -51,26 +51,43 @@ export class ChannelStreamModel {
   isAvailable(): boolean {
     return (
       // 009: a missing stream is NOT available even if its healthStatus is "online".
-      (this.stream.missingSince == null || this.stream.origin === "manual") &&
-      (this.stream.healthStatus === "online" || this.stream.healthStatus === "unknown")
+      (this.stream.origin === "manual" ||
+        (this.stream.missingSince == null && this.stream.purgedAt == null)) &&
+      (this.stream.healthStatus === "online" ||
+        this.stream.healthStatus === "unknown")
     );
   }
 
   isBetterThan(other: ChannelStream): boolean {
     // 009: missing streams sink to the bottom of the ordering.
     const selfMissing =
-      this.stream.missingSince != null && this.stream.origin !== "manual" ? 1 : 0;
+      (this.stream.missingSince != null || this.stream.purgedAt != null) &&
+      this.stream.origin !== "manual"
+        ? 1
+        : 0;
     const otherMissing =
-      other.missingSince != null && other.origin !== "manual" ? 1 : 0;
+      (other.missingSince != null || other.purgedAt != null) &&
+      other.origin !== "manual"
+        ? 1
+        : 0;
     if (selfMissing !== otherMissing) return selfMissing < otherMissing;
 
-    const healthOrder: Record<HealthStatus, number> = { online: 0, unknown: 1, degraded: 2, offline: 3 };
-    const healthDiff = (healthOrder[this.stream.healthStatus] ?? 3) - (healthOrder[other.healthStatus] ?? 3);
+    const healthOrder: Record<HealthStatus, number> = {
+      online: 0,
+      unknown: 1,
+      degraded: 2,
+      offline: 3,
+    };
+    const healthDiff =
+      (healthOrder[this.stream.healthStatus] ?? 3) -
+      (healthOrder[other.healthStatus] ?? 3);
     if (healthDiff !== 0) return healthDiff < 0;
     if (this.stream.successRate != null && other.successRate != null) {
       return this.stream.successRate > other.successRate;
     }
-    return (this.stream.responseTime ?? Infinity) < (other.responseTime ?? Infinity);
+    return (
+      (this.stream.responseTime ?? Infinity) < (other.responseTime ?? Infinity)
+    );
   }
 
   /** 009: a stream is eligible for output if it's manual OR source+present. */

@@ -6,7 +6,7 @@
  * reads or stores the plaintext. `tokenHash` is the lookup key for the public
  * playlist guard.
  */
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, isNotNull, lt } from "drizzle-orm";
 import { db } from "./connection";
 import { outputGrants } from "./schema";
 import type { IOutputGrantRepository } from "@/domain/output-composition";
@@ -51,7 +51,23 @@ export class OutputGrantRepository implements IOutputGrantRepository {
     return row ? toVo(row) : null;
   }
 
-  async findByTokenHash(tokenHash: string): Promise<OutputGrantSummaryVo | null> {
+  async findByOwnerAndId(
+    ownerUserId: string,
+    id: string,
+  ): Promise<OutputGrantSummaryVo | null> {
+    const [row] = await db
+      .select()
+      .from(outputGrants)
+      .where(
+        and(eq(outputGrants.id, id), eq(outputGrants.ownerUserId, ownerUserId)),
+      )
+      .limit(1);
+    return row ? toVo(row) : null;
+  }
+
+  async findByTokenHash(
+    tokenHash: string,
+  ): Promise<OutputGrantSummaryVo | null> {
     const [row] = await db
       .select()
       .from(outputGrants)
@@ -132,15 +148,15 @@ export class OutputGrantRepository implements IOutputGrantRepository {
   async expireDue(now: Date): Promise<number> {
     const result = await db
       .update(outputGrants)
-      .set({ status: "expired" })
+      .set({ status: "expired", updatedAt: now })
       .where(
         and(
           eq(outputGrants.status, "active"),
-          inArray(outputGrants.id, []),
+          isNotNull(outputGrants.expiresAt),
+          lt(outputGrants.expiresAt, now),
         ),
       )
       .returning({ id: outputGrants.id });
-    void now;
     return result.length;
   }
 }

@@ -6,7 +6,7 @@
  * while any task is active and stops when idle (contracts/tasks.md
  * "Polling obligations").
  */
-import { Badge, Button, Flex, Popover, Spin, Tag, Typography, theme } from "antd";
+import { Badge, Button, Flex, Popover, Tag, Typography, theme } from "antd";
 import {
   CheckCircleOutlined,
   ExclamationCircleOutlined,

@@ -10,10 +10,14 @@
  * is refetched.
  */
 import { useState } from "react";
-import { Alert, Button, Modal, Space, Spin, Tag, Typography, theme } from "antd";
+import { Alert, Button, Modal, Space, Tag, Typography, theme } from "antd";
 import { StatisticCard } from "@ant-design/pro-components";
 
-import { useApplyChangeSet, useCancelChangeSet, useChangeSet } from "./operation-queries";
+import {
+  useApplyChangeSet,
+  useCancelChangeSet,
+  useChangeSet,
+} from "./operation-queries";
 import { OperationImpactTable } from "./operation-impact-table";
 import { InlineSkeleton } from "@/components/page-skeleton";
 
@@ -34,6 +38,7 @@ interface Summary {
   canonicalMemberships?: number;
   streams?: number;
   schedules?: number;
+  disableSource?: { enabled: boolean; summary: string };
 }
 
 export function OperationPreview({
@@ -53,8 +58,10 @@ export function OperationPreview({
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const summary: Summary = (data?.summary ?? {}) as Summary;
-  const warnings: { code: string; message: string; deletionRatio?: number }[] = (data?.warnings ?? []) as never;
-  const blockers: { code: string; message: string }[] = (data?.blockers ?? []) as never;
+  const warnings: { code: string; message: string; deletionRatio?: number }[] =
+    (data?.warnings ?? []) as never;
+  const blockers: { code: string; message: string }[] = (data?.blockers ??
+    []) as never;
   const hasBlockers = blockers.length > 0;
   const status = data?.status as string | undefined;
   const version = data?.version ?? 0;
@@ -100,17 +107,29 @@ export function OperationPreview({
         )}
         {summary.updated != null && (
           <StatisticCard
-            statistic={{ title: "更新", value: summary.updated, description: "" }}
+            statistic={{
+              title: "更新",
+              value: summary.updated,
+              description: "",
+            }}
           />
         )}
         {summary.missing != null && (
           <StatisticCard
-            statistic={{ title: "缺失", value: summary.missing, description: "" }}
+            statistic={{
+              title: "缺失",
+              value: summary.missing,
+              description: "",
+            }}
           />
         )}
         {summary.preserved != null && (
           <StatisticCard
-            statistic={{ title: "保留", value: summary.preserved, description: "" }}
+            statistic={{
+              title: "保留",
+              value: summary.preserved,
+              description: "",
+            }}
           />
         )}
         {summary.conflicts != null && (
@@ -120,48 +139,83 @@ export function OperationPreview({
               value: summary.conflicts,
               description: "",
               valueStyle:
-                summary.conflicts > 0
-                  ? { color: token.colorError }
-                  : undefined,
+                summary.conflicts > 0 ? { color: token.colorError } : undefined,
             }}
           />
         )}
         {summary.rawChannels != null && (
           <StatisticCard
-            statistic={{ title: "原始频道", value: summary.rawChannels, description: "" }}
+            statistic={{
+              title: "原始频道",
+              value: summary.rawChannels,
+              description: "",
+            }}
           />
         )}
         {summary.channels != null && (
           <StatisticCard
-            statistic={{ title: "标准频道", value: summary.channels, description: "" }}
+            statistic={{
+              title: "标准频道",
+              value: summary.channels,
+              description: "",
+            }}
           />
         )}
         {summary.programmes != null && (
           <StatisticCard
-            statistic={{ title: "节目", value: summary.programmes, description: "" }}
+            statistic={{
+              title: "节目",
+              value: summary.programmes,
+              description: "",
+            }}
           />
         )}
         {summary.epgMappings != null && (
           <StatisticCard
-            statistic={{ title: "EPG 映射", value: summary.epgMappings, description: "" }}
+            statistic={{
+              title: "EPG 映射",
+              value: summary.epgMappings,
+              description: "",
+            }}
           />
         )}
         {summary.canonicalMemberships != null && (
           <StatisticCard
-            statistic={{ title: "频道归并", value: summary.canonicalMemberships, description: "" }}
+            statistic={{
+              title: "频道归并",
+              value: summary.canonicalMemberships,
+              description: "",
+            }}
           />
         )}
         {summary.streams != null && (
           <StatisticCard
-            statistic={{ title: "线路", value: summary.streams, description: "" }}
+            statistic={{
+              title: "线路",
+              value: summary.streams,
+              description: "",
+            }}
           />
         )}
         {summary.schedules != null && (
           <StatisticCard
-            statistic={{ title: "调度", value: summary.schedules, description: "" }}
+            statistic={{
+              title: "调度",
+              value: summary.schedules,
+              description: "",
+            }}
           />
         )}
       </StatisticCard.Group>
+
+      {summary.disableSource?.enabled && (
+        <Alert
+          type="info"
+          showIcon
+          title="可逆替代：先停用来源"
+          description={summary.disableSource.summary}
+        />
+      )}
 
       {blockers.map((b) => (
         <Alert
@@ -202,9 +256,12 @@ export function OperationPreview({
               </Text>
               {anomalyWarnings.map((w) => (
                 <Text key={w.code} type="secondary">
-                  · {w.code === "empty-snapshot"
+                  ·{" "}
+                  {w.code === "empty-snapshot"
                     ? "上游返回空目录"
-                    : `删除比例 ${(w.deletionRatio * 100).toFixed(0)}% ≥ 25%`}
+                    : w.code === "duplicate-identity"
+                      ? "上游存在重复频道标识"
+                      : `删除比例 ${((w.deletionRatio ?? 0) * 100).toFixed(0)}% ≥ 25%`}
                   ：{w.message}
                 </Text>
               ))}
@@ -250,7 +307,9 @@ export function OperationPreview({
         okButtonProps={{ loading: apply.isPending }}
         mask={{ closable: false }}
       >
-        <Text>应用将改变当前运营状态。操作前已创建恢复点，可在任务结果或审计记录中恢复。</Text>
+        <Text>
+          应用将改变当前运营状态。操作前已创建恢复点，可在任务结果或审计记录中恢复。
+        </Text>
       </Modal>
     </Space>
   );

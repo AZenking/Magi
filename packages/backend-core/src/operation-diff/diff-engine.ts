@@ -13,7 +13,12 @@
  * No I/O. The worker / API layers attach itemOrder, ids and decision state
  * around this pure output.
  */
-import type { ChangeItem, ChangeSummary, CurrentChannelState, SnapshotItem } from "./types";
+import type {
+  ChangeItem,
+  ChangeSummary,
+  CurrentChannelState,
+  SnapshotItem,
+} from "./types";
 
 /** Manual operator fields that always win over automatic source facts. */
 const MANUAL_FIELDS = [
@@ -39,7 +44,10 @@ export function computeChangeItems(
   // Detect duplicate identities inside the snapshot (collision groups).
   const identityCounts = new Map<string, number>();
   for (const item of snapshot) {
-    identityCounts.set(item.channelIdentity, (identityCounts.get(item.channelIdentity) ?? 0) + 1);
+    identityCounts.set(
+      item.channelIdentity,
+      (identityCounts.get(item.channelIdentity) ?? 0) + 1,
+    );
   }
 
   const items: ChangeItem[] = [];
@@ -97,8 +105,15 @@ function classifyExisting(
   snapItem: SnapshotItem,
   existing: CurrentChannelState,
 ): ChangeItem {
-  const snapName = readString(snapItem.payload, "name");
-  const hasAnyManual = MANUAL_FIELDS.some((f) => readOptional(existing, f) != null);
+  // Snapshot payloads produced by the M3U parser use `displayName`; older
+  // callers used `name`. Accept both so a source rename is not silently
+  // classified as unchanged.
+  const snapName =
+    readString(snapItem.payload, "name") ??
+    readString(snapItem.payload, "displayName");
+  const hasAnyManual = MANUAL_FIELDS.some(
+    (f) => readOptional(existing, f) != null,
+  );
 
   // Manual EPG lock: source candidate must not overwrite a locked binding.
   if (existing.manualEpgLocked && snapItem.payload.epgChannelId != null) {
@@ -106,7 +121,11 @@ function classifyExisting(
   }
 
   // Manual name present: source name change is preserved, not applied.
-  if (existing.manualName != null && snapName != null && snapName !== existing.manualName) {
+  if (
+    existing.manualName != null &&
+    snapName != null &&
+    snapName !== existing.manualName
+  ) {
     return preserve(snapItem.channelIdentity, "manual-name-protected");
   }
 
@@ -152,7 +171,10 @@ function preserve(identity: string, reason: string): ChangeItem {
   };
 }
 
-function readString(payload: Record<string, unknown>, key: string): string | null {
+function readString(
+  payload: Record<string, unknown>,
+  key: string,
+): string | null {
   const v = payload[key];
   return typeof v === "string" ? v : null;
 }
