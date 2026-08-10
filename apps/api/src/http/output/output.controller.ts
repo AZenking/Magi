@@ -22,6 +22,10 @@ import {
 } from "@nestjs/common";
 import multer from "multer";
 import type { ApiResponse, UpdateOutputChannel, CanonicalChannelVo, OutputChannelDetailVo, ChannelStreamVo, CreateChannelStream, UpdateChannelStream, ChannelLifecycle, EpgBindingVo, OutputGuideVo, ProgrammeVo } from "@magi/types";
+import {
+  ReviewMergeCandidateRequestSchema,
+  BatchReviewMergeCandidateRequestSchema,
+} from "@magi/types";
 import { AuthGuard } from "../../shared/guards/auth.guard";
 import { IfMatchRequiredGuard, parseIfMatch, etagFor } from "../../shared/http/precondition";
 import { FindCanonicalChannelsUseCase } from "../../application/output-composition/find-canonical-channels.use-case";
@@ -53,8 +57,8 @@ import { AUDIT_ACTIONS, changedFieldNames } from "../../domain/audit/audit-actio
 import {
   ListMergeCandidatesUseCase,
   ReviewMergeCandidateUseCase,
-  type IManualMembershipWriter,
 } from "../../application/output-composition/merge-candidate.use-cases";
+import { CanonicalChannelMemberWriter } from "../../application/output-composition/canonical-channel-member-writer";
 import { MergeCandidateRepository } from "../../infrastructure/database/merge-candidate.repository";
 // 009-m3u-control-plane (T049): output grant + publication endpoints.
 import {
@@ -393,51 +397,61 @@ export class OutputController {
 
   @Post("merge-candidates/batch/review")
   async batchReviewMergeCandidates(
-    @Body() body: {
-      ids: string[];
-      decision: "accept" | "reject";
-      reason?: string;
-    },
+    @Body() body: unknown,
     @CurrentUser() user: { id: string },
   ) {
-    if (!body.ids?.length) return { success: true, data: { updated: 0 } };
+    const parsed = BatchReviewMergeCandidateRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: "validation-failed",
+        detail: parsed.error.flatten(),
+      });
+    }
     const repo = new MergeCandidateRepository();
+
+    // For accept: create manual memberships before marking accepted (FR-005).
+    if (parsed.data.decision === "accept") {
+      const writer = new CanonicalChannelMemberWriter();
+      for (const id of parsed.data.ids) {
+        const candidate = await repo.findById(id);
+        if (candidate && candidate.status === "pending" && candidate.canonicalChannelId) {
+          await writer.upsertManualMembership(
+            candidate.canonicalChannelId,
+            candidate.sourceChannelId,
+            "",
+          );
+        }
+      }
+    }
+
     const updated =
-      body.decision === "accept"
-        ? await repo.markAcceptedBatch(body.ids, user.id, body.reason)
-        : await repo.markRejectedBatch(body.ids, user.id, body.reason);
+      parsed.data.decision === "accept"
+        ? await repo.markAcceptedBatch(parsed.data.ids, user.id, parsed.data.reason)
+        : await repo.markRejectedBatch(parsed.data.ids, user.id, parsed.data.reason);
     return { success: true, data: { updated } };
   }
 
   @Post("merge-candidates/:id/review")
   async reviewMergeCandidate(
     @Param("id") id: string,
-    @Body() body: {
-      decision: "accept" | "reject";
-      canonicalChannelId?: string;
-      reason?: string;
-    },
+    @Body() body: unknown,
     @CurrentUser() user: { id: string },
   ) {
+    const parsed = ReviewMergeCandidateRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: "validation-failed",
+        detail: parsed.error.flatten(),
+      });
+    }
     const repo = new MergeCandidateRepository();
-    // Manual membership writer delegates to the canonical-channel-member
-    // repository via the reconcile adapter. For T029 we wire a minimal writer
-    // that calls the merge-candidate repository's accept path directly when
-    // the candidate already carries a canonicalChannelId.
-    const writer: IManualMembershipWriter = {
-      upsertManualMembership: async () => {
-        // No-op stub — real implementation lands when CanonicalChannelMember
-        // repository is exposed as an injectable. The accept use case still
-        // records the manual decision; canonical membership update is a
-        // follow-up task.
-      },
-    };
+    const writer = new CanonicalChannelMemberWriter();
     const uc = new ReviewMergeCandidateUseCase(repo, writer);
     const result = await uc.execute({
       id,
-      decision: body.decision,
-      canonicalChannelId: body.canonicalChannelId,
-      reason: body.reason,
+      decision: parsed.data.decision,
+      canonicalChannelId: parsed.data.canonicalChannelId,
+      reason: parsed.data.reason,
       reviewedBy: user.id,
     });
     return { success: true, data: result };
