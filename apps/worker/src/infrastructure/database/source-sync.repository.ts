@@ -304,67 +304,103 @@ export class DrizzleSourceSyncRepository implements ISourceSyncRepository {
     readonly sourceVersion: number;
     readonly now: Date;
   }): Promise<ReconcileApplyResult> {
-    // NOTE: this method is intentionally structured so the entire body can be
-    // wrapped in `db.transaction` once we move to a transaction-aware db
-    // client. For 009's foundational layer we run sequential statements; the
-    // apply use case still owns the change-set state transition so partial
-    // failures surface as `failed` and leave recovery items intact.
+    // The entire apply — stable upsert, missing marking, stream hiding, and
+    // source-status update — runs in a single transaction. A failure in any
+    // step rolls back all prior writes so the source never ends up in a
+    // partially-applied state with lastSyncStatus="success".
+    return db.transaction(async (tx) => {
+      let sourcesActivated = 0;
+      let sourcesDeactivated = 0;
+      let streamsMissing = 0;
 
-    let sourcesActivated = 0;
-    let sourcesDeactivated = 0;
-    let streamsMissing = 0;
-    let streamsRestored = 0;
+      // 1. Stable upsert present channels (preserves operator/health columns).
+      for (const channel of input.presentChannels) {
+        const [existing] = await tx
+          .select({ id: channels.id })
+          .from(channels)
+          .where(eq(channels.channelIdentity, channel.channelIdentity))
+          .limit(1);
 
-    // 1. Stable upsert present channels (preserves operator/health columns).
-    for (const channel of input.presentChannels) {
-      const result = await this.stableUpsert(input.sourceId, channel);
-      if (result.created) sourcesActivated++;
-    }
+        if (existing) {
+          await tx
+            .update(channels)
+            .set({
+              displayName: channel.displayName,
+              groupTitle: channel.groupTitle,
+              tvgId: channel.tvgId,
+              tvgLogo: channel.tvgLogo,
+              streamUrl: channel.streamUrl,
+              sourcePresence: "present",
+              lastSeenAt: input.now,
+              missingSince: null,
+            })
+            .where(eq(channels.id, existing.id));
+        } else {
+          await tx.insert(channels).values({
+            channelIdentity: channel.channelIdentity,
+            m3uSourceId: input.sourceId,
+            displayName: channel.displayName,
+            groupTitle: channel.groupTitle,
+            tvgId: channel.tvgId,
+            tvgLogo: channel.tvgLogo,
+            streamUrl: channel.streamUrl,
+            sourcePresence: "present",
+            firstSeenAt: input.now,
+            lastSeenAt: input.now,
+            active: true,
+          });
+          sourcesActivated++;
+        }
+      }
 
-    // 2. Mark missing channels + bump their missingSince if first time.
-    if (input.missingSourceChannelIds.length > 0) {
-      const newlyMissing = await db
-        .update(channels)
-        .set({ sourcePresence: "missing", missingSince: input.now })
-        .where(
-          and(
-            eq(channels.m3uSourceId, input.sourceId),
-            inArray(channels.id, [...input.missingSourceChannelIds]),
-            eq(channels.sourcePresence, "present"),
-          ),
-        )
-        .returning({ id: channels.id });
-      sourcesDeactivated = newlyMissing.length;
+      // 2. Mark missing channels + bump their missingSince if first time.
+      if (input.missingSourceChannelIds.length > 0) {
+        const newlyMissing = await tx
+          .update(channels)
+          .set({ sourcePresence: "missing", missingSince: input.now })
+          .where(
+            and(
+              eq(channels.m3uSourceId, input.sourceId),
+              inArray(channels.id, [...input.missingSourceChannelIds]),
+              eq(channels.sourcePresence, "present"),
+            ),
+          )
+          .returning({ id: channels.id });
+        sourcesDeactivated = newlyMissing.length;
 
-      // Hide source-derived streams bound to those channels from output.
-      const hiddenStreams = await db
-        .update(channelStreams)
-        .set({ missingSince: input.now })
-        .where(
-          and(
-            inArray(channelStreams.rawChannelId, [
-              ...input.missingSourceChannelIds,
-            ]),
-            isNotNull(channelStreams.rawChannelId),
-          ),
-        )
-        .returning({ id: channelStreams.id });
-      streamsMissing = hiddenStreams.length;
-    }
+        // Hide source-derived streams bound to those channels from output.
+        const hiddenStreams = await tx
+          .update(channelStreams)
+          .set({ missingSince: input.now })
+          .where(
+            and(
+              inArray(channelStreams.rawChannelId, [
+                ...input.missingSourceChannelIds,
+              ]),
+              isNotNull(channelStreams.rawChannelId),
+            ),
+          )
+          .returning({ id: channelStreams.id });
+        streamsMissing = hiddenStreams.length;
+      }
 
-    // 3. Record source sync success + fingerprint.
-    await this.recordSourceSync(
-      input.sourceId,
-      "success",
-      input.contentFingerprint,
-    );
+      // 3. Record source sync success + fingerprint.
+      await tx
+        .update(m3uSources)
+        .set({
+          lastSyncAt: input.now,
+          lastSyncStatus: "success",
+          lastContentFingerprint: input.contentFingerprint,
+        })
+        .where(eq(m3uSources.id, input.sourceId));
 
-    return {
-      sourcesActivated,
-      sourcesDeactivated,
-      streamsMissing,
-      streamsRestored,
-    };
+      return {
+        sourcesActivated,
+        sourcesDeactivated,
+        streamsMissing,
+        streamsRestored: 0,
+      };
+    });
   }
 
   async restoreMissing(
