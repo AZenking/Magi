@@ -30,15 +30,18 @@ import {
 } from "../schema";
 import { DrizzleSourceSyncRepository } from "../infrastructure/database/source-sync.repository";
 import { DrizzleOperationExecutionRepository } from "../infrastructure/database/operation-execution.repository";
+import { DrizzleCanonicalReconcileRepository } from "../infrastructure/database/canonical-reconcile.repository";
 import { PrepareM3uSyncUseCase } from "../application/operation-safety/prepare-m3u-sync.use-case";
 import { ApplyM3uSyncUseCase } from "../application/operation-safety/apply-m3u-sync.use-case";
+import { ReconcileCanonicalChannelsUseCase } from "../application/operation-safety/reconcile-canonical-channels.use-case";
 import type { SyncProgress } from "@magi/backend-core";
 
-// 009-m3u-control-plane T032: this processor no longer imports or calls the
-// legacy `reconcileCanonicals` (the merge-key rebuild). Reconcile now runs via
-// `operation-worker.ts` → `ReconcileCanonicalChannelsUseCase` which uses
-// tvg-id-only auto-merge + weak-match candidates. EPG-match callers that still
-// depend on the legacy stream/binding side-effects remain unchanged.
+// 009-m3u-control-plane T032: the legacy `reconcileCanonicals` (merge-key
+// rebuild) has been removed. Reconcile uses `ReconcileCanonicalChannelsUseCase`
+// (tvg-id-only auto-merge + weak-match candidates) and is invoked both from
+// `operation-worker.ts` (operation-apply path) and inline below in
+// `processOneSource` (so the direct m3u-sync trigger also populates
+// canonical_channels for the output composition layer).
 
 interface SyncResult {
   importedCount: number;
@@ -258,6 +261,33 @@ async function processOneSource(sourceId: string): Promise<{
       applyTaskId: preparedTaskId,
     })
     .where(eq(operationChangeSets.id, changeSetId));
+
+  // Reconcile source channels → canonical channels so the output composition
+  // layer (GET /output/channels) sees them. Mirrors operation-worker.ts:152-177
+  // (operation-apply path). Runs after the change set is marked applied.
+  const presentChannels = await sourceSyncRepo.loadPresentChannels(sourceId);
+  const currentChannels = await sourceSyncRepo.loadCurrentChannels(sourceId);
+  const missingIds = currentChannels
+    .filter((c) => c.sourcePresence === "missing")
+    .map((c) => c.id);
+
+  const reconcileRepo = new DrizzleCanonicalReconcileRepository();
+  const reconcile = new ReconcileCanonicalChannelsUseCase(reconcileRepo);
+  await reconcile.execute({
+    sourceId,
+    sourceChannels: presentChannels.map((c) => ({
+      sourceChannelId: c.id,
+      channelIdentity: c.channelIdentity,
+      displayName: c.displayName,
+      groupTitle: null,
+      tvgId: c.tvgId,
+      normalizedName: null,
+      normalizedGroup: null,
+      streamUrl: null,
+      sourceFingerprint: "post-apply",
+    })),
+    missingSourceChannelIds: missingIds,
+  });
 
   return {
     changeSetId,
