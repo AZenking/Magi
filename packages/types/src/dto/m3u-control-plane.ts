@@ -74,7 +74,13 @@ export type MergeCandidateStatus = (typeof MERGE_CANDIDATE_STATUS)[number];
 export const MergeCandidateVoSchema = z.object({
   id: z.string().uuid(),
   sourceChannelId: z.string().uuid(),
+  sourceChannelName: z.string().nullable().default(null),
+  sourceGroupTitle: z.string().nullable().default(null),
+  sourceTvgLogo: z.string().nullable().default(null),
   canonicalChannelId: z.string().uuid().nullable(),
+  canonicalChannelName: z.string().nullable().default(null),
+  canonicalGroupTitle: z.string().nullable().default(null),
+  confidence: z.number().nullable().default(null),
   method: z.enum(MERGE_CANDIDATE_METHOD),
   reasons: z.array(z.string()),
   status: z.enum(MERGE_CANDIDATE_STATUS),
@@ -91,6 +97,15 @@ export const ReviewMergeCandidateRequestSchema = z.object({
 });
 export type ReviewMergeCandidateRequest = z.infer<
   typeof ReviewMergeCandidateRequestSchema
+>;
+
+export const BatchReviewMergeCandidateRequestSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1),
+  decision: z.enum(["accept", "reject"]),
+  reason: z.string().max(500).optional(),
+});
+export type BatchReviewMergeCandidateRequest = z.infer<
+  typeof BatchReviewMergeCandidateRequestSchema
 >;
 
 // ---------------------------------------------------------------------------

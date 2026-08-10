@@ -47,6 +47,8 @@ export interface IMergeCandidateRepository {
   }): Promise<MergeCandidateVo>;
   markAccepted(id: string, reviewedBy: string, note?: string): Promise<MergeCandidateVo | null>;
   markRejected(id: string, reviewedBy: string, note?: string): Promise<MergeCandidateVo | null>;
+  markAcceptedBatch(ids: readonly string[], reviewedBy: string, note?: string): Promise<number>;
+  markRejectedBatch(ids: readonly string[], reviewedBy: string, note?: string): Promise<number>;
   markStale(ids: readonly string[]): Promise<number>;
   /** Suppress duplicate suggestions for an already-rejected pairing. */
   isSuppressed(suppressionKey: string): Promise<boolean>;

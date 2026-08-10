@@ -391,6 +391,24 @@ export class OutputController {
     return { success: true, data: result };
   }
 
+  @Post("merge-candidates/batch/review")
+  async batchReviewMergeCandidates(
+    @Body() body: {
+      ids: string[];
+      decision: "accept" | "reject";
+      reason?: string;
+    },
+    @CurrentUser() user: { id: string },
+  ) {
+    if (!body.ids?.length) return { success: true, data: { updated: 0 } };
+    const repo = new MergeCandidateRepository();
+    const updated =
+      body.decision === "accept"
+        ? await repo.markAcceptedBatch(body.ids, user.id, body.reason)
+        : await repo.markRejectedBatch(body.ids, user.id, body.reason);
+    return { success: true, data: { updated } };
+  }
+
   @Post("merge-candidates/:id/review")
   async reviewMergeCandidate(
     @Param("id") id: string,
