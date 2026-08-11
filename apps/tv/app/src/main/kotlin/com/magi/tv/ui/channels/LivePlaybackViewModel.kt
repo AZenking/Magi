@@ -149,7 +149,11 @@ class LivePlaybackViewModel(
         }
 
     private var firstPlayDone = false
+    private val channelSwitchHistory = ChannelSwitchHistory()
+    private var catalogJob: Job? = null
+    private var catalogGeneration = 0L
     private var switchJob: Job? = null
+    private var switchGeneration = 0L
     private var guideJob: Job? = null
     private var visibleGuideChannelIds: List<String> = emptyList()
     private var currentGuideRequestKey: String? = null
@@ -222,22 +226,26 @@ class LivePlaybackViewModel(
     }
 
     private fun loadCatalogAndResume() {
+        catalogJob?.cancel()
+        val requestGeneration = ++catalogGeneration
         mutableUiState.value = mutableUiState.value.copy(
             loading = true,
             catalogError = null,
         )
-        viewModelScope.launch {
+        catalogJob = viewModelScope.launch {
             val catalog = try {
                 getChannelCatalog(null) // always load ALL channels for surf order
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                if (requestGeneration != catalogGeneration) return@launch
                 mutableUiState.value = mutableUiState.value.copy(
                     loading = false,
                     catalogError = classifyError(e),
                 )
                 return@launch
             }
+            if (requestGeneration != catalogGeneration) return@launch
             val channels = catalog.channels
             if (channels.isEmpty()) {
                 mutableUiState.value = mutableUiState.value.copy(
@@ -250,11 +258,13 @@ class LivePlaybackViewModel(
             }
             // Resume last channel if present in the full directory.
             val lastId = lastChannelStore.lastChannelId.first()
+            if (requestGeneration != catalogGeneration) return@launch
             val resumeIndex = lastId?.let { id -> channels.indexOfFirst { it.id == id } }
                 ?.takeIf { it >= 0 }
             if (lastId != null && resumeIndex == null) {
                 // Channel no longer visible — clear stale record.
                 lastChannelStore.clear()
+                if (requestGeneration != catalogGeneration) return@launch
             }
             val startIndex = resumeIndex ?: 0
             mutableUiState.value = mutableUiState.value.copy(
@@ -270,6 +280,7 @@ class LivePlaybackViewModel(
 
     /** Apply a catalog revision without resetting the current playback channel. */
     private suspend fun reloadCatalogPreservingCurrent() {
+        val requestGeneration = ++catalogGeneration
         val previousState = mutableUiState.value
         val previousChannelId = previousState.allChannels
             .getOrNull(previousState.currentIndex)?.id
@@ -278,6 +289,7 @@ class LivePlaybackViewModel(
         } catch (_: Exception) {
             return
         }
+        if (requestGeneration != catalogGeneration) return
         if (catalog.channels.isEmpty()) return
 
         val nextIndex = previousChannelId
@@ -328,8 +340,7 @@ class LivePlaybackViewModel(
         val next = (mutableUiState.value.currentIndex + delta)
             .coerceIn(0, channels.lastIndex)
         if (next == mutableUiState.value.currentIndex) return
-        mutableUiState.value = mutableUiState.value.copy(currentIndex = next)
-        playCurrent(initialPlay = false)
+        switchToIndex(next)
     }
 
     /** Jump directly to a channel (e.g. picked from the side sheet). */
@@ -337,19 +348,24 @@ class LivePlaybackViewModel(
         val channels = mutableUiState.value.allChannels
         val index = channels.indexOfFirst { it.id == channel.id }
         if (index < 0) return
-        mutableUiState.value = mutableUiState.value.copy(currentIndex = index)
-        playCurrent(initialPlay = false)
+        if (index != mutableUiState.value.currentIndex) {
+            switchToIndex(index)
+        } else if (session.state.value.terminalError != null || session.state.value.firstFrameMs == null) {
+            playCurrent(initialPlay = false)
+        }
     }
 
-    /**
-     * Tune to the channel that currently has focus in the side sheet. Used by
-     * the OK key handler when the sheet is open (the parent's onPreviewKeyEvent
-     * can't always route OK to the LazyColumn item, so we drive it from here).
-     */
-    fun tuneFocusedChannel() {
-        val focusedId = mutableUiState.value.focusedChannelId ?: return
-        val channel = mutableUiState.value.allChannels.find { it.id == focusedId } ?: return
-        requestTune(channel)
+    /** Returns to the immediately previous channel within this app session. */
+    fun switchToPreviousChannel(): Boolean {
+        val state = mutableUiState.value
+        val current = state.allChannels.getOrNull(state.currentIndex) ?: return false
+        val previous = channelSwitchHistory.previousIn(state.allChannels, current.id) ?: return false
+        val previousIndex = state.allChannels.indexOfFirst { it.id == previous.id }
+        if (previousIndex < 0) return false
+        channelSwitchHistory.recordLeaving(current.id)
+        mutableUiState.value = state.copy(currentIndex = previousIndex)
+        playCurrent(initialPlay = false)
+        return true
     }
 
     /**
@@ -359,21 +375,23 @@ class LivePlaybackViewModel(
      * keeps the sheet open for retry).
      */
     fun requestTune(channel: Channel) {
+        val current = mutableUiState.value.allChannels
+            .getOrNull(mutableUiState.value.currentIndex)
+        if (current?.id == channel.id &&
+            session.state.value.firstFrameMs != null &&
+            session.state.value.terminalError == null
+        ) {
+            mutableUiState.value = mutableUiState.value.copy(
+                pendingTuneChannelId = null,
+                tuneError = null,
+            )
+            return
+        }
         mutableUiState.value = mutableUiState.value.copy(
             pendingTuneChannelId = channel.id,
             tuneError = null, // clear previous failure
         )
         switchToChannel(channel)
-    }
-
-    /**
-     * Tune the current playing channel (used when user presses OK on the
-     * "正在播出" programme card). Uses allChannels[currentIndex] — the real
-     * playing channel, regardless of the side sheet's group filter.
-     */
-    fun tuneCurrent() {
-        val channel = mutableUiState.value.allChannels.getOrNull(mutableUiState.value.currentIndex)
-        if (channel != null) requestTune(channel)
     }
 
     /** Called by the screen when first frame of the tuned channel is confirmed. */
@@ -391,6 +409,12 @@ class LivePlaybackViewModel(
 
     /** Stop background work and playback before returning to device registration. */
     fun stopForReconfigure() {
+        // The resolver can outlive cancellation in a mocked or non-cooperative
+        // implementation. Invalidate it before releasing the session so an old
+        // result cannot write player state after reconfiguration.
+        switchGeneration += 1
+        catalogGeneration += 1
+        catalogJob?.cancel()
         switchJob?.cancel()
         invalidateGuideRequest()
         contentChangeJob?.cancel()
@@ -401,15 +425,37 @@ class LivePlaybackViewModel(
         session.release()
     }
 
+    /** Retry the current error without forcing the viewer through a full reset. */
+    fun retryCurrentPlayback() {
+        val state = mutableUiState.value
+        if (state.catalogError != null || state.allChannels.isEmpty()) {
+            loadCatalogAndResume()
+            return
+        }
+        mutableUiState.value = state.copy(
+            catalogError = null,
+            pendingTuneChannelId = null,
+            tuneError = null,
+        )
+        playCurrent(initialPlay = false)
+    }
+
     private fun playCurrent(initialPlay: Boolean) {
         val channel = mutableUiState.value.allChannels.getOrNull(mutableUiState.value.currentIndex)
             ?: return
         switchJob?.cancel()
+        val requestGeneration = ++switchGeneration
+        session.beginChannelSwitch(
+            channelId = channel.id,
+            channelName = channel.name,
+            initialPlay = initialPlay,
+            channelLogo = channel.logo,
+        )
         switchJob = viewModelScope.launch {
-            session.clearError()
             try {
                 when (val result = resolvePlayback(channel.id)) {
                     is PlaybackResolution.Ready -> {
+                        if (requestGeneration != switchGeneration) return@launch
                         session.switchChannel(
                             channelId = channel.id,
                             channelName = channel.name,
@@ -422,21 +468,12 @@ class LivePlaybackViewModel(
                         channelPreferencesStore.recordViewed(channel.id)
                     }
                     is PlaybackResolution.Unavailable -> {
-                        session.switchChannel(
-                            channelId = channel.id,
-                            channelName = channel.name,
-                            channelLogo = channel.logo,
-                            decision = com.magi.tv.domain.model.PlaybackDecision(
-                                channelId = channel.id,
-                                playable = false,
-                                primary = null,
-                                fallbacks = emptyList(),
-                                decisionExpiresAt = "",
-                                deliveryMode = "direct",
-                            ),
-                            initialPlay = initialPlay,
-                        )
-                        if (mutableUiState.value.pendingTuneChannelId != null) {
+                        if (requestGeneration != switchGeneration) return@launch
+                        // The resolver has already said this channel is not
+                        // playable. Do not fabricate an empty domain decision
+                        // merely to drive the player into an error state.
+                        session.failChannelSwitch(result.message)
+                        if (mutableUiState.value.pendingTuneChannelId == channel.id) {
                             onTuneFailed(TvError.Playback(result.message))
                         }
                     }
@@ -444,11 +481,24 @@ class LivePlaybackViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if (mutableUiState.value.pendingTuneChannelId != null) {
-                    onTuneFailed(classifyError(e))
+                if (requestGeneration != switchGeneration) return@launch
+                val error = classifyError(e)
+                session.failChannelSwitch(error.message)
+                if (mutableUiState.value.pendingTuneChannelId == channel.id) {
+                    onTuneFailed(error)
                 }
             }
         }
+    }
+
+    private fun switchToIndex(index: Int) {
+        val state = mutableUiState.value
+        val current = state.allChannels.getOrNull(state.currentIndex) ?: return
+        val next = state.allChannels.getOrNull(index) ?: return
+        if (current.id == next.id) return
+        channelSwitchHistory.recordLeaving(current.id)
+        mutableUiState.value = state.copy(currentIndex = index)
+        playCurrent(initialPlay = false)
     }
 
     /** Focus moved to a channel in the grid; visible-row loading is batched separately. */
@@ -619,6 +669,10 @@ class LivePlaybackViewModel(
     }
 
     override fun onCleared() {
+        switchGeneration += 1
+        catalogGeneration += 1
+        catalogJob?.cancel()
+        switchJob?.cancel()
         super.onCleared()
         session.release()
     }

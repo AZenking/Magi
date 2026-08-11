@@ -99,6 +99,7 @@ fun ChannelEpgSideSheet(
     favoriteChannelIds: Set<String>,
     currentChannelId: String,
     currentChannelName: String?,
+    currentChannelPlayable: Boolean,
     guidesByChannel: Map<String, EpgChannelGuideState>,
     guideWindow: EpgTimeWindow,
     tuneError: String?,
@@ -107,7 +108,7 @@ fun ChannelEpgSideSheet(
     onSelectDate: (LocalDate) -> Unit,
     onShiftGuideWindow: (Int) -> Unit,
     onSelectChannel: (Channel) -> Unit,
-    onPlayCurrent: () -> Unit,
+    onCloseCurrentChannel: () -> Unit,
     onChannelFocused: (Channel) -> Unit,
     onVisibleGuideChannelsChanged: (List<String>) -> Unit,
     onToggleCurrentFavorite: () -> Unit,
@@ -120,10 +121,11 @@ fun ChannelEpgSideSheet(
     val headerFocusRequester = remember { FocusRequester() }
     val gridListState = rememberLazyListState()
     var focusZone by remember { mutableStateOf(EpgFocusZone.Channel) }
-    var focusedChannelId by remember(currentChannelId) { mutableStateOf(currentChannelId) }
+    val initialFocusChannelId = initialEpgFocusChannelId(channels, currentChannelId)
+    var focusedChannelId by remember(initialFocusChannelId) {
+        mutableStateOf(initialFocusChannelId.orEmpty())
+    }
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    val initialFocusChannelId = channels.firstOrNull { it.id == currentChannelId }?.id
-        ?: channels.firstOrNull()?.id
 
     LaunchedEffect(visible) {
         while (visible) {
@@ -132,16 +134,27 @@ fun ChannelEpgSideSheet(
         }
     }
 
-    val currentGuideState = guidesByChannel[currentChannelId]
-        ?: guidesByChannel[currentChannelId.removePrefix("magi:")]
-    LaunchedEffect(visible, channels, currentChannelId, guideWindow, currentGuideState) {
-        if (!visible || channels.isEmpty()) return@LaunchedEffect
-        val currentIndex = channels.indexOfFirst { it.id == currentChannelId }.coerceAtLeast(0)
-        gridListState.scrollToItem(currentIndex)
+    val initialGuideState = initialFocusChannelId?.let { id ->
+        guidesByChannel[id] ?: guidesByChannel[id.removePrefix("magi:")]
+    }
+    // Guide data arrives asynchronously. It must not steal focus back to the
+    // initial row after the viewer has already navigated elsewhere.
+    LaunchedEffect(visible, initialFocusChannelId) {
+        if (!visible) return@LaunchedEffect
+        if (initialFocusChannelId == null) {
+            onVisibleGuideChannelsChanged(emptyList())
+            repeat(10) {
+                delay(50)
+                if (headerFocusRequester.requestFocus()) return@LaunchedEffect
+            }
+            return@LaunchedEffect
+        }
+        val initialIndex = channels.indexOfFirst { it.id == initialFocusChannelId }.coerceAtLeast(0)
+        gridListState.scrollToItem(initialIndex)
         repeat(10) {
             delay(50)
-            val currentGuide = currentGuideState?.programmes.orEmpty()
-            val hasCurrentProgramme = currentGuide.any { nowMs in it.startAt until it.stopAt }
+            val programmes = initialGuideState?.programmes.orEmpty()
+            val hasCurrentProgramme = programmes.any { nowMs in it.startAt until it.stopAt }
             val focused = if (hasCurrentProgramme) {
                 programmeFocusRequester.requestFocus()
             } else {
@@ -153,6 +166,10 @@ fun ChannelEpgSideSheet(
 
     LaunchedEffect(visible, channels, gridListState) {
         if (!visible) return@LaunchedEffect
+        if (channels.isEmpty()) {
+            onVisibleGuideChannelsChanged(emptyList())
+            return@LaunchedEffect
+        }
         snapshotFlow {
             gridListState.layoutInfo.visibleItemsInfo
                 .mapNotNull { channels.getOrNull(it.index)?.id }
@@ -200,12 +217,10 @@ fun ChannelEpgSideSheet(
                         } else {
                             false
                         }
-                        Key.DirectionDown -> if (focusZone == EpgFocusZone.Header) {
-                            channelFocusRequester.requestFocus()
-                            true
-                        } else {
-                            false
-                        }
+                        // Let Compose follow the visual order through date,
+                        // filters and the grid. Forcing every Header Down into
+                        // the grid made the date/filter rows asymmetric.
+                        Key.DirectionDown -> false
                         else -> false
                     }
                 },
@@ -236,6 +251,7 @@ fun ChannelEpgSideSheet(
                 EpgGrid(
                     channels = channels,
                     currentChannelId = currentChannelId,
+                    currentChannelPlayable = currentChannelPlayable,
                     favoriteChannelIds = favoriteChannelIds,
                     guidesByChannel = guidesByChannel,
                     guideWindow = guideWindow,
@@ -250,7 +266,7 @@ fun ChannelEpgSideSheet(
                         onChannelFocused(channel)
                     },
                     onSelectChannel = onSelectChannel,
-                    onPlayCurrent = onPlayCurrent,
+                    onCloseCurrentChannel = onCloseCurrentChannel,
                     onShiftGuideWindow = onShiftGuideWindow,
                     onRequestHeaderFocus = { headerFocusRequester.requestFocus() },
                     modifier = Modifier.fillMaxWidth().weight(1f),
@@ -265,6 +281,17 @@ private enum class EpgFocusZone {
     Channel,
     Programme,
 }
+
+/** The player channel if visible, otherwise the first channel in the active filter. */
+internal fun initialEpgFocusChannelId(channels: List<Channel>, currentChannelId: String): String? =
+    channels.firstOrNull { it.id == currentChannelId }?.id ?: channels.firstOrNull()?.id
+
+/** Selecting the playing channel in EPG is a dismiss action, not a re-tune. */
+internal fun shouldCloseEpgForSelectedChannel(
+    selectedChannelId: String,
+    currentChannelId: String,
+    currentChannelPlayable: Boolean,
+): Boolean = selectedChannelId == currentChannelId && currentChannelPlayable
 
 @Composable
 private fun EpgHeader(
@@ -540,6 +567,7 @@ private fun FocusableEpgChip(
 private fun EpgGrid(
     channels: List<Channel>,
     currentChannelId: String,
+    currentChannelPlayable: Boolean,
     favoriteChannelIds: Set<String>,
     guidesByChannel: Map<String, EpgChannelGuideState>,
     guideWindow: EpgTimeWindow,
@@ -551,7 +579,7 @@ private fun EpgGrid(
     onFocusZone: (EpgFocusZone) -> Unit,
     onChannelFocused: (Channel) -> Unit,
     onSelectChannel: (Channel) -> Unit,
-    onPlayCurrent: () -> Unit,
+    onCloseCurrentChannel: () -> Unit,
     onShiftGuideWindow: (Int) -> Unit,
     onRequestHeaderFocus: () -> Boolean,
     modifier: Modifier = Modifier,
@@ -559,14 +587,41 @@ private fun EpgGrid(
     Column(modifier = modifier) {
         TimeRuler(window = guideWindow, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(6.dp))
+        if (channels.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MagiTvPalette.Surface)
+                    .border(1.dp, MagiTvPalette.Border, RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = "这个分类暂无频道",
+                        color = MagiTvPalette.Text,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = "可在顶部切换分类，或按 ← 返回播放",
+                        color = MagiTvPalette.Muted,
+                        fontSize = 15.sp,
+                    )
+                }
+            }
+            return@Column
+        }
         LazyColumn(
             state = listState,
             verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
             items(channels, key = { it.id }) { channel ->
-                val initialChannelId = channels.firstOrNull { it.id == currentChannelId }?.id
-                    ?: channels.firstOrNull()?.id
+                val initialChannelId = initialEpgFocusChannelId(channels, currentChannelId)
                 val rowChannelFocusRequester = remember(channel.id) { FocusRequester() }
                 val rowProgrammeFocusRequester = remember(channel.id) { FocusRequester() }
                 val isInitialChannel = channel.id == initialChannelId
@@ -592,9 +647,19 @@ private fun EpgGrid(
                     programmeFocusRequester = rowProgrammeRequester,
                     onFocusZone = onFocusZone,
                     onFocusChannel = { onChannelFocused(channel) },
-                    onSelectChannel = { onSelectChannel(channel) },
+                    onSelectChannel = {
+                        if (shouldCloseEpgForSelectedChannel(channel.id, currentChannelId, currentChannelPlayable)) {
+                            onCloseCurrentChannel()
+                        } else {
+                            onSelectChannel(channel)
+                        }
+                    },
                     onPlayChannel = {
-                        if (channel.id == currentChannelId) onPlayCurrent() else onSelectChannel(channel)
+                        if (shouldCloseEpgForSelectedChannel(channel.id, currentChannelId, currentChannelPlayable)) {
+                            onCloseCurrentChannel()
+                        } else {
+                            onSelectChannel(channel)
+                        }
                     },
                     onShiftGuideWindow = onShiftGuideWindow,
                     onRequestHeaderFocus = if (channel.id == initialChannelId) {

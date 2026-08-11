@@ -32,7 +32,8 @@ import kotlinx.coroutines.delay
  * always-on; D-pad drives everything:
  *   - Up/Down   → switch channels (only when the side sheet is CLOSED; when
  *                 open, Up/Down browse the channel list inside the sheet)
- *   - Left      → toggle the channel+EPG side sheet
+ *   - Left      → return to the previous channel, or open Recent on first use
+ *   - Right     → toggle the channel+EPG side sheet
  *   - OK/Enter  → toggle the info overlay (which also hosts the diagnostics entry)
  *   - Back      → close sheet → close info → exit app
  *
@@ -88,6 +89,12 @@ fun LivePlaybackScreen(
 
     LaunchedEffect(playerState.terminalError, uiState.catalogError) {
         errorActionFocused = false
+        if (playerState.terminalError != null || uiState.catalogError != null) {
+            // A hidden-but-still-true info state would consume the first Back
+            // press after a playback failure, even though only the error card
+            // is visible. Clear it as the error becomes the top surface.
+            showInfo = false
+        }
     }
 
     // pendingTune: close the side sheet only when the EXACT tuned channel
@@ -118,14 +125,19 @@ fun LivePlaybackScreen(
     val catalogError = uiState.catalogError
     val hasPlaybackError = terminalError != null || catalogError != null
 
-    // Back key — close sheet → close info → exit. The focus request is handled
-    // by the showSideSheet effect above so every close path behaves the same.
-    BackHandler(enabled = showSideSheet || showInfo) {
+    // Back key — error recovery → close sheet → close info → exit. The focus
+    // request is handled by the showSideSheet effect above so every close path
+    // behaves the same.
+    BackHandler(enabled = showSideSheet || showInfo || hasPlaybackError) {
         when {
             showSideSheet -> {
                 showSideSheet = false
             }
             showInfo -> showInfo = false
+            hasPlaybackError -> {
+                showSideSheet = true
+                showInfo = false
+            }
         }
     }
 
@@ -138,18 +150,34 @@ fun LivePlaybackScreen(
                 if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
                 when (event.key) {
                     // P0 #1: channel surfing — ONLY when the side sheet is closed.
-                    // When the sheet is open, Up/Down must browse the list, not switch.
+                    // Error recovery owns D-pad too, so its actions remain
+                    // reachable instead of switching channels underneath it.
                     Key.DirectionUp -> {
-                        if (showSideSheet) false else { viewModel.switchBy(-1); true }
+                        if (showSideSheet || hasPlaybackError) false else { viewModel.switchBy(-1); true }
                     }
                     Key.DirectionDown -> {
-                        if (showSideSheet) false else { viewModel.switchBy(1); true }
+                        if (showSideSheet || hasPlaybackError) false else { viewModel.switchBy(1); true }
                     }
-                    // Toggle the side sheet ONLY when closed. When open, Left
-                    // must fall through to the sheet (programme area uses Left
-                    // to return to the channel column — P0 fix).
+                    // Left is the quick previous-channel affordance on the
+                    // player. Once the EPG is open it belongs to the grid so a
+                    // programme cell can first return to its channel column.
                     Key.DirectionLeft -> {
-                        if (showSideSheet) false else {
+                        if (showSideSheet || hasPlaybackError) {
+                            false
+                        } else if (viewModel.switchToPreviousChannel()) {
+                            true
+                        } else {
+                            viewModel.selectChannelFilter(ChannelDirectoryFilter.Recent)
+                            showSideSheet = true
+                            showInfo = false
+                            true
+                        }
+                    }
+                    // Right is the predictable entry point for the full-screen
+                    // channel and programme guide. When the guide is open it
+                    // must fall through to its channel/programme navigation.
+                    Key.DirectionRight -> {
+                        if (showSideSheet || hasPlaybackError) false else {
                             showSideSheet = true
                             showInfo = false
                             true
@@ -213,20 +241,24 @@ fun LivePlaybackScreen(
             terminalError != null -> PlayerErrorOverlay(
                 message = terminalError,
                 enabled = !showSideSheet,
+                onRetry = viewModel::retryCurrentPlayback,
                 onOpenChannelList = {
                     showSideSheet = true
                     showInfo = false
                 },
+                onOpenDiagnostics = onOpenDiagnostics,
                 onActionFocusChanged = { errorActionFocused = it },
                 modifier = Modifier.align(Alignment.Center),
             )
             catalogError != null -> PlayerErrorOverlay(
                 message = catalogError.message,
                 enabled = !showSideSheet,
+                onRetry = viewModel::retryCurrentPlayback,
                 onOpenChannelList = {
                     showSideSheet = true
                     showInfo = false
                 },
+                onOpenDiagnostics = onOpenDiagnostics,
                 onActionFocusChanged = { errorActionFocused = it },
                 modifier = Modifier.align(Alignment.Center),
             )
@@ -256,7 +288,7 @@ fun LivePlaybackScreen(
             }
         }
 
-        // 4. Channel + EPG side sheet (toggled by Left).
+        // 4. Channel + EPG side sheet (toggled by Right).
         ChannelEpgSideSheet(
             visible = showSideSheet,
             channels = viewModel.displayedChannelList(),
@@ -265,6 +297,7 @@ fun LivePlaybackScreen(
             favoriteChannelIds = uiState.favoriteChannelIds,
             currentChannelId = playerState.channelId,
             currentChannelName = playerState.channelName,
+            currentChannelPlayable = playerState.firstFrameMs != null && terminalError == null,
             guidesByChannel = uiState.guidesByChannel,
             guideWindow = uiState.guideWindow,
             tuneError = uiState.tuneError,
@@ -273,7 +306,10 @@ fun LivePlaybackScreen(
             onSelectDate = { viewModel.selectDate(it) },
             onShiftGuideWindow = { viewModel.shiftGuideWindow(it) },
             onSelectChannel = { channel -> viewModel.requestTune(channel) },
-            onPlayCurrent = { viewModel.tuneCurrent() },
+            onCloseCurrentChannel = {
+                showSideSheet = false
+                showInfo = false
+            },
             onChannelFocused = { channel -> viewModel.onChannelFocused(channel.id) },
             onVisibleGuideChannelsChanged = { ids -> viewModel.onVisibleGuideChannelsChanged(ids) },
             onToggleCurrentFavorite = viewModel::toggleFavoriteCurrentChannel,

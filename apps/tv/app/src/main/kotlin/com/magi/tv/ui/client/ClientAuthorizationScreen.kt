@@ -1,6 +1,5 @@
 package com.magi.tv.ui.client
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -40,9 +39,8 @@ fun ClientAuthorizationScreen(
             runCatching { retryFocusRequester.requestFocus() }
         }
     }
-    // Registration is intentionally a modal app state. Back does not expose
-    // playback before a device credential exists.
-    BackHandler(enabled = true) { }
+    // There is no protected playback beneath this first-run surface. Let the
+    // system Back action leave the app instead of swallowing the remote key.
 
     Column(
         modifier = Modifier

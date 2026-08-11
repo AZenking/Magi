@@ -26,7 +26,7 @@ data class PlayerUiState(
     val channelName: String = "",
     val channelLogo: String? = null,
     val lineIndex: Int = 0,
-    val lineCount: Int = 1,
+    val lineCount: Int = 0,
     val firstFrameMs: Long? = null,
     val switching: Boolean = false,
     val buffering: Boolean = false,
@@ -83,6 +83,8 @@ class Media3PlaybackSession(
 
     /** Lines of the *currently active* channel. Updated on [switchChannel]. */
     private var lines: List<com.magi.tv.domain.model.PlaybackLine> = emptyList()
+    /** True while the ViewModel is resolving a new channel's playback decision. */
+    private var resolvingChannel = false
 
     private val mutableState = MutableStateFlow(PlayerUiState())
     val state = mutableState.asStateFlow()
@@ -258,6 +260,60 @@ class Media3PlaybackSession(
     fun player(): ExoPlayer = player
 
     /**
+     * Move the visible player state to the requested channel before its playback
+     * decision arrives. This prevents stale programme video from masquerading as
+     * the newly selected channel during a slow API call.
+     */
+    fun beginChannelSwitch(
+        channelId: String,
+        channelName: String,
+        initialPlay: Boolean,
+        channelLogo: String? = null,
+    ) {
+        if (released) return
+        resolvingChannel = true
+        lines = emptyList()
+        firstFrameRecorded = false
+        mainHandler.removeCallbacks(bufferWatchdogRunnable)
+        bufferingSinceMs = 0L
+        bufferRetried = false
+        // Stop the old media item while the decision resolves. Keeping its
+        // frame/audio active would make a failed or slow tune look successful.
+        player.stop()
+        mutableState.value = PlayerUiState(
+            channelId = channelId,
+            channelName = channelName,
+            channelLogo = channelLogo,
+            lineIndex = 0,
+            lineCount = 0,
+            firstFrameMs = null,
+            switching = !initialPlay,
+            buffering = false,
+            terminalError = null,
+        )
+        mutableStats.value = PlaybackStats()
+    }
+
+    /** Surface failures that occur before Media3 has received a playable URL. */
+    fun failChannelSwitch(message: String) {
+        if (released) return
+        resolvingChannel = false
+        lines = emptyList()
+        mainHandler.removeCallbacks(bufferWatchdogRunnable)
+        bufferingSinceMs = 0L
+        bufferRetried = false
+        player.stop()
+        mutableState.value = mutableState.value.copy(
+            lineIndex = 0,
+            lineCount = 0,
+            firstFrameMs = null,
+            switching = false,
+            buffering = false,
+            terminalError = message,
+        )
+    }
+
+    /**
      * Play (or switch to) a channel. Reuses the single ExoPlayer — only the
      * media item changes. `initialPlay` controls the loading caption:
      * first ever play shows "正在连接直播", subsequent switches show the
@@ -270,8 +326,11 @@ class Media3PlaybackSession(
         initialPlay: Boolean = false,
         channelLogo: String? = null,
     ) {
+        if (released) return
+        resolvingChannel = false
         lines = decision.orderedLines
         if (lines.isEmpty()) {
+            player.stop()
             mutableState.value = mutableState.value.copy(
                 channelId = channelId,
                 channelName = channelName,
@@ -280,6 +339,7 @@ class Media3PlaybackSession(
                 lineIndex = 0,
                 firstFrameMs = null,
                 switching = false,
+                buffering = false,
                 terminalError = "无可用线路",
             )
             return
@@ -294,7 +354,9 @@ class Media3PlaybackSession(
         initialPlay: Boolean = false,
         channelLogo: String? = mutableState.value.channelLogo,
     ) {
+        if (released) return
         val line = lines.getOrNull(index) ?: return
+        resolvingChannel = false
         firstFrameRecorded = false
         prepareStartedAtMs = System.currentTimeMillis()
         mutableState.value = mutableState.value.copy(
@@ -306,6 +368,7 @@ class Media3PlaybackSession(
             firstFrameMs = null,
             // Not switching only on the very first play of the first line.
             switching = !(initialPlay && index == 0),
+            buffering = false,
             terminalError = null,
         )
         // Reset per-stream stats so the previous line's stale data never leaks
@@ -323,6 +386,10 @@ class Media3PlaybackSession(
     }
 
     private fun handleLineError(error: PlaybackException) {
+        // A stale callback from the previous media item can arrive while the
+        // next channel's decision is still being resolved. It must not fail over
+        // lines that belong to the new target.
+        if (resolvingChannel) return
         val kind = error.toPlaybackErrorKind()
         val currentLine = lines.getOrNull(mutableState.value.lineIndex)
         diagnosticsRepository.recordEvent(
@@ -361,13 +428,6 @@ class Media3PlaybackSession(
         }
     }
 
-    /** Clear the terminal error (e.g. after the user retries / switches away). */
-    fun clearError() {
-        if (mutableState.value.terminalError != null) {
-            mutableState.value = mutableState.value.copy(terminalError = null)
-        }
-    }
-
     /**
      * Recompute the derived stats (buffer health + playback state) by reading
      * the player directly. Designed to be polled by the UI every ~500ms while
@@ -390,6 +450,7 @@ class Media3PlaybackSession(
     fun release() {
         if (!released) {
             released = true
+            resolvingChannel = false
             mainHandler.removeCallbacks(bufferWatchdogRunnable)
             player.removeAnalyticsListener(statsListener)
             player.release()

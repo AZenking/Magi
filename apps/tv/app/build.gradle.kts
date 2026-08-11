@@ -15,8 +15,8 @@ android {
         // Android TV 9 = API 28. minSdk 23 satisfies Compose for TV libraries.
         minSdk = 23
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
 
         // The server URL and public OAuth client id are not secrets. Device
         // credentials are obtained by default-account registration at runtime.

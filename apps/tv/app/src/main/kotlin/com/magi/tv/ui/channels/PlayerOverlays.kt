@@ -64,14 +64,24 @@ internal fun LoadingOverlay(
         Spacer(Modifier.width(18.dp))
         Column {
             Text(
-                text = if (state.switching) "正在切换备用线路" else "正在连接直播",
+                text = when {
+                    state.lineCount == 0 && state.switching -> "正在切换频道"
+                    state.lineCount == 0 -> "正在获取播放线路"
+                    state.switching && state.lineIndex > 0 -> "正在切换备用线路"
+                    state.switching -> "正在切换频道"
+                    else -> "正在连接直播"
+                },
                 color = MagiTvPalette.Text,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold,
             )
             Spacer(Modifier.height(5.dp))
             Text(
-                text = "${state.channelName} · 线路 ${state.lineIndex + 1}/${state.lineCount}",
+                text = if (state.lineCount > 0) {
+                    "${state.channelName} · 线路 ${state.lineIndex + 1}/${state.lineCount}"
+                } else {
+                    "${state.channelName} · 正在请求可用线路"
+                },
                 color = MagiTvPalette.Muted,
                 fontSize = 14.sp,
             )
@@ -82,7 +92,9 @@ internal fun LoadingOverlay(
 @Composable
 internal fun PlayerErrorOverlay(
     message: String,
+    onRetry: () -> Unit,
     onOpenChannelList: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
     onActionFocusChanged: (Boolean) -> Unit = {},
     enabled: Boolean = true,
     modifier: Modifier = Modifier,
@@ -133,22 +145,35 @@ internal fun PlayerErrorOverlay(
         )
         Spacer(Modifier.height(18.dp))
         Text(
-            text = "按 ← 打开频道列表并切换线路",
+            text = "可重试当前频道、切换频道，或查看播放诊断。",
             color = MagiTvPalette.Primary,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
         )
         Spacer(Modifier.height(14.dp))
-        MagiTvActionButton(
-            label = "打开频道列表",
-            onClick = onOpenChannelList,
-            primary = true,
-            enabled = enabled,
-            compact = true,
-            modifier = Modifier
-                .focusRequester(actionFocusRequester)
-                .onFocusChanged { onActionFocusChanged(it.isFocused) },
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            MagiTvActionButton(
+                label = "重试当前频道",
+                onClick = onRetry,
+                primary = true,
+                enabled = enabled,
+                modifier = Modifier
+                    .focusRequester(actionFocusRequester)
+                    .onFocusChanged { onActionFocusChanged(it.isFocused) },
+            )
+            MagiTvActionButton(
+                label = "频道列表",
+                onClick = onOpenChannelList,
+                enabled = enabled,
+                modifier = Modifier.onFocusChanged { onActionFocusChanged(it.isFocused) },
+            )
+            MagiTvActionButton(
+                label = "播放诊断",
+                onClick = onOpenDiagnostics,
+                enabled = enabled,
+                modifier = Modifier.onFocusChanged { onActionFocusChanged(it.isFocused) },
+            )
+        }
     }
 }
 
